@@ -1,0 +1,30 @@
+Название: Fluent setter. Нарушаем конвенцию
+
+Автор: seregamorph
+
+Дата: 2021-09-16, 09:27
+
+Теги: Блог компании Miro, Ненормальное программирование *, Java *
+
+Контент: Что будет, если возвращать в setter-методе не void, а this, т.е.
+использовать прием Fluent Interface?  public class SimplePojo {
+private String value;      public String getValue() {         return
+value;     }      public SimplePojo setValue(String value) {
+this.value = value;         return this;     }      // equals,
+hashCode, toString }   Теперь перепишем типовой кусок кода и получим
+такое:  private static AssignmentGroupedActivitiesResource create() {
+return new AssignmentGroupedActivitiesResource()
+.setGrouping(new UserActivitiesGroupingResource()
+.setAlignmentScore(1)                     .setFocusScore(0)
+.setAdvancedGroups(Arrays.asList(                             new
+ProductivityGroupResource()
+.setSectionName("Development")
+.setColor("#2196f3")
+.setSpentTime(5L),                             new
+ProductivityGroupResource()
+.setSectionName("Chat")
+.setColor("#E502FA")
+.setSpentTime(1L)                     ))
+.setPeriodLong(10L)                     .setTotalTrackedTime(7L)
+.setIntensityScore(2)); }   Для сравнения – как тот же код выглядит
+без использования приёма:

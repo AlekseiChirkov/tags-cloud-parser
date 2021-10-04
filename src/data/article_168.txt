@@ -1,0 +1,13 @@
+Название: Xeus-lua — интерактивные виджеты Lua в Jupyter Notebook
+
+Автор: Mojsha
+
+Дата: 2021-09-29, 21:55
+
+Теги: Блог компании SkillFactory, Python *, Программирование *, C++ *, Lua *
+
+Контент: Торстен Бейер — программист из QuantStack, в Open Source он работал
+над nifty и vigra на C++, а также над inferno, kipoi и ilastik — на
+Python. Делимся материалом о новом ядре Lua от Торстена Бейера из
+блога разработчиков Jupyter, пока у нас начинается флагманский
+курс Data Science.

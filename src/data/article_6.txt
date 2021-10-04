@@ -1,0 +1,10 @@
+Название: TypeScript Native (AOT) Compiler
+
+Автор: AlexD_77
+
+Дата: 2021-10-04, 01:35
+
+Теги: C++ *, Компиляторы *, TypeScript *, Изучение языков, WebAssembly *
+
+Контент: TypeScript Native (AOT) CompilerИмплементация нативного Ahead-of-Time
+компилятора для языка TypeScript
