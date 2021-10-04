@@ -1,4 +1,3 @@
 # articles-parser
 ITMO Task #1
-
-# all articles are in data folder
+All articles are in src/data/ folder
