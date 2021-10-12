@@ -1,3 +1,2 @@
-# articles-parser
-ITMO Task #1
-All articles are in src/data/ folder
+#ITMO Task #2
+###Tags clouds are in src/tags_cloud
