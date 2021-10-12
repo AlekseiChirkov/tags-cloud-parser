@@ -1,0 +1,151 @@
+Автор: illusionofchaos
+Дата: 2021-09-22T14:32:30.000Z
+Название: Получаем данные результатов выборов с сайта Центризбиркома РФ
+Теги: Разработка веб-сайтов *, Открытые данные *, Реверс-инжиниринг *, Swift
+*, Статистика в IT
+Текст:
+Прочитав новость о том, что Центризбирком РФ выложил результаты
+выборов на своем сайте в обфусцированном виде, многие начали
+публиковать в комментариях свои варианты деобфускаторов, как с
+использованием OCR, так и без него. Но я подумал, что есть более
+первостепенная задача — а именно выгрузка и сохранение данных с сайта
+ЦИК, так как они могут в любой момент измениться, и никто этого не
+заметит.Кому интересны только сырые обфусцированные данные, архив с
+ними можно скачать здесь (внимание: в распакованном виде файлы
+занимают 11 ГБ). А кому интересно как я их получил, и какие методы
+обфускации в них применяются — добро пожаловать под кат.Я нашел
+crawler на основе Selenium на GitHub, но так как мой основной язык —
+Swift, то я сделал решение на нём.В первую очередь необходимо получить
+список УИК. Это легко сделать, посмотрев, какой запрос отправляет
+браузер при раскрытии дерева на сайте. После этого, посмотрев id
+корневого узла (параметр tvd) в URL страницы http://www.izbirkom.ru/re
+gion/izbirkom?action=show&root=0&tvd=100100225883177&vrn=1001002258831
+72&prver=0&pronetvd=null&region=0&sub_region=0&type=242&report_mode=nu
+ll, мы можем рекурсивно получить всех его потомков.В результате у нас
+получается список из примерно ста тысяч URL, которые нам нужно
+скачать. Здесь возникают две проблемы. Первая — сервер очень медленно
+отдает страницы, и вторая — CAPTCHA. Опытным путем было установлено,
+что без проблем  можно скачивать в 10 потоков с одного IP-адреса, при
+этом на получение всех данных ушло примерно часов 12. А для решения
+CAPTCHA в macOS есть готовое решение под названием Vision.framework.
+Всего в несколько строк кода мы можем с высокой точностью распознать
+символы на изображении. Дополнительно нам облегчает задачу тот факт,
+что на изображении всегда 5 символов и используются только
+цифры.CAPTCHA с сайта ЦИК РФ import Vision  extension Data {     func
+solveCaptcha(handler: @escaping (String?) -> Void) {         let
+requestHandler = VNImageRequestHandler(data: self, options: [:])
+let request = VNRecognizeTextRequest { (request, error) in
+let candidates = (request.results as? [VNRecognizedTextObservation])?
+.first?                 .topCandidates(10)                 .map {
+String(                         $0.string
+.lowercased()                             .replacingOccurrences(of:
+"o", with: "0")                             .unicodeScalars
+.filter { CharacterSet.decimalDigits.contains($0) }
+)                 }             handler(candidates?.first(where: {
+$0.count == 5 }))         }         try!
+requestHandler.perform([request])     } }Итак, когда у нас скачаны все
+данные, можно спокойно проводить их анализ для дальнейшей
+деобфускации. Бегло просмотрев содержание HTML файлов, я заметил 3
+метода, которые там применяются:Подмена таблицы cmap в шрифтах. Данная
+таблица отвечает за соответствие глифов символам Unicode. Всего на
+сервере имеется ровно 100 заранее сгенерированных модификаций шрифта
+PT Sans с рандомизированной таблицей. При загрузке любой страницы
+сервер выбирает случайный шрифт, присваивает его некоторым элементам
+на странице и производит замену символов, чтобы глифы соответствовали
+отображаемому контенту. При этом индексы глифов в модифицированных
+шрифтах соответствуют оригинальному, что позволяет элементарно
+восстановить реальный текст.Лишние элементы в DOM со случайным
+содержимым, скрытые при помощи CSS..jcie_gwkc .oqr_lda::after {
+content: '6';         display: inline-block;         overflow: hidden;
+height: 0px;         width: 0px;         opacity: 0; }  .jcie_gwkc
+.dha_pso {         position: absolute;         top: -99999px;
+left: -999999px; }Отложенная модификация DOM при помощи Javascript. В
+дополнении к предыдущему методу, при загрузке страницы выполняется
+скрипт, который через 700 миллисекунд меняет содержимое и стили
+некоторых элементов, заменяя некоторые названия партий и отображая
+часть элементов, которые изначально были скрыты.var njh_bqp =
+function(hv_hl, am_dm, pr_yw) {     var hzq_hyc =
+pr_yw.getElementsByClassName(hv_hl);     for (var i = 0; i <
+hzq_hyc.length; i++) {         var v = hzq_hyc[i].innerHTML.split('');
+v.splice(am_dm, 1);         hzq_hyc[i].innerHTML = v.join('');     };
+}; var awi_mbt = function(mz_cg, bn_wh, dr_hy) {     var dfi_vmn =
+dr_hy.getElementsByTagName('td');     var nx_rx = lec(dfi_vmn[mz_cg]);
+var xv_qx = lec(dfi_vmn[bn_wh]);     var fn_gy = nx_rx.innerHTML;
+var gq_va = xv_qx.innerHTML;     nx_rx.innerHTML = gq_va;
+xv_qx.innerHTML = fn_gy; }; if (!lec) {     var lec = function(a) {
+var b = a.lastElementChild;         if (!b) return a;         if
+(b.lastElementChild) return lec(b);         return b;     }; };; var
+wfr_zfa = function(ak_mj, wp_jg, ym_sj) {     var ske_fin =
+ym_sj.getElementsByClassName(ak_mj);     for (var i = 0; i <
+ske_fin.length; i++) {         ske_fin[i].innerHTML = wp_jg;     }; };
+var a = function() {     var bfnv_bmdk =
+document.getElementsByClassName('bfnv_bmdk')[0];
+bfnv_bmdk.style.position = 'relative';     setTimeout(function() {
+bfnv_bmdk.style.removeProperty('opacity');
+bfnv_bmdk.style.removeProperty('visibility');     }, 700);     var
+cqer_smez = document.getElementsByClassName('cqer_smez')[0];
+cqer_smez.style.position = 'relative';     setTimeout(function() {
+cqer_smez.style.removeProperty('opacity');
+cqer_smez.style.removeProperty('visibility');     }, 700);     var
+vbwt_brne = document.getElementsByClassName('vbwt_brne')[0];
+vbwt_brne.style.position = 'relative';     setTimeout(function() {
+vbwt_brne.style.removeProperty('opacity');
+vbwt_brne.style.removeProperty('visibility');     }, 700);     var
+lxdj_vpoq = document.getElementsByClassName('lxdj_vpoq')[0];
+lxdj_vpoq.style.position = 'relative';     setTimeout(function() {
+lxdj_vpoq.style.removeProperty('opacity');
+lxdj_vpoq.style.removeProperty('visibility');     }, 700);
+njh_bqp('kjz_etk', -1, lxdj_vpoq);     njh_bqp('kjz_etk', 0,
+lxdj_vpoq);     njh_bqp('mqi_vob', -1, lxdj_vpoq);
+njh_bqp('omx_tpy', -1, lxdj_vpoq);     njh_bqp('omx_tpy', 0,
+lxdj_vpoq);     njh_bqp('wjd_qyl', -1, lxdj_vpoq);
+njh_bqp('tzw_yva', -1, lxdj_vpoq);     awi_mbt('6', '66', lxdj_vpoq);
+njh_bqp('ane_fsn', -1, lxdj_vpoq);     njh_bqp('dpg_pkj', -1,
+lxdj_vpoq);     njh_bqp('kbo_shr', -1, lxdj_vpoq);
+njh_bqp('vhq_iml', -1, lxdj_vpoq);     njh_bqp('mgx_sza', -1,
+lxdj_vpoq);     njh_bqp('rzb_vsq', -1, lxdj_vpoq);
+njh_bqp('phm_lgy', -1, lxdj_vpoq);     njh_bqp('iyd_flo', -1,
+lxdj_vpoq);     njh_bqp('qfj_tbx', -1, lxdj_vpoq);
+njh_bqp('fno_szj', -1, lxdj_vpoq);     njh_bqp('dcv_rjz', -1,
+lxdj_vpoq);     njh_bqp('dcv_rjz', 0, lxdj_vpoq);
+njh_bqp('bzp_raf', -1, lxdj_vpoq);     njh_bqp('zpr_efy', -1,
+lxdj_vpoq);     njh_bqp('jro_yht', -1, lxdj_vpoq);
+njh_bqp('lde_fby', -1, lxdj_vpoq);     njh_bqp('lde_fby', 22,
+lxdj_vpoq);     njh_bqp('jec_nmx', -1, lxdj_vpoq);
+njh_bqp('pni_raq', -1, lxdj_vpoq);     njh_bqp('qfm_kai', -1,
+lxdj_vpoq);     wfr_zfa('szh_wzj', '4. Политическая партия "НОВЫЕ
+ЛЮДИ"', lxdj_vpoq);     njh_bqp('jpk_ywt', -1, lxdj_vpoq);
+njh_bqp('jpk_ywt', 0, lxdj_vpoq);     njh_bqp('mws_mda', -1,
+lxdj_vpoq);     njh_bqp('msz_rfh', -1, lxdj_vpoq);     awi_mbt('49',
+'76', lxdj_vpoq);     njh_bqp('opc_enx', -1, lxdj_vpoq);
+njh_bqp('opd_bel', -1, lxdj_vpoq);     njh_bqp('opd_bel', 19,
+lxdj_vpoq);     njh_bqp('bko_rsh', -1, lxdj_vpoq);
+njh_bqp('mbv_jos', -1, lxdj_vpoq);     njh_bqp('jrq_ebc', -1,
+lxdj_vpoq);     njh_bqp('jvw_sxq', -1, lxdj_vpoq);
+njh_bqp('awh_jbv', -1, lxdj_vpoq);     njh_bqp('wia_vqw', -1,
+lxdj_vpoq);     njh_bqp('xzs_wfz', -1, lxdj_vpoq);
+njh_bqp('gbc_eon', -1, lxdj_vpoq);     njh_bqp('dmh_min', -1,
+lxdj_vpoq);     wfr_zfa('mzf_xhk', '12. Политическая партия ЗЕЛЕНАЯ
+АЛЬТЕРНАТИВА', lxdj_vpoq);     njh_bqp('knq_dpz', -1, lxdj_vpoq);
+njh_bqp('knq_dpz', 0, lxdj_vpoq);     wfr_zfa('cxo_jct', '13.
+ВСЕРОССИЙСКАЯ ПОЛИТИЧЕСКАЯ ПАРТИЯ "РОДИНА"', lxdj_vpoq);
+njh_bqp('hkz_lnj', -1, lxdj_vpoq);     njh_bqp('izn_cxg', -1,
+lxdj_vpoq);     njh_bqp('izn_cxg', 0, lxdj_vpoq);     var evxg_vkoj =
+document.getElementsByClassName('evxg_vkoj')[0];
+evxg_vkoj.style.position = 'relative';     setTimeout(function() {
+evxg_vkoj.style.removeProperty('opacity');
+evxg_vkoj.style.removeProperty('visibility');     }, 700); };
+document.addEventListener('DOMContentLoaded', a);Исходный код для
+загрузки данных можно найти на GitHub. При наличии свободного времени,
+и если никто до этого не опубликует очищенные данные, напишу свой
+вариант деобфускатора и выложу все данные, сконвертированные во что-то
+удобное, к примеру CSV. UPD1: @aulitin прогнал файлы через свой
+деобфускатор и выложил результат здесьUPD2: @lifeair опубликовал код
+для конвертации из HTML в JSONUPD3: нашел канал в телеграм, где
+выложены некоторые данные в xlsx из другого источника, в том числе по
+одномандатным округам. Также группа в Facebook c анализом результатов,
+вот пара интересных ссылок оттуда:Интерактивная картаГрафик процента
+за ЕР от явки с фильтром по адресамUPD4: @AlexShpilkin опубликовал
+описание по-английски и параллельный код деобфускатора на ПитонеUPD5:
+на сайте Новой Газеты появилось открытое письмо к Памфиловой на тему
+обфускации результатов выборов

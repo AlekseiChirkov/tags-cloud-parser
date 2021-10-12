@@ -1,0 +1,118 @@
+Автор: MagisterLudi
+Дата: 2021-09-21T17:46:52.000Z
+Название: Топ-20 самых упоминаемых книг на HackerNews
+Теги: Блог компании Timeweb, Профессиональная литература, Читальный зал,
+Научная фантастика
+Текст:
+На HackerNews пользователь tracyhenry проанализировал 40 000
+комментариев и составил рейтинг самых упоминаемых в комментариях книг.
+Автор рейтинга преисполнен благодарности тем книгам, про которые он
+узнал благодаря HackerNews и решил отдать долг и написать приложение,
+которое бы проанализировало все рекомендации на Hackerews. Такие
+попытки были неоднократно (раз, два, три), но в предыдущих попытках
+были ограничения по размеру выборки, либо были недостаточно четкие
+правила поиска и поэтому картина была не полна. Еще сложность
+представляли случаи, когда названия книги пересекалось с названием
+фильма («Первому игроку приготовиться») или название — это
+общеупотребительное слово/словосочетание: «Стив Джобс» или
+«Медитация».   Автор рейтинга использовал NLP-модель BERT для
+повышения точности распознавания (и 4000 вручную размеченных
+комментариев). Новая версия извлекает в 9-50 раз больше упоминаний,
+чем предыдущие решения.   Ограничения текущей модели: 1) не различает
+две разные книги с одинаковым названием («Гарри Поттер» и «Гарри
+Поттер и методы рационального мышления»). 2) не понимает, что это
+гневный комментарий.   Книги из топ-20 очень известные, и нет смысла
+давать их краткое описание, это уже делали много раз. Привожу здесь
+список из топ-20 (более полный см тут), чтобы вы могли свериться,
+насколько вы «соответствуете повестке мировой ИТ элиты» и
+отзывы/конспекты/упоминания про эти книги на Хабре.   Что вы уже давно
+прочитали, а что упустили из вида и почему?  1. Thinking, Fast and
+Slow    «Думай быстро, решай медленно», Канеман  523 упоминания  2.
+The Pragmatic Programmer    «Программист-прагматик. Путь от
+подмастерья к мастеру», Хант, Томас  396 упоминаний   «Программист-
+прагматик. Путь от подмастерья к мастеру»: коротко о главном (часть
+первая)   3. Dune    «Дюна», Фрэнк Герберт  379 упоминаний  4. Snow
+Crash  З68 упоминаний   «Лавина», Нил Стивенсон  5. The Selfish Gene
+«Эгоистичный ген», Докинз  349 упоминаний  6. Why We Sleep: Unlocking
+the Power of Sleep and Dreams    «Зачем мы спим», Мэттью Уолкер  326
+упоминаний   Сон — это главный ресурс для мозга программиста   7. The
+Design of Everyday Things    «Дизайн привычных вещей», Дональд Норман.
+305 упоминаний  8. Atlas Shrugged    «Атлант расправил плечи», Айн
+Рэнд  290 упоминаний  9. Brave New World    «О дивный новый мир»,
+Олдос Хаксли  284 упоминания  10. Cryptonomicon    «Криптономикон»,
+Нил Стивенсон  283 упоминания   Криптономикон Криптономикон: великий
+баян, привет из 90-х и лучшая книга о технарях Древности: Железо
+«Криптономикона»   11. Zen and the Art of Motorcycle Maintenance
+«Дзэн и искусство ухода за мотоциклом», Роберт Пёрсиг  270 упоминаний
+12. Masters of Doom: How Two Guys Created an Empire and Transformed
+Pop Culture   270 упоминаний   вот эти парни        Повелители DOOM:
+как два парня создали культовый шутер и раскачали индустрию видеоигр
+Магия разработки видеоигр id Software Вторая часть перевода книги
+Дэвида Кушнера «Masters of Doom». Главы 6-12 Монстры из Id: как
+создавался Doom   13. The Black Swan    «Черный лебедь. Под знаком
+непредсказуемости», Нассим Николас Талеб  250 упоминаний  14. Zero to
+One: Notes on Startups, or How to Build the Future   247 упоминаний
+19 переводов лекций, из которых сделали книгу: Курс лекций «Стартап».
+Питер Тиль. Вышла новая книга «Zero to One» — взгляд Питера Тиля на
+мир стартапов  Palantir, мафия PayPal, спецслужбы, мировое
+правительство   15. The Lean Startup    " Бизнес с нуля. Метод Lean
+Startup", Эрик Рис   Running Lean. Пересказ одной из лучших книг о
+стартапах (следующая книга)   243 упоминания   16. Designing Data-
+Intensive Applications    «Высоконагруженные приложения.
+Программирование масштабирование поддержка», Клеппман Мартин  241
+упоминание   Книга об интенсивной обработке данных   17. Guns, Germs,
+and Steel: The Fates of Human Societies    «Ружья, микробы и сталь.
+Судьбы человеческих обществ», Джаред Даймонд  239 упоминаний  18. Deep
+Work: Rules for Focused Success in a Distracted World    «В работу с
+головой. Паттерны успеха от IT-специалиста», Ньюпорт Кэл  249
+упоминаний   Конспект на Хабре: Как фокусировались на работе Кнут,
+Фейнман, Юнг, Шокли   19. Clean Code: A Handbook of Agile Software
+Craftsmanship    «Чистый код. Создание, анализ и рефакторинг», Роберт
+Мартин  232 упоминания   О книге Боба Мартина «Чистый код» Манифест
+Чистого Программиста или краткий конспект книги «Чистый Код» Роберта
+Мартина «Чистый код» Роберт Мартин. Конспект. Как писать понятный и
+красивый код? Вероятно, хватит рекомендовать «Чистый код»   20.
+Getting Things Done: The Art of Stress-Free Productivity    «Как
+привести дела в порядок. Искусство продуктивности без стресса», Дэвид
+Аллен  231 упоминание   с 21 по 50 место (на английском)  21 The
+Three-Body Problem 22 Neuromancer 23 Harry Potter/Harry Potter And The
+Methods Of Rationality 24 Design Patterns: Elements of Reusable
+Object-Oriented Software 25 How to Read a Book: The Classic Guide to
+Intelligent Reading 26 Sapiens: A Brief History of Humankind 27 The
+Intelligent Investor: The Definitive Book on Value Investing.  28
+Code: The Hidden Language of Computer Hardware and Software 29
+Seveneves: A Novel 30 Cracking the Coding Interview: 189 Programming
+Questions and Solutions 31 The Soul of A New Machine 32 A Pattern
+Language: Towns, Buildings, Construction  33 Meditations: A New
+Translation 34 The Innovator's Dilemma 35 The Millionaire Next Door:
+The Surprising Secrets of America's Wealthy 36 Infinite Jest 37 The
+Elements of Style: Annotated Edition 38 Outliers: The Story of Success
+39 A Guide to the Good Life: The Ancient Art of Stoic Joy 40 Amusing
+Ourselves to Death: Public Discourse in the Age of Show Business 41
+Stranger in a Strange Land 42 Antifragile: Things That Gain from
+Disorder 43 The Power of Habit: Why We Do What We Do in Life and
+Business 44 The Righteous Mind: Why Good People Are Divided by
+Politics and Religion 45 Getting to Yes: Negotiating Agreement Without
+Giving In 46 The Power Broker: Robert Moses and the Fall of New York
+47 Never Split the Difference: Negotiating as if Your Life Depended on
+It 48 Ready Player One 49 Economics in One Lesson 50 Open: An
+Autobiography         Только зарегистрированные пользователи могут
+участвовать в опросе. Войдите, пожалуйста. Сколько из
+вышеперечисленных 20 книг вы прочитали?              21.14%
+1              37                         13.14%            2
+23                         9.71%            3              17
+10.29%            4              18                         8%
+5              14                         5.71%            6
+10                         4%            7              7
+2.29%            8              4                         2.29%
+9              4                         0.57%            10
+1                         0.57%            11              1
+0%            12              0                         0.57%
+13              1                         0%            14
+0                         0%            15              0
+1.14%            16              2                         0.57%
+17              1                         0.57%            18
+1                         0.57%            19              1
+0.57%            20              1                         18.29%
+ни одной              32                     Проголосовали 175
+пользователей.          Воздержались 52 пользователя.

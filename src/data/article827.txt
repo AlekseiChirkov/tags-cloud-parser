@@ -1,0 +1,136 @@
+Автор: drno-reg
+Дата: 2021-09-23T04:54:47.000Z
+Название: Git Submodule иногда ломаются, как их починить?
+Теги: Git *, Системы управления версиями *
+Текст:
+Наверняка если вы начали читать эту статью, то знаете, что такое git и
+для чего он нужен. НО не все используют такую интересную
+функциональность в git как submodules. Это дает возможность прицепить
+к вашему проекту другие проекты и переиспользовать их в вашем. Для
+примера рассмотрим такую историю.Есть репозиторий, в котором
+содержится groovy скрипт, который решает задачу по извлечению из
+системы хранения чувствительных данных Vault. Git репозиторий с
+VaultТакже есть репозиторий CICD, в которых содержатся конвейеры
+конкретных приложений.Git репозиторий с submodulesДля того, чтобы
+подключить репозиторий Vault к репозиторию CICD как submulde
+необходимо выполнить, зафиксировать commit и отправить push в ветку
+devgit submodule add git@gitlab.services.ru:DevOps/cicd-
+store/jenkins/vault.git git status git diff --cached vault git diff
+--cached --submodule git commit -am 'Add vault module' git push origin
+devв итоге появляется файл .gitsubmodules и в нем соответствующая
+записьVault локально в Intellij Idea[submodule "vault"]         path =
+vault         url = git@gitlab.services.ru:DevOps/cicd-
+store/jenkins/vault.gitЕсли кстати решите отключить submudule , то
+необходимо сделать следующееgit submodule deinit -f vault git rm
+--cached vaultфизически удаляемrm -rf vaultи удаляем из .gitmodules
+секцию [submodule "vault"]Если вы что-то поменяли в репозитории Vault
+и хотите чтобы указатель в основном проекте был перемещен на самый
+новый коммит и изменения были отправлены в ветку master необходимо
+сделать следующее:git submodule update --init --recursive &&  git
+status &&  git submodule update --remote --rebase &&  git commit -am
+'Fix old commit' &&  git push origin masterПеречисление объектов: 3,
+готово. Подсчет объектов: 100% (3/3), готово. При сжатии изменений
+используется до 12 потоков Сжатие объектов: 100% (2/2), готово. Запись
+объектов: 100% (2/2), 241 bytes | 241.00 KiB/s, готово. Total 2 (delta
+1), reused 0 (delta 0), pack-reused 0 To
+gitlab.services.ru:product/adv/cicd.git f20bf06..2fa5cc7 master ->
+masterЧаше всего все работает штатно, но иногда обстоятельства
+складываются таким образом:22:00 пятница и вы хотите получить именно
+сегодня результат, потому как потратили на этот pipeline почти целый
+день, просто уйти и бросить задачу - вы не только не получите свою
+дозу дофамина, а у вас еще выработается дополнительная доза
+кортизола,в какой-то момент вы видите, что вот оно почти готово и
+своему коллеге по работе который почему-то тоже задержался вы говорите
+еще 30 минут и мы пойдем,на 25 минуте у вас получилось наконец-то
+полностью доделать pipeline и протестировать deployment.yml и теперь
+осталось дело за малым раскомментировать stage с build и
+протестировать снова и в процессе внести косметическое изменение в
+проект в vault, вы нормально коммитите в соответствующие репозитории и
+на основном проекте выполняетеgit submodule update --init --recursive
+&&  git status &&  git submodule update --remote --rebase &&  git
+commit -am 'Fix old commit' &&  git push origin masterно что-то идет
+не так и когда вы запускаете Job в Jenkins возвращается
+ошибка[Pipeline] End of Pipeline hudson.plugins.git.GitException:
+Command "git submodule update --init --recursive vault" returned
+status code 1: stdout:  stderr:
+|-----------------------------------------------------------------| |
+This system is for the use of authorized users only.            | |
+Individuals using this computer system without authority, or in | |
+excess of their authority, are subject to having all of their   | |
+activities on this system monitored and recorded by system      | |
+personnel.                                                      | |
+| | In the course of monitoring individuals improperly using this   |
+| system, or in the course of system maintenance, the activities  | |
+of authorized users may also be monitored.                      | |
+| | Anyone using this system expressly consents to such monitoring  |
+| and is advised that if such monitoring reveals possible         | |
+evidence of criminal activity, system personnel may provide the | |
+evidence of such monitoring to law enforcement officials.       |
+|-----------------------------------------------------------------|
+fatal: reference is not a tree:
+63f0d683a3842bc6bffc13524803560e1e725086 Unable to checkout
+'63f0d683a3842bc6bffc13524803560e1e725086' in submodule path
+'vault'пробуете перейти в giltab по ссылке vaurt @ то вам возвращается
+404 ошибка404 ошибка при попытке перехода на git submodule vaultДля
+примера нашел подобные ошибки на
+toster.ruhttps://qna.habr.com/q/131671В ответе было написано что
+гуглится 10 секунд, но четкого скрипта как восстановить
+работоспособность найдено не было и я решил что моя история как это
+быстро починить репозиторий CICD будет полезнаНачинаем с клонировая
+репозиторияgit clone <repo>далее необходимо сделать инициализацию
+submodulegit submodule initПодмодуль «vault»
+(git@gitlab.services.ru:DevOps/cicd-store/jenkins/vault.git)
+зарегистрирован по пути «vault»далее выполняем рекурсивный updategit
+submodule update --recursive --remoteдалее пробуем выполнить update
+именно sub модуля vaultgit submodule update --init --recursive
+vaultполучаем в ответ ошибку| This system is for the use of authorized
+users only. |  | Individuals using this computer system without
+authority, or in |  | excess of their authority, are subject to having
+all of their |  | activities on this system monitored and recorded by
+system |  | personnel. |  | |  | In the course of monitoring
+individuals improperly using this |  | system, or in the course of
+system maintenance, the activities |  | of authorized users may also
+be monitored. |  | |  | Anyone using this system expressly consents to
+such monitoring |  | and is advised that if such monitoring reveals
+possible |  | evidence of criminal activity, system personnel may
+provide the |  | evidence of such monitoring to law enforcement
+officials. |
+|-----------------------------------------------------------------|
+fatal: git upload-pack: not our ref
+63f0d683a3842bc6bffc13524803560e1e725086  fatal: ошибка внешнего
+репозитория: upload-pack: not our ref
+63f0d683a3842bc6bffc13524803560e1e725086  Получен по пути подмодуля
+«vault», но не содержит 63f0d683a3842bc6bffc13524803560e1e725086.
+Сбой при прямом получении коммита. переходим в каталог vault и
+проверяем та ли ветка которая нужна мы сейчас используемcd vault git
+branch  * (HEAD отделён на bf2f348) v1ветка верная v1далее выполняем
+актуализациюgit checkout v1Переключено на ветку «v1» Ваша ветка
+обновлена в соответствии с «origin/v1».мы обновили каталог с sub
+modules до последнего коммита repo с vault, теперь необходимо перейти
+в каталог с основным проектом и сохранить измененияcd .. git commit
+-am 'Fix old commit with vault' [master 37b2fa0] Fix old commit with
+vault 1 file changed, 1 insertion(+), 1 deletion(-)далее
+зафиксированные изменения мы отправляем в репозиторий с проектомgit
+push origin master|---------------------------------------------------
+--------------|  | This system is for the use of authorized users
+only. |  | Individuals using this computer system without authority,
+or in |  | excess of their authority, are subject to having all of
+their |  | activities on this system monitored and recorded by system
+|  | personnel. |  | |  | In the course of monitoring individuals
+improperly using this |  | system, or in the course of system
+maintenance, the activities |  | of authorized users may also be
+monitored. |  | |  | Anyone using this system expressly consents to
+such monitoring |  | and is advised that if such monitoring reveals
+possible |  | evidence of criminal activity, system personnel may
+provide the |  | evidence of such monitoring to law enforcement
+officials. |
+|-----------------------------------------------------------------|
+Перечисление объектов: 3, готово.  Подсчет объектов: 100% (3/3),
+готово.  При сжатии изменений используется до 12 потоков  Сжатие
+объектов: 100% (1/1), готово.  Запись объектов: 100% (2/2), 249 bytes
+| 249.00 KiB/s, готово.  Total 2 (delta 1), reused 1 (delta 1), pack-
+reused 0  To gitlab.services.ru:product/adv/cicd.git  1e35cdf..37b2fa0
+master -> masterпроверяем repo с проектом, что все сработало как
+нужноcommit Fix old commit with vaultпереходим по ссылке после
+@восстановленная ссылка git submodule на репозиторий с Vaultесли до
+этого мы все сделали правильно, то ссылка должна открыться.

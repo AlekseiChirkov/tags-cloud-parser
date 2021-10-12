@@ -1,0 +1,114 @@
+Автор: dcooder
+Дата: 2021-10-06T19:30:54.000Z
+Название: Компоненты-шаблоны или «скелеты» в Angular: заимствуем идеи у Material
+table и Material tree
+Теги: HTML *, Angular *, TypeScript *
+Текст:
+В больших бизнес-приложениях часто встречаются повторяющиеся по
+структуре интерфейсы, но с разными элементами внутри. Например граф,
+динамический список, какие-нибудь мульти-табы со сравнением сущностей,
+степперы с кастомной логикой,  интерфейсы группировки, итд.Все эти
+интерфейсы часто объединяет одно: есть некая структура данных, которую
+нужно отобразить определенным образом, а на нижнем уровне этой
+структуры могут быть сущности разного типа. В парадигме ООП эта задача
+успешно решается дженериками. Однако на уровне шаблонов многие не
+парятся и пишут либо частично дублирующие друг друга компоненты, в
+которых хардкодом прописывают нужную структуру с привязкой к
+конкретному типу сущности нижнего уровня. Либо создают настраиваемый
+через @Input компонент, который по итогу получается раздутым и в конце
+концов неподдерживаемым и с кучей костылей.На самом деле в шаблонах
+Angular есть механизмы, с помощью сочетания которых можно
+абстрагироваться от сущностей нижнего уровня и создавать компоненты -
+структурные шаблоны. Эти механизмы используются в Material / CDK,
+например в mat-table, mat-tree.  Если обобщить подход, используемый в
+этих компонентах - то это некая обертка-контейнер, в которую
+прокидывается структура данных, а вспомогательные директивы и
+компоненты позволяют отобразить сущности нижнего уровня в составе
+структуры (строки и столбцы таблицы, ноды дерева, итд)Структурные
+директивы внутри контейнера: прокидываем данные текущей сущности через
+контекстПримеры от Материал: <table mat-table [dataSource]="data">
+<ng-container matColumnDef="columnName">     <th mat-header-cell
+*matHeaderCellDef>       Шапка поля     </th>     <td mat-cell
+*matCellDef="let entity">       {{entity.columnName}}     </td>
+</ng-container>      <tr mat-header-row
+*matHeaderRowDef="displayedColumns"></tr>   <tr mat-row
+*matRowDef="let row; columns: displayedColumns"></tr> </table><mat-
+tree [dataSource]="data">   <mat-tree-node *matTreeNodeDef="let
+entity">     <app-entity [data]="entity"></app-entity>   </mat-tree-
+node> </mat-tree>Концептуально видим, что в контекст *matCellDef или
+*matTreeNodeDef прокидывается сущность нижнего уровня, которую мы уже
+отображаем нужным нам образом, используя компонент-атом или компонент-
+молекулу из нашей дизайн-системы. К примеру, в макетах нашего бизнес-
+приложения мы видим много подобных кейсов:при клике по карточкам
+справа мы как будто переходим по табам и отображаем информацию слева
+по выбранной сущности. При нажатии на карточку с плюсиком, у нас
+должна добавится пустая карточка, а слева отобразится форма создания
+сущности. причем для разных сущностей формы и блоки информации
+совершенно разные. А еще на карточке и на странице информации есть
+контрол, который должны удалять текущий таб, а также контрол, который
+должен переключать текущий таб в режим редактирования.Сделаем, чтобы в
+наших fature-компонентах было так:<app-custom-entity-list-container
+[dataSource]="data">      <app-my-card
+*appEntityListCard="let entity; remove as remove; edit as edit"
+[data]=entity (removeEvent)="remove()" (editEvent)="edit()">
+</app-my-card>   <app-my-details-page
+*appEntityDetails="let entity; remove as remove; edit as edit"
+[data]="entity" (removeEvent)="remove()" (editEvent)="edit()">
+</app-my-details-page>   <app-my-form        *appEntityForm="let
+entity; save as save; cancel as cancel"        [data]="entity"
+(sumbitEvent)="save($event)"        (closeEvent)="cancel($event)">
+</app-my-form> </app-custom-entity-list-container>Здесь app-my-card,
+app-my-details-page, app-my-form - это какие-то компоненты из нашей
+дизайн-системы в разных фичах для разных сущностей они будут разные.
+Наша задача сделать скелет: компонент-контейнер и структнрные
+директивы.Реализуем компонент-контейнер@Component(...) export class
+CustomEntityListContainerComponent<T> {   @Input() data: T[] = [];
+@Input() newEntityFactory: () => T;      @Output() removeEvent = new
+EventEmitter<T>();   @Output() updateEvent = new EventEmitter<T>();
+@ContentChild(EntityListCardDirective) entityListCard:
+EntityListCardDirective;   @ContentChild(EntityDetailsDirective)
+entityDetails: EntityDetailsDirective;
+@ContentChild(EntityFormDirective) entityForm: EntityFormDirective;
+selectedEntityIndex = 0;   isEditMode = false;
+getRemoveCallback(index: number) {     return () => {
+this.removeEvent.emit(this.data[index]);       this.data =
+[...this.data.slice(0, index), ...this.data.slice(index + 1,
+this.data.length)];     }   }      addCallback() {     this.data =
+[...this.data, this.newEntityFactory()];     this.selectedEntityIndex
+= this.data.length;     this.isEditMode = true;   }
+getEditCallback(index) {     return () => {
+this.selectedEntityIndex = index;       this.isEditMode = true;     }
+}      calcelCallback() {     this.isEditMode = false;   }
+getSaveCallback(index) {     return (data) => {
+this.updateEvent(data);       this.data[index] = data;       this.data
+= [...this.data];     }   } }<div class="container">   <ng-container
+*ngIf="isEditMode; else details">     <ng-container
+*ngTemplateOutlet="entityForm.templateRef;
+context: { $implicit: data[selectedIndex],
+save: getSaveCallback(selectedIndex),
+cancel: cancelCallback }                                      ">
+</ng-container>   </ng-container>   <ng-template #details>     <ng-
+container *ngTemplateOutlet="entityDetails.templateRef;
+context: { $implicit: data[selectedIndex],
+remove: getRemoveCallback(selectedIndex),
+edit: getEditCallback(selectedIndex)
+}                                      ">       </ng-container>
+</ng-template> </div>  <div class="cards">   <ng-container *ngFor="let
+entity of data; index as i">     <ng-container
+*ngTemplateOutlet="entityListCard.templateRef;
+context: { $implicit: entity,
+remove: getRemoveCallback(i),
+edit: getEditCallback(i)                                      }
+">       </ng-container>   </ng-container>   <div class="add-card"
+(click)="addCallback()"></div> </div>Структурные директивы будут все
+однотипные, различаются только контекстом:@Directive({     selector:
+'[entityCard]', }) export class EntityCardDirective {     context = {
+$implicit: null,         remove: () => {},         edit: () => {},
+};      constructor(public templateRef: TemplateRef<any>) {} }Сразу
+говорю, пример не реальный и выдуман мной на ходу, но отражает общую
+концепцию, которой  я пользуюсь. Тут в принципе может быть любая
+структура интерфейса: граф с событиями добавления, удаления и
+перемещения узла, дерево с нестандартной логикой, но специфичной для
+проекта и часто повторяющейся в проекте с разными сущностями,
+итд.Также я не претендую на работоспособность написанного выше кода,
+цель статьи - показать суть подхода в целом.

@@ -1,0 +1,209 @@
+Автор: Zextras
+Дата: 2021-10-04T13:02:54.000Z
+Название: Мониторинг сервера Zimbra OSE с помощью Nagios
+Теги: Блог компании Zextras Technology, Системное администрирование *,
+Сетевые технологии *
+Текст:
+Ранее в нашем блоге мы рассказывали о том, как настроить мониторинг
+сервера Zimbra OSE с использованием такого популярного решения как
+Zabbix. Однако помимо Zabbix для мониторинга состояния серверов и
+сервисов также активно используется и другое решение - Nagios. Оно
+также имеет открытый исходный код и бесплатную версию, и также может
+использоваться для мониторинга сервера Zimbra OSE. В данной статье мы
+расскажем о том, как установить Nagios на сервер с Ubuntu 18.04, а
+также о том, как настроить в нем наблюдение за состоянием самого
+сервера и различных сервисов Zimbra OSE.В нашем примере мы будем
+использовать два сервера: nagios.example.ru (10.0.1.49) и
+mail.example.ru (10.0.1.38). На первом мы установим серверную часть
+Nagios, второй сервер выполняет роль почтового сервера Zimbra
+OSE.Установка сервера NagiosУстановить Nagios на сервере
+nagios.example.ru можно из репозитория при помощи команды sudo apt
+install nagios3, однако доступная там версия значительно устарела. В
+связи с этим мы соберем Nagios из исходного кода, доступного на
+GitHub.Начать следует с установки зависимостей. Для этого поочередно
+введите команды:sudo apt update sudo apt upgrade sudo apt install -y
+autoconf gcc libc6 make wget unzip apache2 php libapache2-mod-php7.2
+libgd-dev libmcrypt-dev libssl-dev bc gawk dc build-essential libnet-
+snmp-perl gettextДоступные для скачивания релизы Nagios можно найти на
+соответствующей страничке в GitHub. Для скачивания исходных кодов
+перейдем в папку /usr/src и с помощью wget скачаем архив с самыми
+свежими исходниками. В нашем случае это sudo wget https://github.com/N
+agiosEnterprises/nagioscore/releases/download/nagios-4.4.6/nagios-4.4.
+6.tar.gz.Распакуем архив sudo tar zxf nagios-4.4.6.tar.gz и перейдем
+папку с исходным кодом - cd nagios-4.4.6. Запустим компиляцию пакета,
+поочередно выполняя командыsudo ./configure --with-httpd-
+conf=/etc/apache2/sites-enabled - она запустит проверку на наличие
+всех необходимых зависимостей в системеsudo make all - она запустит
+процесс компиляции пакета. sudo make install-groups-users  - данная
+команда создаст системного пользователя и группу nagios sudo usermod
+-a -G nagios www-data - эта команда добавит пользователя Apache в
+группу Nagiossudo make install-commandmode - данная команда установит
+необходимые разрешения на обработку команд из внешних приложенийsudo
+make install-webconf - данная команда установит файлы кофигурации
+Apachesudo make install-daemoninit - для добавления Nagios в
+автозагрузку при запуске системы.sudo make install  - она запустит
+процесс установки скомпилированного ранее пакета.В случае, если все
+пройдет успешно, вы увидите в выводе команды строку *** Main program,
+CGIs and HTML files installed ***.Для того, чтобы попасть в веб-
+интерфейс Nagios, нужно создать пользователя nagiosadmin и задать
+пароль для него. Делается это с помощью команды sudo htpasswd -c
+/usr/local/nagios/etc/htpasswd.users nagiosadmin. После ее запуска вам
+будет предложено дважды ввести пароль этого пользователя:New
+password:Re-type new password: Adding password for user
+nagiosadminПосле этого следует настроить файрвол для доступа к Apache.
+Для этого введите команды sudo ufw allow Apache и sudo ufw
+enable.Установка плагинов NagiosДоступные для скачивания релизы Nagios
+Plugins можно найти на официальной странице проекта в GitHub. Для
+скачивания актуальной версии также перейдем в папку /usr/src и скачаем
+архив при помощи wget. В нашем случае это sudo
+wget https://github.com/nagios-plugins/nagios-
+plugins/releases/download/release-2.3.3/nagios-
+plugins-2.3.3.tar.gzРаспакуем архив sudo tar zxf nagios-
+plugins-2.3.3.tar.gz и перейдем в папку с исходниками cd nagios-
+plugins-2.3.3. Последовательно выполним команды sudo ./configure sudo
+make sudo make install Также установим плагин nrpe, исходный код
+которого также доступен в GitHub. Находясь в папке /usr/src/ закачаем
+архив с исходным кодом приложения sudo wget https://github.com/NagiosE
+nterprises/nrpe/releases/download/nrpe-4.0.3/nrpe-4.0.3.tar.gz,
+распакуем его sudo tar zxf nrpe-4.0.3.tar.gz и перейдем папку с
+исходным кодом - cd nrpe-4.0.3. Находясь в ней также выполним
+командыsudo ./configure sudo make sudo make install-plugin sudo make
+install-daemon sudo make install-init sudo make installПосле этого для
+корректной работы nrpe также необходимо открыть для подключений порт
+5666 c помощью команды sudo ufw allow 5666/tcp. Запуск Nagios Когда
+Nagios и необходимые плагины установлены, можно запустить службу
+Nagios с помощью команды sudo systemctl start nagios. Проверить статус
+службы Nagios можно с помощью команды sudo systemctl status
+nagios.Доступ к веб-интерфейсу Nagios в нашем случае осуществляется с
+сервера nagios.example.ru через браузер по ссылке
+http://localhost/nagios. При входе в веб-интерфейс Nagios запросит
+логин и пароль. Укажите в качестве логина nagiosadmin, а в качестве
+пароля заданный ранее пароль.Сразу после установки Nagios мониторит
+только состояние сервера, на котором он установлен. Чтобы сервер
+Nagios мог также отслеживать состояние сервера и различных сервисов
+Zimbra OSE, необходимо добавить в него соответствующий узел. Для этого
+необходимо выполнить ряд действий на сервере Zimbra OSE.Настройка узла
+Zimbra OSEВ первую очередь необходимо установить на узле с Zimbra OSE
+Nagios NRPE Server - агентское приложение Nagios, которое запускает на
+сервере различные команды, собирает статистику и передает данные на
+сервер. Его можно установить из репозитория Ubuntu с помощью команды
+sudo apt install nagios-nrpe-server. Также необходимо установить
+плагины для Nagios. Делается это при помощи команды sudo apt-get
+install monitoring-plugins. После установки в каталоге /etc/ появится
+папка nagios, в которой содержатся конфигурационные и исполняемые
+файлы сервера NRPE. Плагины Nagios были установлены в папку
+/usr/lib/nagios/plugins.Для корректной работы сервера NRPE необходимо
+открыть подключения на порту 5666. Для этого введите команды sudo ufw
+allow 5666/tcp и sudo ufw enable. Также необходимо отредактировать
+файл конфигурации sudo nano /etc/nagios/nrpe.cfg, где в нашем случае
+следует привести следующие строки к такому
+виду:allowed_hosts=127.0.0.1,::1,10.0.1.49dont_blame_nrpe=1Также
+отредактируем файл sudo nano /etc/sudoers, куда добавим права на
+исполнение команд, связанных с мониторингом сервера Zimbra OSE без
+ввода пароля: %nagios ALL=(zimbra)
+NOPASSWD:/opt/zimbra/bin/zmcontrol.После этого перезапустим сервер
+nagios-nrpe-server на узле mail.example.ru с помощью команды sudo
+/etc/init.d/nagios-nrpe-server restart, а также перезапустим nagios на
+узле nagios.example.ru с помощью команды sudo systemctl restart
+nagios.Настройка мониторинга Zimbra OSEДля того, чтобы мониторинг
+сервера Zimbra OSE начал осуществляться, необходимо добавить новый
+хост в Nagios. Для этого создадим папку sudo mkdir
+/usr/local/nagios/etc/servers, а затем отредактируем файл sudo
+nano /usr/local/nagios/nagios.cfg, где в соответствующий раздел
+добавим строку cfg_dir=/usr/local/nagios/etc/servers.Скопируем шаблон
+с настройками хоста из папки с примерами в созданную нами папку cp
+/usr/local/nagios/etc/objects/localhost.cfg
+/usr/local/nagios/etc/servers/zimbra.cfg. Откроем файл zimbra.cfg для
+редактирования sudo nano /usr/local/nagios/etc/servers/zimbra.cfg. В
+нем зададим параметры самого хоста и сервисов, которые будем
+опрашивать.Для настройки хоста отредактируйте данные в разделе #
+Define a host for the local machine. В нашем случае он будет иметь
+следующий вид:define host{        use                     linux-
+server        host_name               mail.example.ru        alias   
+              mail        address                 10.0.1.38       
+}Также создадим группу хостов Zimbra Servers. Это очень удобно в тех
+случаях, когда необходимо мониторить целый ряд серверов. Для этого в
+разделе #Define an optional hostgroup for Linux machinesdefine
+hostgroup {        host_name               zimbra-servers        alias
+                  Zimbra Servers        members                
+mail.example.ru        }Мониторинг стандартных сервисов, таких как
+работоспособность IMAP, POP3 и SMTP настраивается в разделе # Define a
+service to "ping" the local machine. В случае проведения нестандартных
+проверок, помимо правки
+файла /usr/local/nagios/etc/servers/zimbra.cfg, необходимо будет
+редактировать файл /usr/local/nagios/etc/objects/commands.cfg и файл
+/etc/nagios/nrpe.cfg на сервере Zimbra OSE.1. Для подключения
+мониторинга службы SMTP добавьте
+в  /usr/local/nagios/etc/servers/zimbra.cfg блок define service{   use
+generic-service   hostgroup_name zimbra-servers   service_description
+SMTP   check_command check_smtp   }2. Для подключения мониторинга
+службы IMAP добавьте в  /usr/local/nagios/etc/servers/zimbra.cfg
+блок define service{   use generic-service   hostgroup_name zimbra-
+servers   service_description IMAP   check_command check_imap   }3.
+Для подключения мониторинга службы POP3 добавьте в
+ /usr/local/nagios/etc/servers/zimbra.cfg блок define service{   use
+generic-service   hostgroup_name zimbra-servers   service_description
+POP3   check_command check_pop   }4. Для подключения мониторинга
+службы IMAPS добавьте в /usr/local/nagios/etc/servers/zimbra.cfg
+блок define service{   use generic-service   hostgroup_name zimbra-
+servers   service_description IMAP SSL   check_command check_imaps 
+ }А также добавьте блок
+в /usr/local/nagios/etc/objects/commands.cfgdefine command{ 
+ command_name check_imaps   command_line
+/usr/lib/nagios/plugins/check_imap -H $HOSTADDRESS$ -p 993 -S   }5.
+Для подключения мониторинга службы POP3S добавьте в
+/usr/local/nagios/etc/servers/zimbra.cfg блок define service{   use
+generic-service   hostgroup_name zimbra-servers   service_description
+POP3 SSL   check_command check_pops   }А также добавьте блок
+в /usr/local/nagios/etc/objects/commands.cfgdefine command{ 
+ command_name check_pops   command_line
+/usr/lib/nagios/plugins/check_pop -H $HOSTADDRESS$ -p 995 -S   }6. Для
+подключения мониторинга службы ClamAV добавьте в
+/usr/local/nagios/etc/servers/zimbra.cfg блок define service {   use
+generic-service   hostgroup_name zimbra-servers   service_description
+ClamAV   check_command check_nrpe_1arg!check_clamd   }Также на сервере
+Zimbra OSE в файле /etc/nagios/nrpe.cfg добавим команду
+command[check_clamd]=/usr/lib/nagios/plugins/check_clamd
+/opt/zimbra/data/clamav/clamav.sock7. Для подключения мониторинга
+протокола LMTP добавьте в /usr/local/nagios/etc/servers/zimbra.cfg
+блок define service {   use generic-service   hostgroup_name zimbra-
+servers   service_description LMTP   check_command
+check_nrpe_1arg!check_lmtp   }Также на сервере Zimbra OSE в файле
+/etc/nagios/nrpe.cfg добавим
+команду command[check_lmtp]=/usr/lib/nagios/plugins/check_smtp -H
+localhost -p 7025.8. Для подключения мониторинга актуальности SSL-
+сертификата добавьте в /usr/local/nagios/etc/servers/zimbra.cfg
+блокdefine service {   use generic-service   hostgroup_name zimbra-
+servers   service_description SSL Cert   check_command
+check_nrpe_1arg!check_cert   }Также на сервере Zimbra OSE в файле
+/etc/nagios/nrpe.cfg добавим команду
+command[check_cert]=/usr/lib/nagios/plugins/check_cert -S -H localhost
+-C 309. Для подключения мониторинга количество пользователей,
+осуществивших вход на сервер, добавьте в
+/usr/local/nagios/etc/servers/zimbra.cfg блокdefine service {   use
+generic-service   hostgroup_name zimbra-servers   service_description
+Check Users   check_command check_nrpe_1args!check_users   }Также на
+сервере Zimbra OSE в файле /etc/nagios/nrpe.cfg добавим команду
+command[check_users]=/usr/lib/nagios/plugins/check_users -w 2 -c 310.
+Для мониторинга средней нагрузки и доступности сервера добавьте в
+/usr/local/nagios/etc/servers/zimbra.cfg соответственно блоки  define
+service {   use generic-service   hostgroup_name zimbra-servers 
+ service_description Load Average   check_command
+check_nrpe!check_load!5!10   }define service {   use generic-service 
+ hostgroup_name zimbra-servers   service_description Ping 
+ check_command check_ping!100.0,20%!500.0,60%   }11. Также можно
+подключить мониторинг свободного места в разделе /opt/, где
+располагаются файлы Zimbra OSE. 9. Для этого добавьте в
+/usr/local/nagios/etc/servers/zimbra.cfg блокdefine service {   use
+generic-service   hostgroup_name zimbra-servers   service_description
+OPT   check_command check_nrpe_1arg!check_opt   }Также Nagios
+позволяет настроить оповещения о различных ошибках и критических
+ситуациях, которые возникают на серверах инфраструктуры. Настроить
+оповещения можно в веб-интерфейсе Nagios на вкладке Notifications.
+Пример настройки оповещений показан на скриншотах.Таким образом мы
+настроили мониторинг сервера Zimbra, а также ряда запущенных на нем
+служб, а также настроили отправку оповещений об отказе или критических
+ситуациях, возникающих на сервере Zimbra OSE.По всем вопросам,
+связанными c Zextras Suite и Team Pro вы можете обратиться к
+Представителю компании «Zextras Technology» Екатерине Триандафилиди по
+электронной почте ekaterina.triandafilidi@zextras.com.

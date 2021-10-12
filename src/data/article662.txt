@@ -1,0 +1,43 @@
+Автор: scorpka
+Дата: 2021-09-26T12:50:16.000Z
+Название: Уроки по SDL 2: Урок 10 изменение цвета и прозрачность текстуры
+Теги: C++ *, Разработка игр *, C *
+Текст:
+Изменение цвета у спрайтов, позволяет получить нам новый спрайт, а
+благодаря аппаратному ускорению, прозрачность создается гораздо
+быстрее чем в первом SDL.Приступим к коду:#include<SDL2/SDL.h>
+#include<SDL2/SDL_image.h>   int main(void) {
+SDL_Init(SDL_INIT_VIDEO);   SDL_Window* window =
+SDL_CreateWindow("color modulation",   SDL_WINDOWPOS_UNDEFINED,
+SDL_WINDOWPOS_UNDEFINED,640,480,SDL_WINDOW_SHOWN);      SDL_Renderer*
+gRenderer = SDL_CreateRenderer(window,
+-1,SDL_RENDERER_ACCELERATED);Стандартно создаем окно(window),
+привязываем к нему переменную визуализации(gRenderer), добавили новую
+библиотеку SDL_image.h для добавления png
+изображений(подробнее).SDL_Surface* mSurface = SDL_LoadBMP("hw.bmp");
+SDL_Texture* mTexture =
+SDL_CreateTextureFromSurface(gRenderer,mSurface);
+SDL_SetTextureColorMod( mTexture,10,10,255); //изменения цвета
+текстуры SDL_RenderCopy(gRenderer,mTexture,NULL,NULL);
+SDL_RenderPresent(gRenderer); SDL_Delay(1000);Стандартно подгружаем
+фон, функцией SDL_SetTextureColorMod меняем цвет фона, и отображаем
+его на экран.   mSurface = IMG_Load("slowpoke.png");    SDL_Texture*
+sTexture =  SDL_CreateTextureFromSurface(gRenderer,    mSurface);
+SDL_SetTextureBlendMode(sTexture, SDL_BLENDMODE_BLEND);Через IMG_Load,
+подгружаем Png изображение,  создаем новую текстуру с этим
+изображением, и задаем формулу прозрачности(BLEND), по умолчанию
+SDL_BLENDMODE NONE(не существует) , так же можно задать ADD или MOD о
+которых я расскажу в последующих уроках.SDL_Rect imagePos =
+{200,280,300,250};   for(int a=0;a<100;a++)   {
+SDL_SetTextureAlphaMod( sTexture,a );  //прозрачность а от 0..255
+SDL_RenderCopy(gRenderer,sTexture,NULL,&imagePos);
+SDL_RenderPresent(gRenderer);   SDL_Delay(100);   } Задаем позицию
+изображения на фоне(imagePos), создаем цикл, который будет (в
+арифметической прогрессии) уменьшать прозрачность изображения, пока
+изображение не появится полностью. то есть SetTextureAlphaMod задает
+прозрачность текстуры, где первый параметр это текстура, а второй это
+коэффициент прозрачности от 0 до 255. //TODO дописать код: который
+плавно убирает изображение,  // чтоб остался только фон.
+SDL_DestroyWindow(window);  SDL_Quit; }Домашнее задание: дописать
+программу, чтобы картинка плавно исчезала, оставляя только фон.ссылка
+на изображения<< предыдущий урок

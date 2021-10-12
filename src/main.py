@@ -1,11 +1,20 @@
-from src.scrapper.parser import Scrapper
+import os
+
+from scrapper.handlers import NLPArticlesHandler
 
 
-def main():
-    author_name = input("Enter author name to filter: ")
-    pages_number = int(input("Enter pages number (0-49): "))
-    scrapper = Scrapper()
-    scrapper.process_articles(author_name, pages_number)
+def main() -> None:
+    """
+    Function to run all scripts
+    :return: None
+    """
+
+    handler = NLPArticlesHandler()
+    articles_list = handler.copy_processed_articles()
+    for article in articles_list:
+        with open('processed/' + article, 'r') as file:
+            text = file.read()
+            handler.create_word_cloud(text, article)
 
 
 if __name__ == '__main__':

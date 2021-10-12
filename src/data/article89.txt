@@ -1,0 +1,188 @@
+Автор: pyltsinm
+Дата: 2021-10-07T06:53:06.000Z
+Название: Функции области видимости (Scope Function) в Kotlin
+Теги: Java *, Kotlin *
+Текст:
+Сразу оговорюсь, что статья объясняет базовые понятия и если вы уже
+программируете на Kotlin, то скорее всего вы уже все знаете. Большая
+часть того, что приведено в статье, освещено в официальной
+документации, поэтому статью можно рассматривать как дополнительный
+материал к ней.В статье используется термин "функции области
+видимости" для "Scope Function". Это определение взято из перевода
+документации на русский язык. По контекстным функциям в Kotlin есть
+много информации, включая на русском. Часть таких статей приведены в
+использованных материалах.Что такое функции области видимостиФункции
+расширенияКак работают функции области видимостиЧто когда
+применятьИспользованные материалыЧто такое функции области видимостиВ
+Kotlin есть 5 функций: let, run, with, apply и also, объединенных
+общим названием Scope Function (функции области видимости). Все они
+используются для одной цели - выполнить какой-то блок кода для
+конкретного объекта. Почему их так назвали? Потому что они меняют
+способ взаимодействия и видимость для этой переменной.В основном они
+отличаются только 2 параметрами: способом ссылки на объект и
+возвращаемым параметром.Давайте сначала приведем пример
+использования:letval length = "test".let{     println(it)
+it.length }Объект "test" внутри блока доступен как itВозвращает
+результат выполнения lambda-функцииalsoval test = "test".also{
+println(it)    }Объект "test" внутри блока доступен как itВозвращает
+контекстный объект ("test")applyval moscow = City("Moscow").apply{
+this.population = 15_000_000                     println(this)
+}Объект City("Moscow") внутри блока доступен как this (поэтому для
+поля popultaion - мы можем опустить обращения и будет
+population=15_000_000)Возвращает контекстный объект (изменённый
+City("Moscow"))run (с контекстным объектом)val optimalSquare =
+City("Moscow").run {     this.population = 15_000_000
+this.solveOptimalSquare() }Объект City("Moscow") внутри блока доступен
+как this (поэтому для поля popultaion - мы можем опустить обращения и
+будет population=15_000_000)Возвращает результат выполнения lambda-
+функции (solveOptimalSquare())run (без контекстного объекта)val length
+= run {   val test = "test"   test.length }Нет объекта на котором
+применятсяВозвращает результат выполнения lambda-функции
+(test.length)withval length = with("test"){   this.length }Объект
+"test" внутри блока доступен как thisВозвращает результат выполнения
+lambda-функции (this.length)Как видно, функции очень похожи друг на
+друга. Для того чтобы разобраться как они работают нужно разобраться в
+понятии extension function (здесь и далее будет использован перевод
+"функции расширения")Функции расширенияФункции расширения в Kotlin
+позволяют расширять классы, не наследуясь от них. С помощью них мы
+можем добавить к существующим классам свои методы. Функции расширения
+таким образом заменяют утилитные классы (например, StringUtils от
+Apache). Давайте рассмотрим упрощенный пример из стандартной
+библиотеки Kotlinpublic fun CharSequence?.isNullOrBlank(): Boolean {
+return this == null || this.isBlank() }Как видно в качестве класса для
+расширения также можно использовать null-допустимые классы.Как это
+работает:Мы указываем тип  получателя (reciever type)Ссылаемся на
+объект этого типа как this Давайте посмотрим, во что компилируется
+функция расширения. Исходный код:fun main() {
+println("test".firstSymbol()) }  public fun String.firstSymbol():
+Char{     return this[0] }Bytecode:  public static final char
+firstSymbol(java.lang.String);     descriptor: (Ljava/lang/String;)C
+flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL     Code:
+stack=2, locals=1, args_size=1          0: aload_0          1: ldc
+#27                 // String <this>          3: invokestatic  #33
+// Method kotlin/jvm/internal/Intrinsics.checkNotNullParameter:(Ljava/
+lang/Object;Ljava/lang/String;)V          6: aload_0          7:
+iconst_0          8: invokevirtual #39                 // Method
+java/lang/String.charAt:(I)C         11: ireturn
+LineNumberTable:         line 6: 6       LocalVariableTable:
+Start  Length  Slot  Name   Signature             0      12     0
+$this$firstSymbol   Ljava/lang/String;
+RuntimeInvisibleParameterAnnotations:       parameter 0:         0:
+#25()           org.jetbrains.annotations.NotNullСоответствующий java-
+code:public static final char firstSymbol(@NotNull String
+$this$firstSymbol) {
+Intrinsics.checkNotNullParameter($this$firstSymbol,
+"$this$firstSymbol");   return $this$firstSymbol.charAt(0); }Как
+видно, она комплируется в статический метод, где первым параметром
+выступает объект, на котором применяется функция расширения. Как раз
+поэтому функция расширения не может получить доступ к приватным полям
+и методам и поэтому функции расширения вычиляются статически.//Код НЕ
+рабочий fun main() {     println(Test("test").firstSymbol()) }  class
+Test(private val value: String)  public fun Test.firstSymbol(): Char{
+// поле является приватным и из статического метода к нему нет доступа
+return this.value[0] //ОШИБКА }Следующий пример взят из
+документацииopen class Shape class Rectangle: Shape()  fun
+Shape.getName() = "Shape" fun Rectangle.getName() = "Rectangle"  fun
+printClassName(s: Shape) {     println(s.getName()) }
+printClassName(Rectangle())Распечатается ShapeКак работают функции
+области видимостиПосле того, как мы разобрались с функциями
+расширения, самое время взглянуть, что под капотом функций области
+видимости.Для начала приведем исходный код всех рассматриваемых
+функций и разберем егоletpublic inline fun <T, R> T.let(block: (T) ->
+R): R {     return block(this) }let - сама является функцией
+расширения и принимает обычную lambda-функцию, которая вызывается с
+параметром this (объектом, на котором вызывается let). Так как block -
+это обычная lambda-функция, то единственный аргумент в ней доступен
+как it. Возвращается результат выполнения block(this)alsopublic inline
+fun <T> T.also(block: (T) -> Unit): T {     block(this)     return
+this }also - очень похож на let, но возвращается объект this (объект,
+на котором вызывается also)applypublic inline fun <T> T.apply(block:
+T.() -> Unit): T {     block()     return this }Функция  apply
+устроена довольно интересно. Она является функцией расширения, при
+этом как параметр она принимет lambda-функцию, которая тоже является
+расширением для того же типа. Поэтому вызов block() здесь нужно
+рассматривать как вызов this.block(). Возвращается объект, на котором
+была вызвана функция applyrun (с контекстным объектом)public inline
+fun <T, R> T.run(block: T.() -> R): R {     return block() }run очень
+похож на apply, но возвращает результат выполнения this.block()run
+(без контекстного объекта)public inline fun <R> run(block: () -> R): R
+{     return block() }Не является функцией расширения, и принимет
+обычную lambda-функцию. Возвращает результат выполнения этой lambda-
+функции.withpublic inline fun <T, R> with(receiver: T, block: T.() ->
+R): R {     return receiver.block() }Не является функцией расширением.
+Принимает два параметра - объект и функция расширения, которая будет
+вызываться на нем. Возвращает результат этого выполнения.Как можно
+заметить, все функции области видимости являются inline, то есть их
+тело вставляется в место, где они вызываются, что позволяет исключить
+накладные расходы на вызов метода.Исходный код:fun main() {     val
+length = "test".let {         println(it)         it.length     }
+println(length) }Bytecode:  public static final void main();
+descriptor: ()V     flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL
+Code:       stack=2, locals=7, args_size=0          0: ldc
+#8                  // String test          2: astore_1          3:
+iconst_0          4: istore_2          5: iconst_0          6:
+istore_3          7: aload_1          8: astore        4         10:
+iconst_0         11: istore        5         13: iconst_0         14:
+istore        6         16: getstatic     #14                 // Field
+java/lang/System.out:Ljava/io/PrintStream;         19: aload         4
+21: invokevirtual #20                 // Method
+java/io/PrintStream.println:(Ljava/lang/Object;)V         24: aload
+4         26: invokevirtual #26                 // Method
+java/lang/String.length:()I         29: nop         30: istore_0
+31: iconst_0         32: istore_1         33: getstatic     #14
+// Field java/lang/System.out:Ljava/io/PrintStream;         36:
+iload_0         37: invokevirtual #29                 // Method
+java/io/PrintStream.println:(I)V         40: return Близко-
+соответствующий java-code (часть служебных переменных удалено):
+public static final void main() {       String var1 = "test";
+System.out.println(var1);       int length = var1.length();
+System.out.println(length);    }Как видно, здесь нет никакого
+упоминания об letЧто когда применятьКакую функцию когда применять -
+вопрос довольно сложный и дискуссионный.Здесь я постарался собрать те
+рекомендации, что встречал в разных источниках и что было удобно мне
+самому. Эти рекомендации не являются всеобъемлющими и каждая команда,
+как мне кажется, сама должна определять, когда что применять. Буду рад
+комментариям, каким рекомендациям следуете вы.Самая главная
+рекомендация - не переусложняйте код, он должен быть легко читаем и
+однозначен. Чем сложнее код - тем больше ошибок мы можем в нем
+совершить. И помним, что IDEA у нас не всегда под рукой, например,
+часто простые исправления проверяются online, например, в gitlab, где
+нет таких возможностей как в IDEA. Основные грамматические отличия
+можно свести в таблицу:Функция будет принимать thisФункция будет
+принимать itБудет возвращен объект на котором вызывается функция
+(self)applyalsoБудет возвращен результат функции (result)run, withletС
+различием по тому, что возвращается,как мне кажется, все понятно.
+Давайте внимательно рассмотрим различие: что принимает функция (this
+или it). С точки зрения возможностей - this и it полностью одинаковы,
+так как они предоставляют доступ к одному и тому же набору параметров.
+this НЕ предоставляет доступ к приватным методам. Единственное
+различие в том, что this может быть опущено, а it в явном виде
+заменено на другое имя переменной. Поэтому this рекомендуется для тех
+случаев, когда вызываются функции и присваиваются свойства - для
+настройки объектов, it - когда объект используется в основном в
+качестве аргумента вызова функции. Большую часть функций удобно
+использовать для реализации сокращенной записи (см. ниже пример с
+apply)letчасто используется для безопасного выполнения блока кода с
+null-выражениямиval b: Int? = null  val a = b.let { nonNullable ->
+nonNullable } ?: "Equal to 'null' or not set"
+println(a)alsoиспользуется для выполнения каких-либо дополнительных
+действийval numbers = mutableListOf("one", "two", "three")  numbers
+.also { println("The list elements before adding new one: $it") }
+.add("four")apply настроить объекта  и не надо возвращать результат
+(удобно использовать для настройки Spring beans (бинов)val registrar =
+DateTimeFormatterRegistrar().apply {   setUseIsoFormat(true)
+registerFormatters(registry) }run, withrun и with очень похожи,
+поэтому не рекомендуется использовать их вместе. run - используется
+для настройки объекта и вычисления результатаfun printAlphabet() =
+StringBuilder().run{     for (letter in 'A'..'Z'){
+append(letter)     }     toString() }run без контекстного объекта -
+выполнение набора операций в отдельной зоне видимостиwith -
+используется для объединения вызовов функций объекта // выводим все
+буквы алфавита fun printAlphabet() = with(StringBuilder()){     for
+(letter in 'A'..'Z'){         append(letter)     }     toString()
+}Использованные материалыОфициальная документация по функциям области
+видимости (перевод)Официальная документация по функциям расширениям
+(перевод)Статья от baeldung по функциям области видимостиСтатья о том,
+как запомнить что есть что на англ.Интересная дискусия о функциях
+области видимости на stackoverflow Рекомендации по применению функций
+области видимости с medium (перевод)

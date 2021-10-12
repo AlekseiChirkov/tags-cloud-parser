@@ -1,0 +1,769 @@
+Автор: aio350
+Дата: 2021-09-21T07:50:52.000Z
+Название: Решил 50 задач и ответил на вопрос — Python или JavaScript?
+Теги: Блог компании Timeweb, Python *, JavaScript *, Программирование *
+Текст:
+Привет, друзья! Я — JavaScript-разработчик. Код пишу в основном на
+React (иногда на Vue), немного на TypeScript, немного на Node, немного
+знаю SQL, но...  со мной работает много людей, которые пишут код на
+Python вокруг много разговоров про Python повсюду преподают Python
+Яндекс любит Python (раньше Гугл тоже его любил, но теперь у него есть
+Go)  Короче говоря, сложно было не заинтересоваться Python. Как
+известно, лучший способ научиться "кодить" — это писать код. Предлагаю
+вашему вниманию 50 популярных в сфере программирования задач, решенных
+с помощью Python и JavaScript. Цель — сравнить языки на предмет
+предоставляемых ими возможностей. Задачки не очень сложные, хотя
+имеется парочка из категории продвинутых. Предполагается, что вы
+владеете хотя бы одним из названных языков на среднем уровне. Я
+старался комментировать ключевые моменты. Однако, это не гайд по
+JavaScript или Python, поэтому за подробностями работы той или иной
+функции или метода вам придется обращаться к другим источникам (в
+конце концов, что это за разработчик, который не умеет гуглить). Если
+вы найдете более оптимальное или эффективное с точки зрения
+производительности решение, поделитесь им в комментариях или пришлите
+мне в личку, я обязательно добавлю его в список. Единственное условие
+— решение должно быть не просто другим, а лучшим по объективным
+причинам. Я старался выбирать задачи, которые, во-первых, можно без
+особого труда (т.е. без "плясок с бубном") решить на обоих языках, во-
+вторых, можно решить аналогичным или хотя бы похожим образом. Отчасти
+поэтому некоторые решения могут выглядеть нетипичными для того или
+иного языка. Это опять же обусловлено сравнением между функционалом и
+конструкциями JavaScript и Python. Приветствуются любые конструктивные
+замечания и предложения. Список задач:  1. Вывести сообщение "Hello
+world!" 2. Сложить два числа 3. Извлечь квадратный корень из числа 4.
+Вычислить площадь треугольника 5. Произвести обмен значениями между
+переменными 6. Функция для получения случайного целого числа в
+заданном диапазоне 7. Функция для преобразования километров в мили 8.
+Функция для преобразования градусов Цельсия в градусы Фаренгейта 9.
+Функция для определения того, каким является число: положительным,
+отрицательным или нулем 10. Функция для определения того, каким
+является число, четным или нечетным 11. Функция для определения того,
+является ли год високосным 12. Функция для определения наибольшего
+числа 13. Функция для определения того, является ли число простым 14.
+Функция для вывода всех простых чисел в заданном диапазоне 15. Функция
+для вычисления факториала числа 16. Функция для вывода таблицы
+умножения для указанного числа 17. Функция для вычисления суммы чисел
+из последовательности Фибоначчи до указанного 18. Функция для
+вычисления суммы натуральных чисел от 1 до указанного 19. Функция для
+вывода чисел в степени 2 от 1 до указанного 20. Функция для
+определения всех чисел, которые делятся на другое число без остатка
+21. Функция для вычисления наибольшего общего делителя 22. Функция для
+вычисления наименьшего общего кратного 23. Функция для определения
+всех чисел, на которые без остатка делится указанное 24. Простой
+калькулятор 25. Функция для преобразования числа в двоичное
+представление 26. Функция для сложения матриц 27. Функция для
+транспонирования матрицы 28. Функция для определения того, является ли
+строка палиндромом 29. Функция для удаления лишних символов из строки
+30. Функция для сортировки слов в алфавитном порядке 30. Функция для
+определения количества гласных в строке 31. Функция для рисования
+пирамиды 32. Объединить два словаря (объекта) в один 33. Преобразовать
+вложенный список (массив) в одноуровневый (плоский) 34. Копировать
+список (массив) (сделать его срез) 35. Перебрать ключи и значения
+словаря (объекта) 36. Отсортировать словарь (объект) по ключам и
+значениям 37. Определить, является ли список (массив) пустым 38.
+Объединить два списка (массива) в один 39. Извлечь подстроку из строки
+40. Функция для получения случайного элемента массива 41. Определить
+количество вхождений элемента в массиве 42. Объединить два списка
+(массива) в словарь (объект) 43. Удалить лишние пробелы из строки с
+помощью регулярного выражения 44. Создать перечисления (enum) 45.
+Функция для определения анаграмм 46. "Капитализировать" строку 47.
+Функция для определения всех вариантов строки 48. Создание счетчика
+(таймера) 49. Создание вложенной директории 50. Получение названий
+файлов с расширением ".txt"  1. Вывести сообщение "Hello world!"
+Python print('Hello world!') JavaScript console.log('Hello world!') //
+или alert('Hello world!') Фраза "Hello world" переводится не как
+"Привет, мир", а как "Привет всем" или, если быть более аутентичным,
+"Привет, народ". Вы знали об этом? 2. Сложить два числа Python #
+переменные для чисел num1 = 2 num2 = 4 # num1, num2 = 2, 4 - так
+делать можно, но не рекомендуется  # переменная для суммы sum = num1 +
+num2  # f-строки позволяют интерполировать переменные print(f'{num1} +
+{num2} = {sum}') # 2 + 4 = 6 JavaScript const num1 = 4 const num2 = 2
+// const num1 = 4, num2 = 2 - так делать можно, но не рекомендуется
+const sum = num1 + num2  // для интерполяции переменных в `JS`
+используются шаблонные или строковые литералы console.log(`${num1} +
+${num2} = ${sum}`) // 2 + 4 = 6 3. Извлечь квадратный корень из числа
+Python num = 4  # получаем 2.0 sqrt = num ** 0.5  # встроенная функция
+`int()` преобразует число в целое print(f'Квадратным корнем {num}
+является {int(sqrt)}') # Квадратным корнем 4 являет  # для выполнения
+математических операций в `Python` # имеется специальный модуль from
+math import sqrt print(sqrt(4)) # 2.0 JavaScript const num = 4  //
+получаем 2, поэтому необходимость в округлении числа до целого
+отсутствует const sqrt = num ** 0.5  console.log(`Квадратным корнем
+${num} является ${sqrt}`)  // для выполнения математических операций в
+`JS` // имеется глобальный объект console.log(Math.sqrt(4)) // 2 4.
+Вычислить площадь треугольника Здесь можно почитать про различные
+способы вычисления площади треугольника. Если a, b и c — три стороны
+треугольника, то согласно формуле Герона для того, чтобы вычислить
+площадь треугольника,  сначала необходимо вычислить разность
+полупериметра и каждой его стороны затем найти произведение полученных
+чисел, умножить результат на полупериметр и найти корень из
+полученного числа  p = (a + b + c) / 2 s = √(p * (p - a) * (p - b) *
+(p - c)) p — это полупериметр, а s — площадь. Python a = 5 b = 6 c = 7
+# вычисляем полупериметр p = (a + b + c) / 2 # вычисляем площадь s =
+(p * (p - a) * (p - b) * (p - c)) ** 0.5  # `round(num, count)`
+используется для округления числа в ближайшую сторону # `count` -
+количество цифр после запятой print(f'Площадь треугольника со
+сторонами {a}, {b} и {c} равняется {round(s, 2)}') JavaScript const a
+= 5 const b = 6 const c = 7  const p = (a + b + c) / 2 const s = (p *
+(p - a) * (p - b) * (p - c)) ** 0.5  // в `JS` метод `Math.round()`
+округляет число до целого в ближайшуй сторону, // поэтому мы
+используем метод `toFixed(count)` console.log(`Площадь треугольника со
+сторонами ${a}, ${b} и ${c} равняется ${s.toFixed(2)}`) 5. Произвести
+обмен значениями между переменными Python x = 5 y = 10  # с помощью
+дополнительной (временной) переменной t = x x = y y = t  # такой трюк
+в `JS` провернуть нельзя, # но там есть другой x, y = y, x  # с
+помощью сложения и вычитания x = x + y y = x - y x = x - y  # c
+помощью умножения и деления x = x * y y = x / y x = x / y  # с помощью
+исключающего ИЛИ (XOR) x = x ^ y y = x ^ y x = x ^ y JavaScript // в
+целом, все то же самое, за исключением следующего: // переменные
+должны объявляться с помощью ключевого слова `let`, // чтобы они были
+мутабельными (изменяемыми) // в `Python` по умолчанию все переменные
+являются мутабельными let x = 5 let y = 10  let t = x x = y y = t  //
+трюк на `JS` // обратите внимание на ; перед [ ;[x, y] = [y, x]  // с
+помощью сложения и вычитания // c помощью умножения и деления // с
+помощью исключающего ИЛИ (XOR) 6. Функция для получения случайного
+целого числа в заданном диапазоне Python В Python для этого существует
+специальный модуль: # импортируем метод из модуля from random import
+randint  # такая функция называется лямбдой get_random_int = lambda
+min, max: randint(min, max)  print(f'Случайное целое число в диапазоне
+от 0 до 100: {get_random_int(0, 100)}') JavaScript В JS готовой
+функции для этого нет, поэтому придется реализовать ее самостоятельно:
+// такая функция называется стрелочной // ~~ - это сокращение для
+`Math.floor()` - округление числа до целого в меньшую сторону //
+`Math.random()` возвращает случайное число от 0 до 1 const
+getRandomInt = (min, max) => ~~(min + Math.random() * (max - min + 1))
+console.log(`Случайное целое число в диапазоне от 0 до 100:
+${getRandomInt(0, 100)}`) 7. Функция для преобразования километров в
+мили Python # запрашиваем км у "юзера" с помощью `input()` # `float()`
+преобразует строку в число с запятой km = float(input('Введите
+значение в км: '))  # фактор преобразования f = 0.621371  # вычисляем
+мили m = km * f # km = m / f  print(f'{km} километров - это {round(m,
+2)} миль') JavaScript // запрашиваем км у юзера с помощью `prompt()`
+// `Number()` преобразует строку в число const km =
+Number(prompt('Введите значение в км: '))  const f = 0.621371  const m
+= km * f  alert(`${km} километров - это ${m.toFixed(2)} миль`) 8.
+Функция для преобразования градусов Цельсия в градусы Фаренгейта
+Python # запрашиваем градусы Цельсия у юзера c = float(input('Введите
+значение в градусах Цельсия: '))  # преобразуем Цельсий в Фаренгейт f
+= (c * 1.8) + 32 # c = (f - 32) / 1.8  print(f'{c} градусов Цельсия -
+это {round(f, 2)} градусов Фаренгейта') JavaScript // запрашиваем
+градусы Цельсия у юзера const c = Number(prompt('Введите значение в
+градусах Цельсия: '))  const f = c * 1.8 + 32  alert(`${c} градусов
+Цельсия - это ${f.toFixed(2)} градусов Фаренгейта`) 9. Функция для
+определения того, каким является число: положительным, отрицательным
+или нулем Python # сигнатура обычной функции # отступы имеют
+принципиальное значение, # обозначая блоки кода def is_pos_neg(n):  #
+если  if n > 0:    return 'Positive'  # иначе если  elif n == 0:
+return 'Null'  # иначе  else:    return 'Negative'  print(
+is_pos_neg(    # преобразуем строку в число c запятой    float(
+input('Number: ')    )  ) ) JavaScript // сигнатура обычной функции //
+фигурные скобки имеют принципиальное значение, // обозначая блоки кода
+function isPosNeg(n) {  // если  if (n > 0) {    return 'Positive'  //
+иначе если  } else if (n === 0) {    return 'Null'  // иначе  } else {
+return 'Negative'  } }  alert(  isPosNeg(    // `+` (унарный
+префиксный плюс) - это сокращение для `Number()`    +prompt('Number:
+')  ) ) 10. Функция для определения того, каким является число, четным
+или нечетным Python # это называется коротким вычислением # истина if
+условие else ложь is_odd_even = lambda n: 'Even' if n % 2 == 0 else
+'Odd'  print(  is_odd_even(    float(      input('Number: ')    )  ) )
+JavaScript // тернарный оператор // условие ? истина : ложь //
+обратите внимание, что в `JS` имеется 2 оператора равенства //
+старайтесь всегда использовать `===` const isOddEven = (n) => (n % 2
+=== 0 ? 'Even' : 'Odd')  alert(  isOddEven(    prompt('Number: ')  ) )
+Раз уж мы заговорили про наличие 2 операторов равенства в JS, здесь же
+обращу ваше внимание на следующее:  логическими значениями в Python
+являются True и False (с большой буквы), а в JS — true и false
+индикатором отсутствия значения в Python является None, а в JS у нас
+целых 3 таких индикатора — undefined, null и NaN  11. Функция для
+определения того, является ли год високосным Високосным является год,
+который делится на 4 без остатка, за исключением столетий
+(оканчивающихся на 00). В последнем случае год будет високосным, если
+делится без остатка на 400. Python def is_leap_year(year):  if (year %
+4) == 0:    if (year % 100) == 0:      if (year % 400) == 0:
+return 'Leap'      else:        return 'Not leap'    else:      return
+'Leap'  else:    return 'Not leap'  # функцию можно переписать с
+помощью логических операторов `and` (И), `or` (ИЛИ) и `not` (НЕ) def
+is_leap_year(year):  # `\` используется для объединения нескольких
+строк кода  # в один блок  if (year % 4) == 0 and (year % 100) == 0
+and (year % 400) == 0 \  or (year % 4) == 0 and not (year % 100) == 0:
+return 'Leap'  else:    return 'Not leap'  print(  is_leap_year(
+int(      input('Year: ')    )  ) ) JavaScript function
+isLeapYear(year) {  if (year % 4 === 0) {    if (year % 100 === 0) {
+if (year % 400 === 0) {        return 'Leap'      } else {
+return 'Not leap'      }    } else {      return 'Leap'    }  } else {
+return 'Not leap'  } }  // функцию можно переписать с помощью
+логических операторов `&&` (И), `||` (ИЛИ) и `!` (НЕ) // объединение
+нескольких строк кода в один блок // происходит автоматически function
+isLeapYear(year) {  if (    (year % 4 === 0 && year % 100 === 0 &&
+year % 400 === 0) ||    (year % 4 === 0 && !(year % 100 === 0))  ) {
+return 'Leap'  } else {    return 'Not leap'  } }  alert(  isLeapYear(
+// еще одна функция для преобразования значения в целое число    //
+второй аргумент - система счисления (в данном случае десятичная)
+parseInt(      prompt('Year: '),      10    )  ) ) 12. Функция для
+определения наибольшего числа Python def get_largest_num(n1, n2, n3):
+if (n1 >= n2) and (n1 >= n2):    return n1  elif (n2 >= n1) and (n2 >=
+n3):    return n2  else:    return n3  print(get_largest_num(1, 3, 2))
+# 3  # существует встроенная функция print(max(3, 1, 2)) JavaScript
+function getLargestNum(n1, n2, n3) {  if (n1 >= n2 && n1 >= n3) {
+return n1  } else if (n2 >= n1 && n2 >= n3) {    return n2  } else {
+return n3  } }  console.log(getLargestNum(1, 3, 2)) // 3  //
+существует встроенная функция console.log(Math.max(3, 1, 2)) 13.
+Функция для определения того, является ли число простым Простым
+является число, которое больше 1 и делится только на себя и 1.
+Простыми являются числа 2, 3, 5, 7 и т.д. А число 6, например, таковым
+не является, поскольку является составным: 2 * 3 = 6. Python def
+is_prime(n):  if n > 1:    # `range()` осуществляет перебор (итерацию)
+в указанном количестве    # возможные сигнатуры:    # `range(end)`
+# `range(start, end)`    # `range(start, end, step)`    for i in
+range(2, n):      # если имеется число, на которое `n` делится без
+остатка      if (n % i) == 0:        return 'Not prime'    # если
+такого числа нет    return 'Prime'  # если число < 1  return 'Invalid'
+print(  is_prime(    int(      input('Number: ')    )  ) ) JavaScript
+// в `JS` не существует аналога `range()`, // поэтому функцию придется
+реализовать по-другому function isPrime(n) {  if (n > 1) {    let i =
+2    // выполнять блок кода до тех пор, пока...    while (i < n) {
+if (n % i === 0) {        return 'Not prime'      }      i++    }
+return 'Prime'  }  return 'Invalid' }  alert(  isPrime(    parseInt(
+prompt('Number: '),      10    )  ) ) 14. Функция для вывода всех
+простых чисел в заданном диапазоне Python def get_primes(min, max):
+primes = []  for n in range(min, max + 1):    if n > 1:      for i in
+range(2, n):        if (n % i) == 0:          # оператор `break`
+используется для выхода из цикла          break      else:        #
+`append()` помещает элемент в конец списка        primes.append(n)
+return primes  print(get_primes(1, 100)) JavaScript function
+getPrimes(min, max) {  const primes = []  for (let i = min; i <= max;
+i++) {    if (i > 1) {      // индикатор того, что число является
+простым      let isPrime = true      for (let j = 2; j < i; j++) {
+if (i % j === 0) {          isPrime = false          break        }
+}      if (isPrime) {        // `push()` помещает элемент в конец
+массива        primes.push(i)      }    }  }  return primes }
+console.log(getPrimes(1, 100)) 15. Функция для вычисления факториала
+числа Факториал — это произведение всех целых чисел от 1 до
+указанного. Например, факториалом числа 6 является 1 * 2 * 3 * 4 * 5 *
+6 = 720. "Указанное число" должно быть положительным. В качестве
+небольшой оптимизации следует принять во внимание, что факториалом
+чисел 1 и 2 являются, соответственно, 1 и 2. Python def
+get_factorial(n):  if n < 0: return 'Invalid'  if n < 2: return n  #
+это называется рекурсией  # чтобы понять рекурсию, необходимо сначала
+понять рекурсию ;)  return n * get_factorial(n - 1)
+print(get_factorial(6)) # 720 JavaScript function getFactorial(n) {
+if (n < 0) return 'Invalid'  if (n < 2) return n  return n *
+getFactorial(n - 1) }  console.log(getFactorial(6)) // 720 16. Функция
+для вывода таблицы умножения для указанного числа Python def
+get_mult_table(n):  for i in range(1, 11):    print(f'{n} * {i} = {n *
+i}')  get_mult_table(9) JavaScript function getMultTable(n) {  for
+(let i = 1; i < 11; i++) {    console.log(`${n} * ${i} = ${n * i}`)  }
+}  getMultTable(9) 17. Функция для вычисления суммы чисел из
+последовательности Фибоначчи до указанного Последовательность
+Фибоначчи — это последовательность целых чисел 0, 1, 1, 2, 3, 5, 8 и
+т.д. Два первых числа — это 0 и 1. Последующие числа — это результат
+сложения двух предыдущих. Python # рекурсивная реализация будет
+гораздо менее производительной def get_fibonacci_sum(n):  if n < 0:
+return 'Invalid'  if n <= 1: return n   a = 1  b = 1   for i in
+range(3, n + 1):    c = a + b    a = b    b = c   return b
+print(get_fibonacci_sum(10)) # 55 JavaScript function
+getFibonacciSum(n) {  if (n < 0) return 'Invalid'  if (n <= 1) return
+n   let a = 1  let b = 1   for (let i = 3; i <= n; i++) {    let c = a
++ b    a = b    b = c  }   return b }
+console.log(getFibonacciSum(10)) // 55 18. Функция для вычисления
+суммы натуральных чисел от 1 до указанного Натуральные числа — числа,
+возникающие естественным образом при счете (1, 2, 3, 4, 5, 6, 7 и
+т.д.). Python def get_natural_sum(n):  if n < 0: return 'Invalid'   s
+= 0   while n > 0:    s += n    n -= 1   return s  print(
+get_natural_sum(10) )  # с помощью лямбда-функции get_nat_sum = lambda
+n: 'Invalid' if n < 0 else int(n * (n + 1) / 2)  print(
+get_nat_sum(10) ) JavaScript function getNaturalSum(n) {  if (n < 0)
+return 'Invalid'   let s = 0   while (n > 0) {    s += n    n -= 1  }
+return s }  console.log(  getNaturalSum(10) )  // с помощью стрелочной
+функции const getNatSum = (n) => n < 0 ? 'Invalid' : n * (n + 1) / 2
+console.log(  getNatSum(10) ) 19. Функция для вывода чисел в степени 2
+от 1 до указанного Python def get_power_of_2(n):  # `r` - список с
+результатами  # `list(iterable)` создает список  # `iterable` -
+итерируемая или перебираемая сущность  # `map(function, iterable)` -
+вызывает `function` для каждого элемента в `iterable  r =
+list(map(lambda x: 2 ** x, range(1, n + 1)))   for i in range(n):    #
+`r[i]` извлекает элемент с указанным индексом    print(f'2 ** {i + 1}
+= {r[i]}')  get_power_of_2(10) JavaScript function getPowerOf2(n) {
+// `Array.from(iterable, function)` - создает массив, в том числе с
+помощью функции,  // вызываемой для каждого элемента массива  //
+`length` - длина создаваемого массива  // `function` принимает элемент
+и его индекс  const r = Array.from({ length: n }, (_, i) => 2 ** (i +
+1))   for (const i in r) {    // `r[i]` извлекает элемент с указанным
+индексом    console.log(`2 ** ${+i + 1} = ${r[i]}`)  } }
+getPowerOf2(10) 20. Функция для определения всех чисел, которые
+делятся на другое число без остатка Python # создаем список, первым
+элементом которого является `10`, с шагом `10`, до `210` nums =
+list(map(lambda x: x, range(10, 210, 10)))  # `filter(function,
+iterable)` выполняет фильтрацию списка # `function` возвращает
+логическое значение - критерий фильтрации div_nums = lambda n:
+list(filter(lambda x: (x % n) == 0, nums))  print(div_nums(6))
+JavaScript const nums = Array.from({ length: 10 }, (_, i) => i > 0 ?
+(i + 1) * 10 : 10)  // `filter(function)` возвращает отфильтрованный
+массив const div_nums = (n) => nums.filter(_n => _n % n === 0)
+console.log(div_nums(6)) 21. Функция для вычисления наибольшего общего
+делителя Наибольший общий делитель (он же наивысший общий фактор) —
+это положительное целое число, на которое без остатка делятся 2 (и
+более) других числа. Например, число 12 является НОД чисел 36 и 48.
+Python def get_gcd(x, y):  # переменная для меньшего числа  s = x   if
+x > y: s = y   for i in range(1, s + 1):    if ((x % i == 0) and (y %
+i == 0)):      # в данном случае мы можем "переиспользовать"
+переменную `s`      s = i   return s  print(get_gcd(48, 36)) # 12
+JavaScript function getGcd(x, y) {  let s = x   if (x > y) s = y   //
+мы не можем переопределять переменную `s`,  // потому что используем
+ее в цикле  let r = 1   for (let i = 1; i <= s; i++) {    if (x % i
+=== 0 && y % i === 0) {      r = i    }  }   return r }
+console.log(getGcd(24, 54)) // 6 22. Функция для вычисления
+наименьшего общего кратного Наименьшее общее кратное — это
+положительное целое число, которое делится без остатка на два (и
+более) других числа. Например, число 84 является НОК чисел 12 и 14.
+Python def get_lcm(x, y):  # переменная для большего числа  g = x   if
+x < y: g = y   # осторожно: потенциально бесконечный цикл  while True:
+if (g % x == 0) and (g % y == 0):      break    g += 1   return g
+print(get_lcm(12, 14)) # 84 JavaScript function getLCM(x, y) {  let g
+= x   if (x < y) g = y   // осторожно: потенциально бесконечный цикл
+// в данном случае мы можем переиспользовать переменную `g`  while
+(true) {    if (g % x === 0 && g % y === 0) {      break    }    g +=
+1  }   return g }  console.log(getLCM(24, 54)) // 216 23. Функция для
+определения всех чисел, на которые без остатка делится указанное
+Python def get_factors(n):  f = []   for i in range(1, n + 1):    if n
+% i == 0:      f.append(i)   return f  print(get_factors(123)) # [1,
+3, 41, 123] JavaScript function getFactors(n) {  const f = []   for
+(let i = 1; i <= n; i++) {    if (n % i === 0) {      f.push(i)    }
+}   return f }  console.log(getFactors(321)) // [1, 3, 107, 321] 24.
+Простой калькулятор Почему бы не реализовать его на классах? Python
+class Calc:  # инициализация класса  def __init__(self):    #
+результат    self.result = 0   # метод для добавления числа  def
+add(self, n):    self.result += n    # возвращаем экземпляр, чтобы
+иметь возможность выполнять операции в цепочке    return self   # для
+вычитания  def sub(self, n):    self.result -= n    return self   #
+для умножения  def mult(self, n):    self.result *= n    return self
+# для деления  def div(self, n):    self.result /= n    return self  #
+создаем экземпляр calc = Calc()  # выполняем операции
+calc.add(5).sub(3).mult(4).div(2)  # выводим результат
+print(int(calc.result)) # 4 JavaScript class Calc {  // инициализация
+класса  constructor() {    this.result = 0  }   // в `JS` `this`
+(`self`) явно передавать не требуется  add(n) {    this.result += n
+// возвращаем экземпляр, чтобы иметь возможность выполнять операции в
+цепочке    return this  }   sub(n) {    this.result -= n    return
+this  }   mult(n) {    this.result *= n    return this  }   div(n) {
+this.result /= n    return this  } }  // создаем экземпляр const calc
+= new Calc()  // выполняем операции calc.add(5).sub(3).mult(4).div(2)
+// выводим результат console.log(calc.result) // 4 Лично я предпочитаю
+функциональный стиль программирования, поэтому классов в примерах
+больше не будет. 25. Функция для преобразования числа в двоичное
+представление Такое преобразование выполняется посредством деления
+числа на 2 с выводом остатка в обратном порядке. Проще показать:
+Python def convert_to_binary(n):  if n < 0: return 'Invalid'  if n >
+1:    # `//` - оператор деления с округлением в меньшую сторону    #
+рекурсия    convert_to_binary(n // 2)  # конкатенация вывода  # в `JS`
+такой "фичи" нет  print(n % 2, end = '')  convert_to_binary(34) #
+вывод результата print() # 100010 JavaScript function
+convertToBinary(n) {  if (n < 0) return 'Invalid'  // переменная для
+двоичного представления  const binary = []  while (n >= 1) {    //
+метод `unshift()` помещает элемент в начало массива
+binary.unshift(n % 2)    n = ~~(n / 2)  }  // объединяем элементы
+массива в строку  return binary.join('') }
+console.log(convertToBinary(34)) // 100010  // в `JS` есть встроенная
+функция `toString(radix)`, // где `radix` - это система счисления
+console.log((34).toString(2)) // 100010 26. Функция для сложения
+матриц Матрица может быть представлена в виде вложенного списка
+(массива), где каждый элемент — это строка матрицы. Пример матрицы
+3x2, где 3 — это количество строк, а 2 — количество столбцов: [  [2,
+4],  [6, 8],  [1, 3] ] Доступ к первой строке матрицы x можно получить
+через x[0], а доступ к первому элементу первой строки — через x[0][0].
+Обратите внимание: эта задача относится к категории продвинутых.
+Можете пропустить ее, если читаете статью в первый раз. Python def
+add_matrices(x, y):  # результирующая матрица  result = [    [0, 0,
+0],    [0, 0, 0],    [0, 0, 0]  ]   # `len()` возвращает длину списка
+# выполняем итерацию по количеству строк  for i in range(len(x)):    #
+выполняем итерацию по количеству столбцов    for j in
+range(len(x[0])):      result[i][j] = x[i][j] + y[i][j]   return
+result  # матрица раз x = [  [1, 2, 3],  [4, 5, 6],  [7, 8, 9] ]  #
+матрица два y = [  [9, 8, 7],  [3, 2, 1],  [6, 5, 4] ]
+print(add_matrices(x, y)) ''' [  [10, 10, 10],  [7, 7, 7],  [13, 13,
+13] ] '''  # данная техника называется представлением списков (list
+comprehension) add_matrices_advanced = lambda x, y: [[x[i][j] +
+y[i][j] for j in range(len(x[0]))] for i in range(len(x))]
+print(add_matrices_advanced(x, y)) JavaScript function addMatrices(x,
+y) {  const result = [    [0, 0, 0],    [0, 0, 0],    [0, 0, 0]  ]
+// выполняем итерацию по количеству строк  for (const i in x) {    //
+выполняем итерацию по количеству столбцов    for (const j in x[0]) {
+result[i][j] = x[i][j] + y[i][j]    }  }   return result }  const x =
+[  [1, 2, 3],  [4, 5, 6],  [7, 8, 9] ]  const y = [  [9, 8, 7],  [3,
+2, 1],  [6, 5, 4] ]  console.log(addMatrices(x, y)) /* [  [10, 10,
+10],  [7, 7, 7],  [13, 13, 13] ] */  // стрелочная функция //
+`map(function)` вызывает `function` для каждого элемента массива //
+она принимает 2 параметра: элемент и его индекс // и возвращает новый
+массив const addMatricesAdvanced = (x, y) =>  x.map((_, i) =>
+x[i].map((_, j) => x[i][j] + y[i][j]))
+console.log(addMatricesAdvanced(x, y)) 27. Функция для
+транспонирования матрицы Транспонированная матрица — это матрица,
+полученная из исходной посредством замены строк на столбцы. Обратите
+внимание: эта задача относится к категории продвинутых. Python def
+transpose_matrix(x):  # мы хотим преобразовать матрицу 3x2 в матрицу
+2x3  # количество строк `x` количество столбцов  result = [    [0, 0,
+0],    [0, 0, 0]  ]   for i in range(len(x)):    for j in
+range(len(x[0])):      result[j][i] = x[i][j]   return result  x = [
+[1, 2],  [4, 5],  [7, 8] ]  print(transpose_matrix(x)) ''' [  [1, 4,
+7],  [2, 5, 8] ] '''  # представление списков
+transpose_matrix_advanced = lambda x: [[x[j][i] for j in
+range(len(x))] for i in range(len(x[0]))]
+print(transpose_matrix_advanced(x)) JavaScript function
+transposeMatrix(x) {  const result = [    [0, 0, 0],    [0, 0, 0]  ]
+for (const i in x) {    for (const j in x[0]) {      result[j][i] =
+x[i][j]    }  }   return result }  const x = [  [1, 2],  [4, 5],  [7,
+8] ]  console.log(transposeMatrix(x)) /* [  [1, 4, 7],  [2, 5, 8] ] */
+// стрелочная функция const transposeMatrixAdvanced = (x) =>
+x[0].map((_, i) => x.map((_, j) => x[j][i]))
+console.log(transposeMatrixAdvanced(x)) 28. Функция для определения
+того, является ли строка палиндромом Палиндром — это строка (слово,
+число и т.д.), которая читается одинаково в обоих направлениях.
+Примеры: "borrow or rob", "а роза упала на лапу Азора". Python def
+is_palindrome(str):  # ''.join() - объединение в строку  # str.split('
+') - преобразование строки в массив по разделителю (в данном случае -
+пробелу)  # ''.join(str.split(' ')) - удаление пробелов из строки  #
+casefold() - нечувствительность к регистру, приведение к нижнему
+регистру  str = ''.join(str.split(' ')).casefold()  # инверсия строки
+- изменение порядка следования букв на противоположный  rev =
+reversed(str)  # сравнение списков  return list(str) == list(rev)
+print(is_palindrome('Borrow or rob')) # True JavaScript function
+isPalindrome(str) {  // `replace()` - удаление пробелов с помощью
+регулярного выражения  // `toLowerCase()` - приведение к нижнему
+регистру  str = str.replace(/\s/g, '').toLowerCase()  // `split()` -
+преобразование строки в массив  // `reverse()` - инверсия  // `join()`
+- объединение в строку  const rev = str.split('').reverse().join('')
+return str === rev }  console.log(isPalindrome('А роза упала на лапу
+Азора')) // true 29. Функция для удаления лишних символов из строки
+Python # лишние символы symbols = '''!()-[]{};:'"\,<>./?@#$%^&*_~'''
+def clear(str):  # переменная для строки, очищенной от лишних символов
+cleared = ''   # перебираем строку по буквам  for char in str:    #
+если буква не является одним из лишних символов    if char not in
+symbols:      # добавляем ее к очищенной строке      cleared += char
+return cleared  print(  clear('Привет!! - сказал он --- и вошел') ) #
+Привет  сказал он  и вошел JavaScript const symbols =
+`!()-[]{};:'"\,<>./?@#$%^&*_~`  function clear(str) {  let cleared =
+''   for (const char of str) {    if (!symbols.includes(char)) cleared
++= char  }   return cleared }  console.log(  clear('Привет!! - сказал
+он --- и вошел') ) // Привет  сказал он  и вошел 30. Функция для
+сортировки слов в алфавитном порядке Python def sort_words(str):  #
+разбиваем строку на массив слов и  # приводим каждое слово к нижнему
+регистру  words = [word.lower() for word in str.split()]  # сортируем
+слова  words.sort()  return words  print(sort_words('Остро нуждающаяся
+в сортировке строка')) ''' [  'в',  'нуждающаяся',  'остро',
+'сортировке',  'строка' ] ''' JavaScript function sortWords(str) {  //
+разбиваем строку на массив слов по пробелу и  // приводим каждое слово
+к нижнему регистру  const words = str.split(' ').map((word) =>
+word.toLowerCase())  words.sort()  return words }
+console.log(sortWords('Остро нуждающаяся в сортировке строк')) /* [
+'в',  'нуждающаяся',  'остро',  'сортировке',  'строка' ] */ 30.
+Функция для определения количества гласных в строке Python # все
+гласные латиницы vowels = 'aeiou'  def get_vowels_count(str):  str =
+str.casefold()   # `fromkeys(iterable, initialValue)`  count =
+{}.fromkeys(vowels, 0)   for char in str:    # если буква гласная
+if char in count:      # увеличиваем значение соответствующего ключа
+словаря на 1      count[char] += 1   return count  str = 'Hello! How
+are you today?' print(  get_vowels_count(str) ) # { 'a': 2, 'e': 2,
+'i': 0, 'o': 4, 'u': 1 } JavaScript const vowels = 'aeiou'  function
+getVowelsCount(str) {  str = str.toLowerCase()   // `[...vowels]` -
+преобразуем строку в массив с помощью spread-оператора  //
+`reduce(function, initialValue)` - аккумулирует результат на основе
+значений массива  const count = [...vowels].reduce((a, c) => {    a[c]
+= 0    return a  }, {})   for (const char of str) {    if
+(vowels.includes(char)) {      count[char] += 1    }  }   return count
+}  const str = 'Hello! How are you today?' console.log(
+getVowelsCount(str) ) // { 'a': 2, 'e': 2, 'i': 0, 'o': 4, 'u': 1 }
+31. Функция для рисования пирамиды Обратите внимание: эта задача
+(точнее, 3 задачи) относятся к категории продвинутых. Это последняя
+относительно сложная задача, дальше будет намного проще. Половина
+пирамиды Python def draw_half_pyramid(rows):  # для каждой строки  for
+i in range(rows):    # рисуем `*` в количестве,    # соответствующем
+порядковому номеру строки    for j in range(i + 1):      # `stdout`
+остается открытым      print('* ', end = '')    # переход на новую
+строку    if (i + 1) < rows: print('\n')  draw_half_pyramid(5) ''' *
+* *  * * *  * * * *  * * * * * ''' JavaScript function
+drawHalfPyramid(rows) {  // строка со звездочками  let pyramid = ''
+// для каждой строки  for (let i = 1; i <= rows; i++) {    // рисуем
+`*` в количестве...    for (let j = 0; j < i; j++) {      pyramid +=
+'* '    }    // переход на новую строку    pyramid += '\n'  }   return
+pyramid }  console.log(drawHalfPyramid(5)) /* *  * *  * * *  * * * *
+* * * * * */ Перевернутая половина пирамиды Python def
+draw_inverted_half_pyramid(rows):  # движемся в обратную сторону  for
+i in range(rows, 0, -1):    for j in range(0, i):      print('* ', end
+= '')    if i > 1: print('\n')  draw_inverted_half_pyramid(5) ''' * *
+* * *  * * * *  * * *  * *  * ''' JavaScript function
+drawInvertedHalfPyramid(rows) {  let pyramid = ''  for (let i = rows;
+i > 0; i--) {    for (let j = 0; j < i; j++) {      pyramid += '* '
+}    pyramid += '\n'  }  return pyramid }
+console.log(drawInvertedHalfPyramid(5)) /* * * * * *  * * * *  * * *
+* *  * */ Полная пирамида Python def draw_full_pyramid(rows):  k = 0
+p = ''  for i in range(1, rows + 1):    for j in range(1, (rows - i) +
+1):      p += '  '    while k != (2 * i - 1):      p += '# '      k +=
+1    if i < rows: p += '\n'    k = 0  return p
+print(draw_full_pyramid(5)) '''        #      # # #    # # # # #  # #
+# # # # # # # # # # # # # # ''' JavaScript На JS я решу эту задачу не
+таким лаконичным, но более понятным способом: function
+drawFullPyramid(rows) {  let levels = ''   const mid = ~~((2 * rows -
+1) / 2)   for (let row = 0; row < rows; row++) {    let level = ''
+for (let col = 0; col < 2 * rows - 1; col++) {      // в данном случае
+мы сразу формируем тот или иной уровень      // в зависимости от
+положения колонки -      // до или после середины      level += mid -
+row <= col && col <= mid + row ? '#' : ' '    }     levels += level +
+'\n'  }   return levels }  console.log(drawFullPyramid(5)) /*        #
+# # #    # # # # #  # # # # # # # # # # # # # # # # */ 32. Объединить
+два словаря (объекта) в один Python dict_1 = { 'a': 1, 'b': 2 } dict_2
+= { 'b': 3, 'c': 4 }  # совпадающие ключи перезаписываются
+print(dict_1 | dict_2) # { 'a': 1, 'b': 3, 'c': 4 }  # `**` -
+распаковка словарей print({ **dict_1, **dict_2 }) JavaScript const
+obj1 = { a: 1, b: 2 } const obj2 = { b: 3, c: 4 }  // совпадающие
+ключи перезаписываются console.log(  Object.assign(obj1, obj2) ) // {
+a: 1, b: 3, c: 4 }  // `...` - распаковка объектов console.log({
+...obj1, ...obj2 }) 33. Преобразовать вложенный список (массив) в
+одноуровневый (плоский) Python my_list = [[1], [2, 3], [4, 5, 6]]  #
+представление списков flat_list_1 = [n for sub in my_list for n in
+sub] print(flat_list_1) # [1, 2, 3, 4, 5, 6]  # встроенная функция
+`sum()` flat_list_3 = sum(my_list, []) print(flat_list_3)  # модуль
+`itertools` import itertools  flat_list_2 =
+list(itertools.chain(*my_list)) print(flat_list_2) JavaScript const
+myList = [[1], [2, 3], [4, 5, 6]]  // встроенный метод `flat()` const
+flatList1 = myList.flat() console.log(flatList1) // [1, 2, 3, 4, 5, 6]
+// встроенный метод `reduce()` const flatList2 = myList.reduce((a, c)
+=> {  c.forEach((i) => a.push(i))  return a }, [])
+console.log(flatList2)  // двойная итерация // ключевое слово `const`
+делает иммутабельным // значение самой переменной, а не массива const
+flatList3 = [] for (const i of myList) {  for (const j of i) {
+flatList3.push(j)  } } console.log(flatList3) 34. Копировать список
+(массив) (сделать его срез) Python # список (list) my_list = [1, 2, 3,
+4, 5]  # сигнатура # `[start:end:step]`  # полная копия
+print(my_list[:]) # [1, 2, 3, 4, 5]  # от второго до пятого элемента
+print(my_list[1:5]) # [2, 3, 4]  # через 1 элемент, начиная с первого
+print(my_list[::2]) # [1, 3, 5]  # извлекаем последний элемент # это
+не относится к копированию print(my_list[-1]) # 5 JavaScript // массив
+(array) const myList = [1, 2, 3, 4, 5]  // сигнатура // `slice(start,
+end)` // данный метод не такой мощный как питоновский аналог  //
+полная копия console.log(myList.slice()) // [1, 2, 3, 4, 5]  // от
+второго до пятого console.log(myList.slice(1, 5)) // [2, 3, 4]  //
+последний элемент - хак console.log(...myList.slice(-1)) // 5  //
+последний элемент - не хак console.log(myList[myList.length - 1])  //
+последний элемент - скоро, в `Chrome` уже работает
+console.log(myList.at(-1)) // 5 35. Перебрать ключи и значения словаря
+(объекта) Python # словарь (dictionary) dict = { 1: 'a', 2: 'b', 3:
+'c' }  # ключи и значения for key in dict:  print(key, dict[key]) '''
+1 a 2 b 3 c '''  # еще ключи и значения for key, val in dict.items():
+print(key, val) # или for key, val in dict.iteritems():  print(key,
+val)  # ключи for key in dict.keys():  print(key)  # значения for val
+in dict.values():  print(val) JavaScript // объект (object) const obj
+= { 1: 'a', 2: 'b', 3: 'c' }  // ключи и значения for (const key in
+obj) {  console.log(key, obj[key]) } /* 1 a 2 b 3 c */  // еще ключи и
+значение Object.entries(obj).forEach(([key, val]) => {
+console.log(key, val) }) // или for (const [key, val] of
+Object.entries(obj)) {  console.log(key, val) }  // ключи
+Object.keys(obj).forEach((key) => {  console.log(key) })  // значения
+for (const val of Object.values(obj)) {  console.log(val) } 36.
+Отсортировать словарь (объект) по ключам и значениям Python dict = {
+1: 'b', 3: 'c', 2: 'a'}  # сортировка по значениям sorted_dict_1 = {
+key: val \  for key, val \  # key - критерий сортировки (в данном
+случае - значение)  in sorted(dict.items(), key = lambda i: i[1]) }
+print(sorted_dict_1) # { 2: 'a', 1: 'b', 3: 'c' }  # сортировка по
+ключам sorted_dict_2 = { key: val for key, val in sorted(dict.items(),
+key = lambda i: i[0]) } print(sorted_dict_2) # { 1: 'b', 2: 'a', 3:
+'c' } JavaScript // объект для примера пришлось изменить // поскольку
+встроенный метод `Object.fromEntries()` // выполняет автоматическую
+сортировку по ключам // при создании объекта из вложенного массива
+const obj = { a: '2', c: '1', b: '3' }  // логику сортировки лучше
+вынести в отдельную функцию // по умолчанию функция выполняет
+сортировку по ключам // благодаря параметру `i` со значением `1` по
+умолчанию const sortObj = (obj, i = 0) =>  Object.fromEntries(    //
+`sort()` принимает функцию для сортировки    // `localeCompare()`
+сравнивает строки с учетом локали    Object.entries(obj).sort((a, b)
+=> a[i].localeCompare(b[i]))  )  // по ключам const sortedObj1 =
+sortObj(obj) console.log(sortedObj1) // { a: '2', b: '3', c: '1' }  //
+по значениям const sortedObj2 = sortObj(obj, 1)
+console.log(sortedObj2) // { c: '1', a: '2', b: '3' } 37. Определить,
+является ли список (массив) пустым Python my_list = []  # `not` if not
+my_list:  print('Empty')  # + `len()` if not len(my_list):
+print('Empty')  # в `JS` так не получится if my_list == []:
+print('Empty') JavaScript const myList = []  // ! - [] -> 0 -> false +
+! - false -> true if (!!myList) {  console.log('Empty') }  // ! - 0 ->
+false -> true if (!myList.length) {  console.log('Empty') }  // самый
+очевидный и надежный способ // или `myList.length === 0` if
+(myList.length < 1) {  console.log('Empty') } 38. Объединить два
+списка (массива) в один Python list_1 = ['a', 'b'] list_2 =
+list(range(3, 5)) list_2.append('a')  # в `Python` списки можно
+конкатенировать путем сложения joined_1 = list_1 + list_2
+print(joined_1) # ['a', 'b', 3, 4, 'a']  # распаковка joined_2 =
+[*list_1, *list_2] print(joined_2)  # исключение дубликатов
+joined_uniq = list(set(joined_1)) print(joined_uniq) # [3, 'b', 'a',
+4]  # модификация списка посредством его расширения
+list_2.extend(list_1) print(list_2) # [3, 4, 'a', 'a', 'b'] JavaScript
+const list1 = ['a', 'b'] // еще один встроенный метод для создания
+массивов const list2 = Array.of(3, 4) list2.push('a')  // распаковка
+const joined1 = [...list1, ...list2] console.log(joined1) // ['a',
+'b', 3, 4, 'a']  // объединение const joined2 = list2.concat(list1)
+console.log(joined2) // [3, 4, 'a', 'a', 'b']  // исключение
+дубликатов // набор (set) сразу преобразуется в обычный массив const
+joinedUniq = [...new Set(joined1)] console.log(joinedUniq) // ['a',
+'b', 3, 4]  // модификация массива путем его расширения
+list2.splice(-1, 0, ...list1) console.log(list2) // [3, 4, 'a', 'b',
+'a'] 39. Извлечь подстроку из строки Python my_str = 'I like Python'
+# по аналогии со списком substr = my_str[2:6] print(substr) # like
+JavaScript const myStr = 'I like JavaScript'  // по аналогии с
+массивом const subStr1 = myStr.slice(2, 6) console.log(subStr1) //
+like  // специальные встроенные методы // deprecated const subStr2 =
+myStr.substr(2, 5) console.log(subStr2) // like  const subStr3 =
+myStr.substring(2, 6) console.log(subStr3) // like // разница между
+методами `substr()` и `substring()` // состоит в том, включается ли
+последний элемент в подстроку 40. Функция для получения случайного
+элемента массива Python import random # import secrets  def
+get_random_item(list):  if not list:    return 'Empty'  else:
+return random.choice(list) # secrets.choice(list)
+print(get_random_item(['a', 3, 'c', 1, 'b'])) # 3 JavaScript //
+функция для получения случайного целого числа const getRandomInt =
+(min, max) => ~~(min + Math.random() * (max - min + 1)) // функция для
+получения случайного элемента const getRandomItem = (arr) =>
+arr[getRandomInt(0, arr.length - 1)]  console.log(getRandomItem(['a',
+3, 'c', 1, 'b'])) // 'b' 41. Определить количество вхождений элемента
+в массиве Python my_list = ['a', 1, 1, 'a', 2, 'b', 'a']  # `count()`
+a_count = my_list.count('a') print(a_count) # 3  # это также работает
+для строк my_str = 'Hello world' l_count = my_str.count('l')
+print(l_count) # 3 JavaScript const myList = ['a', 1, 1, 'a', 2, 'b',
+'a'] const myStr = 'Hello world'  // фильтрация и длина массива const
+a_count = myList.filter((i) => i === 'a').length console.log(a_count)
+// 3  // преобразуем строку в массив const l_count =
+[...myStr].filter((i) => i === 'l').length console.log(l_count) // 3
+42. Объединить два списка (массива) в словарь (объект) Python indexes
+= [0, 1, 2] languages = ['JavaScript', 'Python', 'PHP']  # `zip()` &
+`dict()` my_dict_1 = dict(zip(indexes, languages)) print(my_dict_1) #
+{ 0: 'JavaScript', 1: 'Python', 2: 'PHP' }  # `zip()` и представление
+списков my_dict_2 = { k: v for k, v in zip(indexes, languages) }
+print(my_dict_2) JavaScript const indexes = [0, 1, 2] const languages
+= ['JavaScript', 'Python', 'PHP']  // цикл const obj1 = {} // нам
+нужен не только элемент, но и его индекс // потому что элементы
+первого массива не всегда будут совпадать с индексами for (const i in
+indexes) {  obj1[indexes[i]] = languages[i] } console.log(obj1) // {
+0: 'JavaScript', 1: 'Python', 2: 'PHP' }  // `reduce()` const obj2 =
+indexes.reduce((a, c, i) => {  // `c` - текущий элемент  // `i` - его
+индекс  a[c] = languages[i]  return a }, {}) console.log(obj2) 43.
+Удалить лишние пробелы из строки с помощью регулярного выражения
+Python import re  str_with_spaces = 'some    string  with  many
+spaces   '  # заменяем 2 и более пробела на один # `sub(regexp,
+replacement, string)` str_without_spaces = re.sub(r'\s\s+', ' ',
+str_with_spaces)  print(str_without_spaces) # some string with many
+spaces JavaScript const strWithSpaces = 'some    string  with  many
+spaces   '  // заменяем 2 и более пробела на один //
+`replace(substring | regexp, replacement)` const strWithoutSpaces =
+strWithSpaces.replace(/\s\s+/g, ' ')  console.log(strWithoutSpaces) //
+some string with many spaces 44. Создать перечисления (enum) Python
+from enum import Enum  class Color(Enum):  RED = 1  GREEN = 2  BLUE =
+1  print(Color.RED) # Color.RED  print(Color.GREEN.name) # GREEN
+print(Color.BLUE.value) # 3 В JS не существует такого типа данных, как
+перечисление, но его можно сымитировать, "заморозив" объект:
+JavaScript const Color = Object.freeze({  RED: 1,  GREEN: 2,  BLUE: 3
+})  // value console.log(Color.RED) // 1 45. Функция для определения
+анаграмм Два слова являются анаграммами, если состоят из одинаковых
+букв. Например, анаграммами являются слова "binary" и "brainy", или
+"раздвоение" и "дозревание". Python def is_anagrams(x, y):  # приводим
+слова к нижнему регистру  x = x.lower()  y = y.lower()  if (len(x) ==
+len(y)):    # и сортируем их    sorted_1 = sorted(x)    sorted_2 =
+sorted(y)    if (sorted_1 == sorted_2):      return True    else:
+return False  else:    return False  word_1 = 'Binary' word_2 =
+'brainy'  print(is_anagrams(word_1, word_2)) # True JavaScript
+function isAnagrams(x, y) {  x = x.toLowerCase()  y = y.toLowerCase()
+if (x.length === y.length) {    sorted_x = x.split('').sort().join('')
+sorted_y = y.split('').sort().join('')    if (sorted_x === sorted_y) {
+return true    }    return false  }  return false }  const word1 =
+'Раздвоение' const word2 = 'дозревание' console.log(isAnagrams(word1,
+word2)) // true Обратите внимание: при сравнении строк, состоящих из
+нескольких слов, необходимо также удалять из них все пробелы. 46.
+"Капитализировать" строку Классика. Python my_str = 'hello'  #
+`upper()` + slice cap_str_1 = my_str[0].upper() + my_str[1:]
+print(cap_str_1) # Hello  # `capitilize()` cap_str_2 =
+my_str.capitalize() В JS отсутствует встроенный метод для
+капитализации строки. JavaScript const str = 'hello'  const capStr1 =
+str[0].toUpperCase() + str.slice(1) console.log(capStr1) // Hello  //
+показать всем, что ты крут ;) // деструктуризация и шаблонные литералы
+const capitilize = ([first, ...rest]) =>
+`${first.toUpperCase()}${rest.join('')}`  const capStr2 =
+capitilize(str) console.log(capStr2) 47. Функция для определения всех
+вариантов строки Python # рекурсивно def get_permutations(s, p = [], i
+= 0):  if i == len(s):    p.append(''.join(s))  for j in range(i,
+len(s)):    words = [c for c in s]    words[i], words[j] = words[j],
+words[i]    get_permutations(words, p, i + 1)  return p
+print(get_permutations('qux')) # ['qux', 'qxu', 'uqx', 'uxq', 'xuq',
+'xqu']  # `itertools` from itertools import permutations  per =
+[''.join(p) for p in permutations('baz')]  print(per) # ['baz', 'bza',
+'abz', 'azb', 'zba', 'zab'] JavaScript function getPermutations(str) {
+if (str.length < 2) {    return str.length === 2 ? [str, str[1] +
+str[0]] : [str]  }   return str    .split('')    .reduce(      (a, c,
+i) =>        a.concat(          getPermutations(str.slice(0, i) +
+str.slice(i + 1)).map((v) => c + v)        ),      []    ) }
+console.log(getPermutations('qux')) // ['qux', 'qxu', 'uqx', 'uxq',
+'xqu', 'xuq'] 48. Создание счетчика (таймера) Python import time  def
+timer(time_in_sec):  while time_in_sec:    m, s = divmod(time_in_sec,
+60)    formated = f'{m:02d}:{s:02d}'    print(formated, end = '\r')
+time.sleep(1)    time_in_sec -= 1  timer(5) JavaScript function
+timer(timeInSec) {  const timerId = setInterval(() => {    let m =
+~~(timeInSec / 60)    let s = timeInSec - m * 60    if (m < 10) m =
+'0' + m    if (s < 10) s = '0' + s    console.log(`${m}:${s}`)
+timeInSec -= 1    if (timeInSec < 0) {      clearInterval(timerId)
+}  }, 1000) }  timer(5) 49. Создание вложенной директории Пусть 2
+последних задачки будут посвящены бэку. Python import os  # абсолютный
+путь к текущей директории __dirname__ = os.path.abspath(os.getcwd())
+# небезопасно: при наличии создаваемой директории будет выброшено
+исключение try:  os.makedirs(f'{__dirname__}/parent/child/nested')
+except FileExistsError:  print('Exists')  import distutils.dir_util  #
+безопасно distutils.dir_util.mkpath(f'{__dirname__}/some/dir')
+JavaScript import { dirname } from 'path' import { fileURLToPath }
+from 'url' import { promises as fs } from 'fs'  // абсолютный путь к
+текущей директории const __dirname =
+dirname(fileURLToPath(import.meta.url)) // безопасно // для сравнения
+обработки исключений try {  await
+fs.mkdir(`${__dirname}/parent/child/nested`, { recursive: true }) }
+catch (e) {  console.error(e.message || e) } Обратите внимание:
+приведенный код должен запускаться с помощью команды node filename.
+При этом файл должен быть модулем, т.е. иметь расширение .mjs или же в
+ближайшем package.json должно содержаться поле type со значением
+module. 50. Получение названий файлов с расширением ".txt"
+Предположим, что у нас имеется директория files с тремя файлами в
+формате TXT. Как нам получить названия этих файлов? Python import
+glob, os  __dirname__ = os.path.abspath(os.getcwd()) + '/files'  def
+get_filenames(ext):  filenames = []  # читаем содержимое директории
+`files`  os.chdir(__dirname__)   # если файл имеет указанное
+расширение  for filename in glob.glob(f'*.{ext}'):    # добавляем его
+в список    filenames.append(filename)   # возвращаем список  return
+filenames  print(get_filenames('txt')) # ['baz.txt', 'foo.txt',
+'bar.txt'] JavaScript import { dirname } from 'path' import {
+fileURLToPath } from 'url' import { promises as fs } from 'fs'  const
+__dirname = dirname(fileURLToPath(import.meta.url))  async function
+getFilenames(ext) {  const result = []  // читаем содержимое
+директории `files`  const filenames = await
+fs.readdir(`${__dirname}/files`)   for (const filename of filenames) {
+// если файл имеет указанное расширение    if
+(filename.includes(`.${ext}`)) {      // добавляем его в массив
+result.push(filename)    }  }   return result }  // функция возвращает
+промис getFilenames('txt').then(console.log) // [ 'bar.txt',
+'baz.txt', 'foo.txt' ] Фух… это было утомительно, но, вместе с тем,
+невероятно увлекательно, не правда ли? Как видите, синтаксические
+конструкции и основной функционал JavaScript и Python являются очень
+похожими, а во многом даже идентичными (без учета некоторых
+незначительных отличий), что при необходимости позволяет с
+относительной легкостью перейти с одного языка на другой. Вопрос в
+том, имеется ли необходимость в такой "миграции"? Обратите внимание:
+дальше я выскажу собственное мнение с позиции веб-разработчика.
+Существенное преимущество JavaScript заключается в том, что он не
+нуждается в интерпретаторе, т.е. код на JS выполняется браузером
+напрямую. Это очень сильно облегчает разработку веб-приложений. Если
+мы говорим о REST API, то реализовать его на Express, например,
+намного проще, чем на Django или FastAPI, хотя последний синтаксически
+схож с сочетанием Express и TypeORM или Prisma (во многом благодаря
+широкому использованию декораторов). С другой стороны, если мы говорим
+о реализации, скажем так, продвинутого сервера, то благодаря огромному
+количеству, в том числе, встроенных модулей, Python имеет некоторые
+преимущества перед Node.js. Есть мнение, что у Python имеются
+некоторые проблемы с асинхронностью — у меня не было возможности в
+этом убедиться. В свою очередь, в Node.js в последнее время царит
+некоторая неразбериха за счет одновременного существования двух разных
+подходов к разработке: одного, основанного на колбеках, который
+считается устаревшим, и другого, основанного на промисах и
+async/await, который требует дополнительных усилий по настройке
+окружения и не в полной мере заменяет первый подход. Благодарю за
+внимание и хорошего дня!

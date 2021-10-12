@@ -1,0 +1,182 @@
+Автор: dmitrii_shkudov
+Дата: 2021-09-24T14:19:45.000Z
+Название: Мой рецепт MVI в Android
+Теги: Разработка под Android *, Kotlin *
+Текст:
+Как известно, MVI строится на основе трех компонентов - модели,
+намерения (действия) и состояния экрана. Логика приложения диктуется
+пользователем, например, он хочет загрузить картинку в высоком
+разрешении, и различными внешними эффектами (далее - side-effects),
+например, внезапной потерей соединения.      Мне хотелось создать
+механизм, который будет способен обрабатывать намерения пользователя и
+их следствия (что-то внешнее, например ответ от api). Для этого я
+решил создать три интерфейса-маркера, которые будут отвечать за какое-
+либо событие, состояние экрана и не влияющие на состояние экрана
+уведомления.interface Action interface State interface NewsПодготовка
+Как я уже сказал, у экрана приложения имеется свой State, способный
+меняться из-за действий пользователя и внешних воздействий. Было
+решено создать некую сущность, способную содержать пути наружу (в DI
+модуле конфигурируем как хотим) и обработчик side-effects, чтобы иметь
+инструмент для обработки нашей бизнес логики в ViewModel.open class
+Store<S: State, A: Action, N: News> @Inject constructor(     val
+apiRepository: ApiRepository,     val preferencesRepository:
+PreferencesRepository,     val logger: JuleLogger,     val resources:
+Resources ) {     var middlewares: List<Middleware<A>> by notNull()
+var reducer: Reducer<S, A, N> by notNull() }     Тут нужно
+остановиться - я упоминал обработчик внешних эффектов. Где он тут
+находится?Обработка событий     Как мы видим, в Store находится какое-
+то количество Middleware и Reducer. Мы уже знаем, что side-effects
+должны нести в себе какие-то данные, чтобы изменить UI, почему бы
+тогда каждую бизнес задачу не вынести в отдельный Middleware и держать
+в Store их коллекцию и обрабатывать каждый из них, принимая результат
+и возвращая State нашего экрана? Этим и будет заниматься
+Reducer.abstract class Middleware<A: Action>(store: Store<*, *, *>) {
+protected val apiRepository: ApiRepository = store.apiRepository
+protected val preferencesRepository: PreferencesRepository =
+store.preferencesRepository     protected val logger: JuleLogger =
+store.logger.apply { connect(javaClass) }     protected val resources:
+Resources = store.resources      abstract suspend fun effect(action:
+A): A?     suspend operator fun invoke(action: A) = effect(action) }
+interface Reducer<S: State, A: Action, N: News> {     fun
+reduce(state: S, action: A): Pair<S?, N?>     operator fun
+invoke(state: S, action: A) = reduce(state, action) }     Middleware
+содержит доступ к "ручкам", чтобы иметь возможность порождать новые
+Action и абстрактный метод effect(), чтобы выполнить его там.
+Внимательный читатель заметил, что Middleware не просто порождает
+какой-то Action, но и принимает его в качестве параметра. Как я уже
+говорил, внешние эффекты могут быть вызваны пользователем напрямую,
+например явным запросом в сеть. Но ведь одни side-effects способны
+вызывать другие и наоборот. Мы хотим, чтобы каждый результат бизнес-
+задачи был "услышан" всеми остальными и, если необходимо, последовал
+новый side-effect. (Это вовсе не обязательно, для этого возвращаемый
+тип nullable)     C доменным слоем нашего приложения разобрались,
+теперь нужно обеспечить преобразование пришедшей извне информации на
+UI. Как я уже упоминал, этим будет заниматься Reducer. Что для этого
+нужно, помимо текущего State экрана? Очевидно, виновник торжества -
+Action, именно то, что будут возвращать нам Middleware'ы. Таким
+образом, Reducer принимает side-effect и исходя от него, меняет
+текущий State и вдобавок может выкинуть какое-то уведомление - News.А
+что в ViewModel?     Давайте взглянем на базовую ViewModel, из важного
+тут - метод bind() - он будет отвечать за обработку нашего UI. В
+параметре приходит интерфейс MviView, на который подписан холдер
+данной ViewModel, в котором просто реализована отрисовка приходящих
+State и News.abstract class BaseViewModel<S: State, A: Action, N:
+News>: ViewModel() {      private val backgroundScope =
+CoroutineScope(IO + SupervisorJob())      @Inject     lateinit var
+logger: JuleLogger      abstract val stateFlow: MutableStateFlow<S>
+abstract val newsFlow: MutableSharedFlow<N>     abstract val
+actionFlow: MutableSharedFlow<A?>     abstract val store: Store<S, A,
+N>      override fun onCleared() {         super.onCleared()
+backgroundScope.coroutineContext.cancelChildren()     }      fun
+obtainAction(action: A) {         backgroundScope.launch {
+actionFlow.emit(action)         }     }      fun obtainState(state: S)
+{         stateFlow.value = state     }      fun bind(foregroundScope:
+LifecycleCoroutineScope, mviView: MviView<S, N>) {
+logger.connect(javaClass)          with(foregroundScope) {
+launch {                 stateFlow
+.onEach(mviView::renderState)                     .catch {
+logger.logException(it) }                     .collect()             }
+launch {                 newsFlow
+.onEach(mviView::renderNews)                     .catch {
+logger.logException(it) }                     .collect()             }
+}     } }     У читателя возникает логичный вопрос - раз у нас есть
+механизм, который все обрабатывает, и ViewModel, посылающая эти
+обработанные данные на UI, то как нам обеспечить, чтобы эти данные
+таки доходили наших state и news flow? Все это происходит в
+конструкторе.init {         backgroundScope.launch {
+actionFlow                 .filterNotNull()                 .transform
+{                     store.middlewares.forEach { middleware ->
+val effect = middleware.effect(it)                         effect?.let
+{
+logger.log("${middleware.javaClass.simpleName} effects $it")
+emit(it)                         }                     }
+}.flowOn(Default).combine(stateFlow) { a, s ->                     val
+(reducedState, reducedNews) = store.reducer.reduce(s, a)
+// Пришедший State                     reducedState?.let {
+stateFlow.value = it                     }                     //
+Пришедший News                     reducedNews?.let {
+newsFlow.emit(it)                     }                 }.catch {
+logger.logException(it)                 }.collect()         }     }
+В этом фрагменте, пожалуй, находится ядро нашего "механизма". Каждый
+Action в блоке transform() уведомляет все Middleware о себе, а затем,
+комбинируясь с нашим state flow, проходит Reducer'а и как результат
+stateFlow и newsFlow потенциально получают какое-то значение и
+отправляются на отрисовку в UI. А что самое важное, другие Middleware
+обрабатывают этот Action и потенциально порождают новые изменения в UI
+в дальнейшем.  Каково это на практике?     Для примера возьмем
+типичный экран "Профиль". Для простоты позволим пользователю совершать
+logout и загрузку содержимого профиля. Так будут выглядеть State,
+Action и News:sealed class ProfileState: State {         // Состояние
+экрана декларируется через ProfileModel,         // по сути отражающую
+наличие контента и navDirections,          // если мы хотим куда-то
+двигаться по приложению     data class Default(         val profile:
+ProfileModel? = null,         val navDirections: NavDirections? =
+null,     ): ProfileState() }  sealed class ProfileNews: News {
+// Простое уведомление     data class Message(val duration: Int, val
+content: String): ProfileNews() }  sealed class ProfileAction: Action
+{         // Намерения пользователя     object FetchProfile:
+ProfileAction()     object Logout: ProfileAction()      // То, что
+приходит как результат работы middleware     data class
+FetchProfileDone(         val profile: ProfileResponse? = null,
+val interpretedError: InterpretedError? = null     ): ProfileAction()
+object LogoutDone: ProfileAction() }     Теперь взглянем на то, как
+будут "общаться" Reducer и Middleware// Logout class
+LogoutMiddleware(store: Store<*, *, *>):
+Middleware<ProfileAction>(store) {     override suspend fun
+effect(action: ProfileAction): ProfileAction? {         var effect:
+ProfileAction? = null         with(action) {             // Реагируем
+только на этот Action             if (this is ProfileAction.Logout) {
+CoroutineScope(Dispatchers.IO).launch {
+preferencesRepository.clearAccessToken()
+preferencesRepository.clearRefreshToken()                 }
+effect = ProfileAction.LogoutDone             }         }         //
+Возвращаем side-effect         return effect     } }  // Загрузка
+профиля  class GetProfileMiddleware(store: Store<*, *, *>):
+Middleware<ProfileAction>(store) {     override suspend fun
+effect(action: ProfileAction): ProfileAction? {         var effect:
+ProfileAction? = null         with(action) {             // Реагируем
+только на этот Action             if (this is
+ProfileAction.FetchProfile) {                 // Выполняем какой-то
+запрос в сеть                 doRequest(
+responseAsync = {                         apiRepository.getProfile()
+},                     onOk = {                         effect =
+ProfileAction.FetchProfileDone(profile = this)                     },
+onApiErrorStatus = {                         effect =
+ProfileAction.FetchProfileDone(interpretedError = this)
+},                     onException = {                         effect
+= ProfileAction.FetchProfileDone(interpretedError = this)
+},                 )             }         }         // Возвращаем
+side-effect         return effect     } }  // Обработка приходящих
+Action'ов class ProfileReducer: Reducer<ProfileState, ProfileAction,
+ProfileNews> {     override fun reduce(state: ProfileState, action:
+ProfileAction): Pair<ProfileState?, ProfileNews?> {         var
+reducedState: ProfileState? = null         var reducedNews:
+ProfileNews? = null          // Меняем State в зависимости от Action
+when (action) {             is ProfileAction.LogoutDone -> {
+// Перемещаемся в фрагмент авторизации                 reducedState =
+ProfileState.Default(                     navDirections =
+ContainerFragmentDirections.containerAuth()                 )
+}             is ProfileAction.FetchProfileDone -> {
+// Вставляем модель в State и никуда не перемещаемся
+reducedState = ProfileState.Default(                     profile =
+action.profile?.profile?.let { ProfileModel(it) },
+navDirections = null                 )             }         }
+// Возвращаем потенциальные State и News         return reducedState
+to reducedNews     } }       И для полноты картины взглянем на части
+кода фрагментаoverride fun onViewCreated(view: View,
+savedInstanceState: Bundle?) {     super.onViewCreated(view,
+savedInstanceState)          logger.connect(javaClass)
+with(profileViewModel) {
+bind(viewLifecycleOwner.lifecycleScope, this@ProfileFragment)
+// Сразу выполняем загрузку профиля         lifecycleScope.launch {
+obtainAction(ProfileAction.FetchProfile)         }     }          //
+По клику на кнопку выхода осуществляем выход     btnLogout.click {
+viewLifecycleOwner.lifecycleScope.launch {
+profileViewModel.obtainAction(ProfileAction.Logout)         }     } }
+override fun renderState(state: ProfileState) {     when (state) {
+is ProfileState.Default -> {             state.navDirections?.let {
+navigate(it)
+profileViewModel.obtainState(state.copy(null))             }
+state.profile?.let {                 tvFriendsCount.text =
+it.friends.size.toString()                 tvLogin.text = it.login
+tvName.text = it.name                }                 }     } }

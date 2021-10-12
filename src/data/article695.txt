@@ -1,0 +1,144 @@
+Автор: Winged90
+Дата: 2021-09-25T09:01:01.000Z
+Название: Подключение SignalR для Android на Kotlin
+Теги: Разработка под Android *, Kotlin *
+Текст:
+Если ты читаешь эту статью, наверно тебе, как и мне понадобилось
+подключить SignalR в своем мобильном приложении. К сожалению в
+русскоязычном сегменте не так уж много информации о том, как это
+сделать, а то что есть уже устарело.В рамках этой статьи я не буду
+касаться серверной части, но постараюсь предоставить все необходимое
+примеры кода с комментариями для реализации SignalR  в Android, а
+получившийся пример выложу на GitHub.Что такое SignalR и когда он
+используется?Это библиотека с открытым исходным кодом, которая
+упрощает добавление веб-функций в режиме реального времени в
+приложения.  Веб-функции в режиме реального времени позволяют коду на
+стороне сервера мгновенно отправлять содержимое на клиенты.Управляет
+автоматическим управлением соединениями.Отправляет сообщения всем
+подключенным клиентам одновременно. Например, комната чатов.Отправляет
+сообщения конкретным клиентам или группам клиентов.Масштабируется для
+управления увеличением трафика.СхематичноБолее подробно здесьСоздаем
+проект и подключаем зависимости.Создаем новый проект на основе Empty
+Activity, я назову его SignalR_ExampleСоздание нового проектаДобавляем
+3 необходимые зависимости в build.gradle проекта:implementation
+"com.microsoft.signalr:signalr:5.0.10"Смотрим актуальную версию
+здесьimplementation "com.squareup.okhttp3:logging-
+interceptor:5.0.0-alpha.2" Смотрим актуальную версию
+здесьimplementation 'com.google.code.gson:gson:2.8.8'Смотрим
+актуальную версию здесьЗависимости в build.gradleСоздаем необходимые
+классыКласс SignalRListener и соответствующий ему интерфейс
+ISignalRListenerОн будет содержать подключение к HubConnection и
+основную реализацию слушателя внешних событий.Класс SignalRListener/**
+* Представляет SignalR-реализацию слушателя внешних событий.  * @param
+sslSocketFactory Модифицированный протокол безопасной передачи данных.
+* @param trustAllCerts Модифицированный X509TrustManager для доверия
+всем сертификатам.  */ class SignalRListener (     private val
+sslSocketFactory: SSLSocketFactory,     private val trustAllCerts:
+TrustAllCerts ) : ISignalRListener {      private val apiUrl =
+"https://something.com/api/"   //Адрес Вашего api     private val
+hubConnection = HubConnectionBuilder.create(apiUrl + "GatewayHub")
+//         .setHttpClientBuilderCallback {
+it.sslSocketFactory(sslSocketFactory, trustAllCerts)         }
+.build()      override val connectionId: String?         get() =
+hubConnection.connectionId     override val connectionState:
+HubConnectionState         get() = hubConnection.connectionState
+override fun startConnection() {         hubConnection.start()     }
+override fun stopConnection() {         hubConnection.stop()     }
+override fun subscribe(         eventName: String,         handler:
+(event: LinkedTreeMap<String, String>) -> Unit     ) {
+hubConnection.on(             eventName,             handler,
+LinkedTreeMap::class.java         )     }      override fun
+unsubscribe(eventName: String) {
+hubConnection.remove(eventName)     } }Интерфейс ISignalRListener/**
+* Описывает реализацию слушателя внешних событий.  */ interface
+ISignalRListener {     /**      * Возвращает id подключения к SignalR.
+*/     val connectionId: String?      /**      * Возвращает статус
+подключения к SignalR.      */     val connectionState:
+HubConnectionState      /**      * Выполняет подключение к серверу
+SignalR.      */     fun startConnection()      /**      * Выполняет
+отключение от сервера SignalR.      */     fun stopConnection()
+/**      * Подписывается на событие.      * @param eventName Имя
+события.      * @param handler Обработчик события.      */     fun
+subscribe(eventName: String, handler: (LinkedTreeMap<String, String>)
+-> Unit)      /**      * Отписывается от события.      * @param
+eventName Имя события.      */     fun unsubscribe(eventName: String)
+}Класс SignalRService и соответствующий ему интерфейс
+ISignalRServiceОн будет содержать реализацию подписок на ресурсы.Класс
+SignalRService/**  * Представляет реализацию подписок на ресурсы.  */
+class SignalRService (     private val signalRListener:
+ISignalRListener ) : ISignalRService {     /**      * Возвращает или
+устанавливает подписку на ресурсы.      */     private val
+resourcesSubscriptions = mutableListOf<ResourceSubscriptionModel>()
+init {         subscribeOnResourceChanged()     }      /**      *
+Подписывается на события изменения ресурса.      */     private fun
+subscribeOnResourceChanged() {         signalRListener.subscribe(
+"ResourceChangedEventOccurred"         ) { event ->
+resourcesSubscriptions.forEach { subscription ->                 val
+resourceName = event["resourceName"]                 if (resourceName
+!= null && resourceName.contains(subscription.resourceName)) {
+//Реагируем на изменение ресурса.
+subscription.callback()                 }             }         }
+}      override fun subscribe(subscriptionsForAdd:
+List<ResourceSubscriptionModel>) {         subscriptionsForAdd.forEach
+{ resourceSubscription ->
+resourcesSubscriptions.add(resourceSubscription)         }     }
+override fun unsubscribe(subscriptionsForRemove:
+List<ResourceSubscriptionModel>) {
+subscriptionsForRemove.forEach { resourceSubscription ->
+resourcesSubscriptions.remove(resourceSubscription)         }     }
+}Интерфейс ISignalRService/**  * Описывает методы подписки на внешние
+события.  */ interface ISignalRService {     /**      * Добавляет
+ресурсы в подписку.      * @param subscriptionsAdd Список ресурсов для
+подписки.      */     fun subscribe(subscriptionsAdd:
+List<ResourceSubscriptionModel>)      /**      * Удаляет ресурсы из
+подписки.      * @param subscriptionsRemove Список ресурсов для
+отписки.      */     fun unsubscribe(subscriptionsRemove:
+List<ResourceSubscriptionModel>) }Дата класс
+ResourceSubscriptionModelОн будет представлять подписку на ресурс.Дата
+класс ResourceSubscriptionModel/**  * Представляет подписку на ресурс.
+*/ data class ResourceSubscriptionModel(     /**      * Имя ресурса
+для отслеживания событий.      */     val resourceName: String,
+/**      * Метод выполняемый при получении события.      */     val
+callback: () -> Unit )Класс TrustAllCertsОн позволит доверять всем
+сертификатам.Класс TrustAllCerts/**  * Позволяет доверять всем
+сертификатом.  */ class TrustAllCerts : X509TrustManager {
+override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+override fun checkClientTrusted(certs: Array<X509Certificate>,
+authType: String) = Unit     override fun checkServerTrusted(certs:
+Array<X509Certificate>, authType: String) = Unit }Класс
+SignalRApplicationОн представляет класс нашего приложения и будет
+хранить синглтоны ISignalRListener и ISignalRService. По хорошему
+следует использовать какой ни будь DI инструмент, но для упрощения
+примера сделаем так. Не забываем добавлять его в манифест.Класс
+SignalRApplication/**  * Представляет приложение.  */ class
+SignalRApplication : Application() {      lateinit var
+signalRListener: ISignalRListener   // Слушатель внешних событий.
+lateinit var signalRService: ISignalRService   // Сервис подписок на
+ресурсы.      companion object {         lateinit var application:
+SignalRApplication     }      override fun onCreate() {
+super.onCreate()         application = this          //
+Модифицированный X509TrustManager для доверия всем сертификатам.
+val trustAllCerts = TrustAllCerts()         // Модифицированный
+протокол безопасной передачи данных.         val sslSocketFactory =
+SSLContext.getInstance("TLSv1.2").apply {                 init(null,
+arrayOf<TrustManager>(trustAllCerts), SecureRandom())
+}.socketFactory          signalRListener =
+SignalRListener(sslSocketFactory, trustAllCerts)
+signalRService = SignalRService(signalRListener)     }  }Абстрактный
+класс BaseActivityОн будет представлять базовый класс для наших
+Activity и содержать методы на подписку и отписку от
+событий.Абстрактный класс BaseActivity/**  * Представляет базовый
+класс Activity  */ abstract class BaseActivity : AppCompatActivity() {
+/**      * Сервис подписок на ресурсы.      */     private val
+_signalRService = SignalRApplication.application.signalRService
+/**      * Лист подписок.      */     private val
+_resourceSubscriptions: MutableList<ResourceSubscriptionModel> =
+mutableListOf()      override fun onStop() {         super.onStop()
+_signalRService.unsubscribe(_resourceSubscriptions)     }      /**
+* Устанавливает подписки на ресурсы.      * @param
+resourceSubscriptions Лист подписок.      */     fun
+setSignalRSubscriptions(         resourceSubscriptions:
+List<ResourceSubscriptionModel>     ) {
+_resourceSubscriptions.addAll(resourceSubscriptions)
+_signalRService.subscribe(resourceSubscriptions)     } }Скачать пример
+проекта можно здесь

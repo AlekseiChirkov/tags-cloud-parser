@@ -1,0 +1,351 @@
+Автор: alexprey
+Дата: 2021-09-29T10:30:08.000Z
+Название: Разработка системы тестирования SQL-запросов. Часть 2
+Теги: Блог компании Аркадия, Тестирование IT-систем *, Программирование *,
+.NET *, C# *
+Текст:
+ВступлениеНесколько лет назад, на проекте по разработке внутреннего
+портала для учебных заведений, занимающем практически весь датский
+рынок, я разработал прототип системы тестирования слоя данных, внедрил
+его в процесс разработки и обучил использованию две проектных команды.
+В данном посте я подведу итоги и расскажу об основных
+изменениях.Проведём небольшой экскурс в прошлое и повторимся. Данный
+фреймворк был разработан, опираясь на внутреннюю инфраструктуру кода и
+используемые технологии, с целью автоматизации и упрощения процесса
+тестирования сложных SQL-запросов. Он позволял протестировать
+отдельные SQL-запросы и установку свежей и чистой базы данных для
+нового клиента. Кроме того, он отлавливал неочевидные проблемы
+совместимости: сперва при обновлении сервера с MySQL 5.1 до MySQL 5.6,
+а затем при переходе на MariaDB.Изначально система использовалась на
+небольшом проекте на пару команд. Но её нужно было внедрять и в
+другие, более масштабные (до 15 команд!), проекты. Дело усложнялось
+тем, что это был единый модуль, развивающийся внутри первого проекта и
+ориентированный на фреймворк MSTest.Рекомендую ознакомиться с первой
+частью статьи, где подробно разобрана структура системы и механизмы её
+работы.ИзмененияВ первое время после внедрения разработчики часто
+сообщали о проблемах и ситуациях, когда данный фреймворк было тяжело
+или невозможно использовать. Я всегда шёл навстречу и старался
+помогать им осваивать новый инструмент, а в свободное время исправлял
+и улучшал его.Разделение пакетовСледующим этапом развития системы
+стало внедрение на другой проект — более внушительный по размеру кода,
+структуре базы данных, сложности SQL-запросов и количеству
+разработчиков. Первое, что необходимо было решить, — это адаптация
+библиотеки под другой базовый фреймворк тестирования. На данном
+проекте использовался NUnit, в то время как библиотека была изначально
+разработана под MSTest.Требовалось разделить всю библиотеку на
+несколько сборок — DataLayerTests.Core, DataLayerTests.MSTestDriver,
+DataLayerTests.NUnitDriver — и собирать их раздельными NuGet-пакетами.
+В целом переход на другой фреймворк тестирования прошёл без
+сложностей, код был разделён и адаптирован.Основной проблемой создания
+адаптеров была идентификация текущего контекста тестирования для
+корректного определения атрибутов с метаданными, использующимися на
+классах и методах теста.В фреймворке MSTest для этого используется
+внедрение зависимости внутрь класса с помощью свойства TestContext, в
+то время как для фреймворка NUnit данная информация доступна только с
+помощью глобальной переменной TestContext.CurrentContext. С помощью
+паттерна Адаптер мы объединили их под общий интерфейс и внедрили в
+зависимости базового класса тестирования.// BaseDataProviderTests.cs
+public abstract class BaseDataProviderTests  {     protected
+ITestContextProvider TestContextProvider { get; set; }      private
+List<UseTableAttribute> GetUseTableAttributes()     {         Type
+type = GetType();          IList<CustomAttribute> attributes = type
+.GetCustomAttributes<UseTableAttribute>(true)             .ToList();
+if (!string.IsNullOrWhiteSpace(TestContextProvider?.CurrentTestContext
+?.MethodName))         {             MethodInfo testMethod =
+type.GetMethod(TestContextProvider.CurrentTestContext.MethodName);
+if (testMethod != null)             {                 attributes.AddRa
+nge(testMethod.GetCustomAttributes<UseTableAttribute>(true));
+}         }          return attributes;     } } //
+BaseMSTestDataProviderTests.cs public abstract class
+BaseMSTestDataProviderTests : BaseDataProviderTests,
+ITestContextProvider  {     protected BaseMSTestDataProviderTests()
+{         TestContextProvider = this;     }      public ITestContext
+CurrentTestContext => new MsTestContextAdapter(TestContext); }  public
+class MsTestContextAdapter : ITestContext {     private readonly
+TestContext _testContext;      public MsTestContextAdapter(TestContext
+testContext)     {         _testContext = testContext;     }
+public string TestTitle => _testContext.TestName;      public string
+MethodName => _testContext.TestName; } //
+BaseNUnitDataProviderTests.cs public abstract class
+BaseNUnitDataProviderTests : Core.BaseDataProviderTests {
+protected BaseNUnitDataProviderTests()     {
+TestContextProvider = new NUnitTestContextProvider();     } }  public
+class NUnitTestContextAdapter : ITestContext {     private readonly
+TestContext _testContext;      public
+NUnitTestContextAdapter(TestContext testContext)     {
+_testContext = testContext;     }      public string TestTitle =>
+_testContext.Test.Name;      public string MethodName =>
+_testContext.Test.MethodName; }  public class NUnitTestContextProvider
+: ITestContextProvider {     public ITestContext CurrentTestContext =>
+new NUnitTestContextAdapter(TestContext.CurrentContext); } Благодаря
+такому разделению, получилось минимизировать дублирование кода, и в
+итоге пакеты адаптеров получились небольшими, а основная логика
+фреймворка для тестирования осталась в базовом пакете. Самое главное —
+это поддержание корректной версии пакетов: т.к. мы внесли
+несовместимые изменения, то пришлось поднять номер до 2.0.Формирование
+сущностей извнеПервоначальный набор правил генерации тестовых
+сущностей включал в себя правило ForeignKeyRule, которое позволяет
+создавать связанную сущность. Данное правило покрывало потребности
+разработчиков при написании новых тестов для разных запросов и
+структур данных. Но в один прекрасный момент мы всё же столкнулись с
+ситуаций, когда его было не достаточно.У нас была следующая схема
+таблиц, которые необходимо было заполнить для тестирования очередного
+запроса:Схема структуры данных, использующаяся для тестирования.Наша
+задача заключалась в формировании разных настроек для GroupEntity и
+PersonGroupEntity одновременно, при этом отношение GroupEntity к
+CourseEntity было «один-к-одному», в то время как PersonGroupEntity к
+GroupEntity — «много-к-одному». Мы перепробовали множество различных
+способов для заполнения необходимых данных с помощью тех инструментов,
+которые предлагала библиотека на данном этапе развития. Очевидное
+решение, которое бы всех устраивало, не получилось найти быстро,
+поэтому тестовые данные были заполнены вручную. Спустя время появилась
+идея создания нового правила — аналогичного ForeignKeyRule, но с
+точностью до наоборот. Я назвал его InsideOutForeignKeyRule. Если для
+ForeignKeyRule сперва производится вставка дополнительной сущности в
+базу данных, а затем осуществляется её привязка через присвоение новых
+полученных идентификаторов, то в новом правиле всё было наоборот:
+сперва происходила вставка основной сущности, а затем — связывание и
+вставка новой сущности.Таким образом, благодаря новому правилу стало
+возможно писать лаконичный код генерации сущностей.//
+InsideOutForeignKeyRule.cs public class
+InsideOutForeignKeyRule<TSourceEntity, TTargetEntity, TValue> :
+BaseEntityRule     where TSourceEntity : Entity, new()     where
+TTargetEntity : Entity, new() {     private readonly PropertyInfo
+_sourcePropertyInfo;     private readonly PropertyInfo
+_targetPropertyInfo;      public
+InsideOutForeignKeyRule(Expression<Func<TSourceEntity, TValue>>
+sourceProperty, Expression<Func<TTargetEntity, TValue>>
+targetProperty)     {         _sourcePropertyInfo =
+sourceProperty.GetProperty();         _targetPropertyInfo =
+targetProperty.GetProperty();          if (_sourcePropertyInfo == null
+|| _targetPropertyInfo == null)         {             throw new
+InvalidOperationException("Invalid property for entity");         }
+AppliedEntityTypes.Add(typeof(TSourceEntity));     }      public
+override void Invoke(EntityRuleContext context)     {         object
+sourceValue = _sourcePropertyInfo.GetValue(context.CurrentEntity);
+if (sourceValue != null && !sourceValue.Equals(default(TValue)))
+{             TTargetEntity targetEntity =
+context.DataFactory.CreateEntity<TTargetEntity>(context.EntityRuleSet,
+context.EntityGroupProviders, false);
+_targetPropertyInfo.SetValue(targetEntity, sourceValue);
+context.DataProvider.Insert(targetEntity);         }     } }
+Оптимизация вставки данныхИзначально, когда разрабатывался данный
+фреймворк, было допущение, что в основном работа происходит с одним
+типом данных, поэтому хранилище сгенерированных объектов представляло
+собой простой типизированный список, который на последнем этапе
+отправлялся в базу данных. Все правила заполнения и генерации
+сущностей имели простой интерфейс только с одним методом
+Invoke(EntityRuleContext context), который мог изменить сущность до
+вставки в базу. Но в то же время были добавлены и более сложные
+правила, которые генерировали новые сущности другого типа —
+ForeignKeyRule. Это правило генерировало новую сущность, вставляло её
+в базу и использовало полученный новый идентификатор для записи в поле
+родительской сущности. Несложно догадаться, что код, представленный
+ниже, генерирует 21 запрос на вставку данных, что может значительно
+снижало производительность тестов.DataFactory         // Указываем
+BookEntity в качестве основной сущности для генерации
+.CreateBuilder<BookEntity>()         // Указываем зависимость от
+сущности UserEntity, по умолчанию используется связь 1к1
+.UseForeignKeyRule<BookEntity, UserEntity, int>(book => book.AuthorId,
+user => user.Id)   // Заполняем необходимые поля   .UseRule(new
+UniqueSetterRule<UserEntity>(user => user.UserName))
+.UseUniqueSetterRule(book => book.Title)         // (1*) Генерируем 20
+BookEntity   .CreateMany(20)         // Отправляем их в базу
+.InsertAll(); (1*) 20 сущностей BookEntity создаются и складываются в
+память, последовательно используя объявленные ранее правила.
+Соответственно, последовательно вызывается правило UseForeignKeyRule,
+которое не использует промежуточное хранилище, а сразу же отправляет
+новую сущность в базу данных. В результате получаем 20 запросов на
+вставку одиночных сущностей, и после вызова InsertAll() получаем
+последний 21-ый запрос для вставки 20 сгенерированных сущностей
+BookEntity.Схема работы построителя сущностейКогда я изначально
+проектировал и разрабатывал систему тестирования, я понимал данную
+проблему, но сперва хотелось опробовать разработанное решение на
+реальном проекте, получить обратную связь и продолжить развитие.
+Теперь, когда я вижу, что библиотека выполняет свои функции хорошо и
+не вызывает критичных проблем, я могу позволить себе заниматься
+оптимизацией и совершенствованием. В новой версии было разработано
+универсальное хранилище, которое позволяет получить доступ к любому
+типу сущностей. Но это не главная его особенность. Основная — это
+формирование и группировка запросов вставки данных.Раньше фреймворк
+генератора сущностей манипулировал доступом к базе данных с помощью
+непосредственного доступа. Это осложняло процесс переработки
+генератора в контексте разработки механизма отложенной записи. Поэтому
+все необходимые методы были вынесены в интерфейс, который был
+реализован специальным временным хранилищем и классом, работающим
+напрямую с базой данных.Для того чтобы реализовать механизм отложенной
+вставки связанных сущностей, необходимо было пересмотреть механизм
+описания новых правил формирования данных. Старый метод Invoke был
+помечен как устаревший, и теперь присутствуют два новых —
+OnBeforeInsert и OnAfterInsert, которые вызываются соответственно до и
+после вставки сущности в базу данных. А также появилась возможность
+подписаться на событие вставки сущности в базу данных, чтобы получить
+обновлённое значение Auto Increment поля или вставить сущность с явным
+ограничением в базе по вторичному ключу.В большинстве случаев правила
+генерации остались без изменений логики, а вот правило генерации
+связанной сущности необходимо было переработать под новую архитектуру.
+Давайте посмотрим, как оно работало раньше и как оно стало работать
+сейчас.// Старая реализация public override void
+Invoke(EntityRuleContext context) {     const string targetEntityKey =
+"ForeignKeyRule.TargetEntity";      object sourceValue =
+_sourcePropertyInfo.GetValue(context.CurrentEntity);     if
+(sourceValue == null || sourceValue.Equals(default(TValue)))     {
+// Пробуем получить данные из группы или создаем, если их нет
+TTargetEntity targetEntity = GetDataFromGroup(
+context.CurrentEntityGroup,              targetEntityKey,
+() =>
+context.DataFactory.CreateEntity<TTargetEntity>(context.EntityRuleSet,
+context.EntityGroupProviders)         );                          var
+value = _targetPropertyInfo.GetValue(targetEntity);
+_sourcePropertyInfo.SetValue(context.CurrentEntity, value);     } }
+// Новая реализация public override void
+OnBeforeInsert(EntityRuleContext context) {     const string
+targetEntityKey = "ForeignKeyRule.TargetEntity";      object
+sourceValue = _sourcePropertyInfo.GetValue(context.CurrentEntity);
+if (sourceValue == null || sourceValue.Equals(default(TValue)))     {
+// Пробуем получить данные из группы или создаем, если их нет
+TTargetEntity targetEntity = GetDataFromGroup(
+context.CurrentEntityGroup,              targetEntityKey,
+() => context.DataFactory.BuildAndInsertEntity<TTargetEntity>(context.
+EntityRuleSet, context.EntityGroupProviders)         );          //
+Подписываемся на событие вставки дополнительной сущности, чтобы
+обновить значения в исходном
+context.InsertionDataProvider.SubscribeOnAfterInsert(targetEntity, ()
+=>             {                 var value =
+_targetPropertyInfo.GetValue(targetEntity);
+_sourcePropertyInfo.SetValue(context.CurrentEntity, value);
+});     } }  Переосмысление синтаксиса генератора тестовых
+сущностейЕсли на тот момент времени разработанный синтаксис
+построителя сущностей меня полностью устраивал, то спустя несколько
+лет написания тестов он казался очень громоздким и сложным для
+восприятия. Новые разработчики, с которыми мне доводилось общаться,
+подтвердили мои ощущения. Даже я, возвращаясь спустя несколько месяцев
+к уже написанным тестам, тратил немало времени, чтобы понять, что
+именно в них происходит. После переосмысления внутренней логики
+формирование сущностей сделало построители простыми и гибкими. Был
+потрачен не один день на придумывание и согласование нового формата, и
+в итоге удалось найти удобный и компактный синтаксис, который улучшает
+восприятие при ознакомлении с кодом тестов спустя время.Ознакомимся с
+проблемами старого формата подробнее, чтобы вы могли понять, почему
+сделаны те или иные изменения, и проследить их развитие.Длинные
+именования методов, которые могут путать разработчика.Сложность
+управления видимостью правил создания сущностей.Невозможность работы с
+множеством сущностей за один раз.Рассмотрим следующий код, чтобы
+понять суть проблем.var users = DataFactory
+.CreateBuilder<UserEntity>()     // Пока всё выглядит в порядке
+.UseUniqueSetterRule(user => user.UserName)     // Сейчас мы попробуем
+добавить правила для другой сущности (Book)     // Уже появляется
+путаница: к кому относится UseRule?     .UseRule(new
+UniqueSetterRule<BookEntity>(book => book.Title))     // Ещё больше
+манипуляций с типами сущностей
+.UseInsideOutForeignKeyRule<UserEntity, BookEntity, int>(user =>
+user.Id, book => book.AuthorId)     // ... Спустя N дополнительных
+правил ….     // Какую сущность мы будем создавать?     .CreateMany(5)
+.InsertAll();Как видите, проблема заключается в том, что все правила
+линейные, никак не группируются, объявления для основных сущностей
+выглядят просто, а для всех остальных появляется много лишнего. При
+добавлении областей видимости правил, которые позволяют переопределять
+данные сущностей временно, код становился ещё сложнее для восприятия и
+отладки. Рассмотрим на примере:  DataFactory
+.CreateBuilder<BookPermissionEntity>()     // Ещё один пример сложного
+восприятия старого синтаксиса     .UseRule(new
+ForeignKeyRule<BookPermissionEntity, BookEntity, int>(p => p.BookId, b
+=> b.Id))     .UseRule(new ForeignKeyRule<BookPermissionEntity,
+GroupEntity, int>(p => p.GroupId, g => g.GroupId))     .UseRule(new
+InsideOutForeignKeyRule<BookPermissionEntity, GroupUserEntity, int>(p
+=> p.GroupId, ug => ug.GroupId))     .UseRule(new
+ForeignKeyRule<GroupUserEntity, UserEntity, int>(ug => ug.UserId, u =>
+u.Id))     .UseGroupForLastRule(singleUserGroupProvider)
+.UseRule(new ForeignKeyRule<BookEntity, UserEntity, int>(b =>
+b.AuthorId, u => u.Id))
+.UseGroupForLastRule(singleUserGroupProvider)     .UseRule(new
+DataSetterRule<UserEntity>(u => u.UserName = "MyUser1"))
+.UseRule(new UniqueSetterRule<BookEntity>(b => b.Title))
+.UseRule(new DataSetterRule<GroupEntity>(g => g.Name = "Name"))
+.UseDataSetterRule(p => p.Permission = 1)     // Запоминаем
+существующий набор правил     .PushRuleSet()     // Добавляем новые
+правила и создаём сущность     .UseRule(new
+DataSetterRule<GroupUserEntity>(ug => ug.Level = 1))
+.CreateSingle()     // Откатываемся назад и запоминаем снова
+.PopRuleSet()     .PushRuleSet()     // И повторяем с другим набором
+данных     .UseRule(new DataSetterRule<GroupUserEntity>(ug => ug.Level
+= 2))     .CreateSingle().PopRuleSet()     .InsertAll();Из-за
+линейности подхода становится сложно выделить, что к чему относится.
+Дополнительные отступы помогают, но только до тех пор, пока не
+произойдёт автоформатирование кода.В итоге, мы пришли к следующему:
+если раньше нужно было каждый раз явно создавать новый экземпляр
+построителя для каждой сущности и дальше работать с линейной цепочкой
+методов, то сейчас мы отказались от такого подхода и перешли в сторону
+набора функций конфигураторов. Если раньше всегда приходилось писать
+конструкцию следующего вида:DataHelper.CreateBuilder<UserEntity>()
+// Use rules and creations     .InsertAll(); То сейчас всё сводится к
+вызову одного метода:CreateBuilderAndInsert(     // Use rules and
+creations );Я хотел упростить жизнь разработчикам и реализовать
+подсказки, группировку правил и логики с помощью синтаксиса языка.
+Поэтому я разделил логику на набор разных интерфейсов, из них два
+основных:IScopedEntityBuilder — предоставляет доступ к методам
+создания сущностей, методам формирования групп и методам настройки
+поведения правил по умолчанию.INestedEntityBuilder — даёт возможность
+определить правила для сущностей. Каждый из этих интерфейсов
+абстрактен и позволяет создавать правила для любых типов сущностей, а
+также даёт возможность упростить код, предоставив вариацию для
+конкретной сущности.Пример 1. Простое создание сущностей: правила
+задаются только для одной сущности, добавить правила для других не
+получится, так же как и создать явно другие:var storage =
+BuildAndInsert<UserEntity>(b => b     .CreateMany(5, nb => nb
+.SetUnique(user => user.UserName, 32)         .SetData(user =>
+user.IsDeleted = false)     ) ); Пример 2. Конфигурируем несколько
+сущностей:var storage = BuildAndInsert(b => b     // Сразу говорим что
+мы хотим создать и каким набором правил хотим воспользоваться
+.CreateMany<UserEntity>(5, nb => nb
+.SetUnique<UserEntity>(user => user.UserName, 32)
+.SetUnique<BookEntity>(book => book.Title)
+.UseInsideOutForeignKey<UserEntity, BookEntity, int>(user => user.Id,
+book => book.AuthorId)     ) ); Данный пример выглядит приятно, но при
+большем количестве правил для разных сущностей может выглядеть странно
+— данные могут перемешиваться, поэтому необходимо ограничить зоны
+определения данных. Для этого можно воспользоваться следующим
+форматом:      var storage = BuildAndInsert(b => b
+.CreateMany<UserEntity>(5, nb => nb         // Группируем правила
+только для сущности пользователя         .For<UserEntity>(s => s
+.SetUnique(user => user.UserName, 32)             .SetData(user =>
+user.IsDeleted, false)         )         // Группируем правила только
+для сущности книг         .For<BookEntity>(s => s
+.SetUnique(book => book.Title)             .SetUnique(book =>
+book.ISBN)         )         // Связываем сущности в общем потоке
+правил генерации         .UseInsideOutForeignKey<UserEntity,
+BookEntity, int>(user => user.Id, book => book.AuthorId)     ) ); Как
+видите, теперь правила сгруппированы, и компилятор не позволит
+разработчику смешивать их между собой. Это упрощает чтение тестов, а
+при расширении становится очевидным, куда добавлять новые
+правила.Пример 3. Области видимости правил.BuildAndInsert(b => b
+// С помощью SetDefault мы можем определить общие правила, которые
+будут использоваться для всех сущностей     .SetDefault(nb => nb
+.UseForeignKey<BookPermissionEntity, BookEntity, int>(p => p.BookId,
+book => book.Id)         .UseForeignKey<BookPermissionEntity,
+GroupEntity, int>(p => p.GroupId, g => g.GroupId)
+.UseInsideOutForeignKey<BookPermissionEntity, GroupUserEntity, int>(p
+=> p.GroupId, gu => gu.GroupId)
+.UseForeignKey<GroupUserEntity, UserEntity, int>(gu => gu.UserId, u =>
+u.Id)         .UseGroupForLastRule(singleUserGroupProvider)
+.UseForeignKey<BookEntity, UserEntity, int>(book => book.AuthorId, u
+=> u.Id)         .UseGroupForLastRule(singleUserGroupProvider)
+.SetData<GroupEntity>(g => g.Name = "Name")
+.SetData<UserEntity>(u => u.UserName = "Username1")
+.SetUnique<BookEntity>(book => book.Title)     )     // С помощью
+дополнительного необязательного параметра метода создания можно
+указать дополнительные правила, которые будут действовать только в
+рамках этого действия     .CreateSingle<BookPermissionEntity>(nb => nb
+.SetData<GroupUserEntity>(gu => gu.Level = 1)     )
+.CreateSingle<BookPermissionEntity>(nb => nb
+.SetData<GroupUserEntity>(gu => gu.Level = 2)     ) ); Таким образом,
+код генерации данных становится понятнее, и самое главное, что
+компилятор и IDE могут подсказывать разработчику, куда и где
+необходимо добавлять правила.ЗаключениеКак итог, библиотека
+развивается и помогает отлавливать самые необычные и странные ошибки
+при написании сложных SQL-запросов, покрывая их множественными
+комбинациями данных. Она также помогла проверить и отладить
+неожиданные проблемы при миграции со старых версий MySQL на MariaDB.
+Сейчас на одном из проектов уже насчитывается порядка 1000 тестов, и
+все они выполняются в течение первых 4 минут. Учитывая сложность
+структуры базы данных, я считаю это неплохим результатом.

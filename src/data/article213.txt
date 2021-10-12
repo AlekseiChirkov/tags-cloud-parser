@@ -1,0 +1,156 @@
+Автор: antoshkka
+Дата: 2021-10-05T08:31:02.000Z
+Название: С++23 — feature freeze близко
+Теги: Блог компании Яндекс, Программирование *, C++ *, IT-стандарты *
+Текст:
+Прошло четыре месяца с прошлой онлайн-встречи ISO-комитета, а значит,
+настало время собраться опять.     В этот раз в черновик нового
+стандарта C++23 добавили весьма полезные и вкусные новинки:
+operator[](int, int, int) монадические интерфейсы для std::optional
+std::move_only_function std::basic_string::resize_and_overwrite больше
+гетерогенных перегрузок для ассоциативных контейнеров std::views::zip
+и zip_transform, adjacent, adjacent_transform   Подробности об этих и
+других (даже более интересных!) вещах, а также о том, что за диаграмма
+стоит в шапке, ждут вас под катом.  Многомерный operator[]  При
+разработке класса многомерного спана std::mdspan комитет столкнулся с
+проблемой многомерного индексирования. На примере массива с пятью
+измерениями:  auto raw = std::make_unique<int[]>(3*4*5*6*7);
+std::mdspan<int, 3, 4, 5, 6, 7> array{raw.get()};  array(1, 2, 3, 4,
+5) = 42; // выглядит ужасно array[{1, 2, 3, 4, 5}] = 42; // очень
+непонятно и неприятно писать array[1][2][3][4][5] = 42; // чуть лучше,
+но под капотом творится просто жуть   Чтобы не делать таких безобразий
+(и по просьбам разработчиков математических библиотек) в C++ был
+добавлен многомерный operator[] (P2128). Его можно перегружать для
+любых типов, что позволяет делать принципиально новые интерфейсы:
+enum class Volume: std::size_t{};  class Library {   // ...  public
+Book operator[](std::u8string_view book_name, Volume volume) const; };
+// ... Library lenin_library{};  auto book = lenin_library[u8"Большая
+советская энциклопедия", Volume{14}]; Read(book); Монадические
+интерфейсы для std::optional  Если вы не знаете, что такое «монады» —
+не расстраивайтесь, я тоже не знаю. Это знание не нужно, чтобы
+пользоваться новыми интерфейсами std::optional (P0798):  auto
+MonadicOptional(std::optional<std::size_t> value) {   return value
+.transform([](std::size_t value) { return value - 40uz; })
+.or_else([]() { return 7uz; })       .and_then([](std::size_t value) {
+return std::string(value, '-'); })   ; }  assert(MonadicOptional(42)
+== '--'); assert(MonadicOptional(std::nullopt) == '-------');
+Функция auto optional::transform(F&& f) возвращает
+std::optional{f(*this)} при непустом this; иначе вернёт std::nullopt.
+Функция optional optional::or_else(F&& f) возвращает f() при пустом
+this; иначе вернёт this->value(). Функция auto optional::and_then(F&&
+f) возвращает f(this->value()) при непустом this; иначе вернёт
+дефолтно сконструированную переменную типа decltype(f(*this)).
+Итого: с новыми функциями нет необходимости писать проверки на пустоту
+std::optional, чтобы выполнить преобразования хранящихся в нём данных.
+std::move_only_function  Со времён C++11, когда move-семантика только
+появилась, прошло уже 10 лет. За это время многие библиотеки стали
+требовать C++11, в них появились классы без поддержки копирования
+(только перемещения, только std::move!), а порой и без поддержки
+перемещения.   И тут заметили проблему: type-erased-контейнеры
+std::function и std::any требуют копируемости хранимого типа. Иначе
+получаем ошибку компиляции.   Фикс подоспел к С++23, приняли
+std::move_only_function (P0288), который не требует конструкторов
+копирования и перемещения. Теперь, если ваш алгоритм не требует, чтобы
+функтор копировался, просто принимайте на вход новый тип данных:  void
+example_usage(std::move_only_function<void()> f);  // Передавать
+только перемещаемые функции — ОК example_usage([ptr =
+std::make_unique<int>(42)](){ /*...*/ });  // Неперемещаемые — тоже ОК
+struct non_movable {     mutable std::mutex mtx;      void
+operator()() noexcept { std::unique_lock lock{mtx}; /*...*/  } };
+example_usage(std::in_place<non_movable>);   Кстати,
+std::move_only_function работает и с явным указанием noexcept, так что
+можно требовать не кидающие функторы от вызывающего кода, просто
+написав std::move_only_function<void() noexcept>.   Что же касается
+требования копируемости в std::any, мы в РГ21 планируем заняться этой
+проблемой, присоединяйтесь к обсуждениям, благо такой тип есть у нас в
+Яндекс Go, во фреймворке userver.  basic_string::resize_and_overwrite
+Для любителей сильнее оптимизировать код в C++23 добавили возможность
+увеличить размер строки и сразу проинициализировать новые символы
+(P1072):  extern "C" {   int compress(void* out, size_t* out_size,
+const void* in, size_t in_size); }  std::string
+CompressWrapper(std::string_view input) {     std::string compressed;
+compressed.resize_and_overwrite(input.size(), [input](char* buf,
+std::size_t n) noexcept {         std::size_t compressed_size = n;
+auto is_ok = compress(buf, &compressed_size, input.data(),
+input.size());         assert(is_ok);         return compressed_size;
+});      return compressed; }  Результат будет аналогичен следующему
+коду:  extern "C" {   int compress(void* out, size_t* out_size, const
+void* in, size_t in_size); }  std::string
+CompressWrapper(std::string_view input) {     std::string
+compressed(input.size(), '\0');       std::size_t compressed_size =
+compressed.size();     auto is_ok = compress(compressed.data(),
+&compressed_size, input.data(), input.size());     assert(is_ok);
+compressed.resize(compressed_size);      return compressed; }  А в чём
+разница-то? Что соптимизировали? Во втором примере при конструировании
+строки все её символы будут проинициализированы в '\0'. Уже после
+этого произойдёт вызов compress. Ну а в первом примере лямбда работает
+с незанулённым буфером, мы фактически избегаем вызова memset(
+compressed.data(), compressed.size(), '\0');.  Больше гетерогенных
+методов  Маленькая, но очень приятная новость: ассоциативные
+контейнеры в C++23 обзавелись гетерогенными перегрузками методов erase
+и extract. Теперь можно удалять и извлекать ноды, используя ключи,
+отличные от шаблонных параметров контейнера:  std::set<std::u8string,
+std::less<>> da_set;  // ...  std::u8string_view key{u8"Я не
+std::u8string!"}; da_set.find(key);  // OK начиная с C++14
+da_set.erase(key);  // OK начиная с C++23   График, показывающий
+прирост производительности при использовании новых методов, как раз
+вынесен в шапку этого поста. Больше графиков и детали можно найти в
+самом предложении: P2077. Большое спасибо нашим ребятам из Intel за
+отлично проделанную работу!  zip, zip_transform, adjacent,
+adjacent_transform  Ranges обзавелись новыми view для «склеивания»
+элементов диапазона (P2321):  std::vector v1 = {1, 2}; std::vector v2
+= {'a', 'b', 'c'}; std::vector v3 = {3, 4, 5, 6, 7, 8};  auto result0
+= std::views::zip(v1, v2);                               // {(1, 'a'),
+(2, 'b')} auto result1 = std::views::zip_transform(std::multiplies(),
+v1, v3);  // {3, 8} auto result2 = v2 | std::views::pairwise;
+// {('a', 'b'), ('b', 'c')} auto result3 = v3 |
+std::views::pairwise_transform(std::plus());      // {7, 9, 11, 13,
+15} auto result4 = v3 | std::views::adjacent<3>;
+// {(3, 4, 5), (4, 5, 6), (5, 6, 7), (6, 7, 8)}   Не стоит забывать,
+что ranges — ленивые:   Если вы, например, из result3 запросите только
+первые два элемента, то оставшиеся элементы считываться не будут. Если
+переменная v3 будет уничтожена, то нельзя пользоваться result1,
+result3, result4 и всеми их копиями.   Транзакционная память  Комитет
+уже делал подход к транзакционной памяти Transactional TS, и этот
+подход показал себя совершенно несостоятельным: в стандарт вносилось
+слишком много правок, приходилось переделывать стандартную библиотеку,
+порой дублируя функции.   Поэтому решили сделать новый подход! Простой
+и элегантный:  class TwoInts {   public:     TwoInts() = default;
+TwoInts(const TwoInts&) = delete;     TwoInts& operator=(const
+TwoInts&) = delete;      void SetA(int value) const { atomic do { a_ =
+value; } }      int GetA() const { atomic do { return a_; } }
+void SetB(int value) const { atomic do { b_ = value; } }      int
+GetB() const { atomic do { return b_; } }       int Max() {
+atomic do {           return a_ < b_ ? b_ : a_;       }     }
+private:     int a_{0};     int b_{0}; };   Новый подход всё ещё
+экспериментальный, в ближайшее время он будет выпущен в виде TS,
+основанного на P2066.   Ложка дёгтя На мой взгляд, у подхода есть
+несколько больших недостатков:   Нет способа понять, как будет
+соптимизирован атомарный блок (будет ли в нём мьютекс?). Если
+атомарный блок деградирует до мьютекса, то будет один мьютекс для всех
+атомарных блоков, а это быстро станет узким местом в коде. Добавляется
+множество новых не диагностируемых способов получить UB.   Получение
+std::stacktrace из исключения  От РГ21 есть замечательное предложение
+Stacktrace from exception, которое позволяет получить стектрейс из
+любого исключения без модификации кода, который выкидывает это
+исключение:  void foo(std::string_view key); void bar(std::string_view
+key);  int main() {   try {     foo("test1");     bar("test2");   }
+catch (const std::exception& exc) {     std::stacktrace trace =
+std::stacktrace::from_current_exception();  // <---     std::cerr <<
+"Caught exception: " << exc.what() << ", trace:\n" << trace;   } }
+Такой пример может вывести следующее:  Caught exception: map::at,
+trace:   0# get_data_from_config(std::string_view) at
+/home/axolm/basic.cpp:600   1# bar(std::string_view) at
+/home/axolm/basic.cpp:6   2# main at /home/axolm/basic.cpp:17   Если
+честно, я не верил, что комитет успеет принять эту идею в C++23. Но
+внезапно предложение понравилось многим комитетским старожилам, и
+появился шанс успеть втащить его в стандарт на одном из заседаний 2021
+года, которые будут последними перед feature freeze.  Итоги и feature
+freeze  На дизайн новых идей до feature freeze у нас осталось около 16
+двухчасовых собраний. Networking и Executors навряд ли успеют, как и
+примитивы для работы с корутинами. Но не надо расстраиваться, есть
+шансы увидеть pattern matching, std::mdspan, std::flat_set,
+std::flat_map, std::static_vector, constexpr cmath и некоторые другие
+полезные вещи.   Кстати, 15-18 ноября состоится конференция C++
+Russia, где можно будет узнать новости о развитии C++ и пообщаться с
+многими представителями комитета.

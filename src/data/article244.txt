@@ -1,0 +1,2657 @@
+Автор: Indemsys
+Дата: 2021-10-04T14:26:27.000Z
+Название: Как сделать 240 килобайт исходников на ПЛК для управления одними
+рольставнями
+Теги: Программирование *, Совершенный код *, Промышленное программирование
+*, SCADA *, Умный дом
+Текст:
+Статья по ссылке напомнила мне один недавний проект. Статья отличная,
+но в ней не хватает какого-нибудь практического примера. От этого
+остаются неясными границы применимости в принципе неплохих советов
+автора.  В своем проекте я полностью следовал рекомендациям из
+упомянутой статьи и вот что вышло. В задаче требовалось подключить
+рольставни к ПЛК.  Принцип работы рольставней очень прост. Есть
+трубчатый мотор который наматывает на себя полотно ставней.   Мотор
+однофазный асинхронный. Направление вращение изменяется переключением
+фазы между двумя проводниками выходящими из мотора. Обычно рольставни
+покупают сразу с модулем управления. Но тут был объект с десятками
+рольставней. И требовалось создать HMI для управления всеми из разных
+мест и разных устройств. Устройствами могли быть физические кнопки без
+фиксации, кнопки с фиксацией, экранные кнопки, всевозможные датчики и
+проч. Ничто не должно было стать препятствием для подключения чего
+угодно с целью группового управления рольставнями.   Стандартная схема
+подключения мотора рольставней. Схема подключения ПЛК к мотору
+рольставней.В качестве ПЛК была выбрана серия WAGO PFC200, а в
+качестве среды разработки пакет e!COCKPIT  .   Среда разработки от
+WAGO привлекательна тем что в нее легко интегрируются модели MATLAB. В
+MATLAB я и начал разработку, чтобы не изучать глубоко языки ПЛК и их
+библиотеки.  Как видно из схем выше управление мотором рольставней
+осуществляется двумя дискретными сигналами. Выходы сигналы концевиков
+у рольставней отсутствуют, концевики находятся внутри мотора и точки
+срабатывания регулируются встроенными в редуктор винтами с выведенными
+наружу шлицами под отвёртку.  Все это на первый взгляд еще более
+упрощает управление. И все же модель в MATLAB - Similink - Stateflow
+получилась вот такая:Тестовая модель верхнего уровняСодержимое блока
+модели Blind_controlСодержимое непосредственно рабочей модели
+управления рольставнямиСодержимое блока HMI_controСодержимое блока
+HMI_buttonsУточню, здесь представлена модель управления только одним
+мотором. Потом модель в ПЛК просто тиражируется для остальных моторов.
+Модель получилась на удивление сложная. Но почему!? Во-первых, здесь
+реализован логика которая могла бы быть реализована в HMI, но
+перенесена в ПЛК. На экране HMI предполагается иметь три кнопки:
+вверх, стоп, вниз.Каждая кнопка должна иметь подсветку активности. При
+этом команды с HMI должны блокировать и отменять приказы  локальных
+физических кнопок, и эта блокировка во избежание конфликтов должна
+действовать спустя некоторое время после окончания активности кнопок
+на HMI.Во-вторых, предполагается подключение к ПЛК разных типов
+физических кнопок и работа по разным алгоритмам. Кнопки могут быть с
+фиксацией нажатия и без фиксации нажатия. Режим и тип кнопок задается
+сигналом Btn_mode. Он в свою очередь тоже может приходить от внешней
+кнопки.  В-третьих, управлять с помощью реле не так просто как
+кажется, если нужно думать о продлении ресурса реле. Нельзя просто
+сразу переключать направление движения или делать быстрые переключения
+пока мотор не остановился и пусковой конденсатор не разрядился. Иначе
+реле быстро обгорят и перестанут контачить или залипнут. Поэтому
+детально проработан автомат состояний Stateflow с именем Motor.
+Реализованы следующие сценарии управления от кнопок:Сценарий
+управления с двумя кнопками Пока нажимается кнопка Btn_1 - движется
+внизПока нажимается кнопка Btn_2 - движется вверхЕсли ничего не нажато
+- остановка  Сценарий 1 управления одной кнопкой 1.Нажали кнопку и
+отпустили - движется вверх2.Нажали кнопку - остановка3.Нажали кнопку -
+движется вниз4.Нажали кнопку - остановкаПереход к пункту 1 Сценарий 2
+управления одной кнопкойЕсли мотор остановлен:Короткое нажатие
+вызывает подъем вверх,Два коротких нажатия вызывают опусканиеЕсли
+мотор работает:Короткое нажатие вызывает остановкуПосле того как
+модель в Stateflow была протестирована и отлажена был сгенерирован
+исходник на языке Statement List (STL) для среды разработки e!COCKPIT.
+И вот полученный кодОсторожно! Реально длинный код.CASE ssMethodType
+OF     SS_INITIALIZE:          DelayInput1_DSTATE := FALSE;
+DelayInput1_DSTATE_i := FALSE;         DelayInput1_DSTATE_m := FALSE;
+is_active_Button := 0;         is_Button :=
+c_Blind_contro_IN_NO_ACTIVE;         is_HMI_control :=
+c_Blind_contro_IN_NO_ACTIVE;         temporalCounter_i1(timerAction :=
+1, maxTime := 0);         is_Local_control :=
+c_Blind_contro_IN_NO_ACTIVE;         was_Local_control :=
+c_Blind_contro_IN_NO_ACTIVE;         is_Mode01 :=
+c_Blind_contro_IN_NO_ACTIVE;         is_Mode1 :=
+c_Blind_contro_IN_NO_ACTIVE;         is_Released :=
+c_Blind_contro_IN_NO_ACTIVE;         was_Released :=
+c_Blind_contro_IN_NO_ACTIVE;         temporalCounter_i1(timerAction :=
+1, maxTime := 0);         is_Mode2 := c_Blind_contro_IN_NO_ACTIVE;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+is_active_HMI_buttons := 0;         is_HMI_buttons :=
+c_Blind_contro_IN_NO_ACTIVE;         is_active_Motor := 0;
+is_Motor := c_Blind_contro_IN_NO_ACTIVE;         is_DOWN :=
+c_Blind_contro_IN_NO_ACTIVE;         temporalCounter_i2(timerAction :=
+1, maxTime := 0);         is_UP := c_Blind_contro_IN_NO_ACTIVE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+is_active_c3_Blind_control0 := 0;         b_st := FALSE;
+HMI_Btn_UP_req := FALSE;         HMI_Btn_Down_req := FALSE;
+HMI_Btn_Stop_req := FALSE;         HMI_req := FALSE;         UP_mode
+:= FALSE;         DOWN_mode := FALSE;     SS_STEP:
+rtb_FixPtRelationalOperator := BOOL_TO_DINT(HMI_Btn_Up) >
+BOOL_TO_DINT(DelayInput1_DSTATE);         b_rtb_FixPtRelationalOperat
+:= BOOL_TO_DINT(HMI_Btn_Down) > BOOL_TO_DINT(DelayInput1_DSTATE_i);
+c_rtb_FixPtRelationalOperat := BOOL_TO_DINT(HMI_Btn_Stop) >
+BOOL_TO_DINT(DelayInput1_DSTATE_m);          IF
+is_active_c3_Blind_control0 = 0 THEN
+is_active_c3_Blind_control0 := 1;             is_active_Motor := 1;
+Relay_DIR := FALSE;             is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;             is_active_Button := 1;
+is_Button := Blind_control0_IN_Begin;
+is_active_HMI_buttons := 1;             is_HMI_buttons :=
+Blind_control0_IN_Btns;         ELSE               IF is_active_Motor
+<> 0 THEN                   CASE is_Motor OF
+Blind_control0_IN_DOWN:                           CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:                                  ;
+;                             c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;                                 END_IF;
+END_CASE;                      Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN                               IF
+Relay_DIR THEN                                  Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;                             END_IF;
+END_IF;                      Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN                              is_Motor
+:= Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;                         END_IF;
+Blind_control0_IN_UP_j:                           CASE is_UP OF
+Blind_control0_IN_MOV_UP:                                  ;
+;                             c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;                                 END_IF;
+END_CASE;                  END_CASE;              END_IF;
+IF is_active_Button <> 0 THEN                  temp1 := FALSE;
+temp2 := FALSE;                  CASE is_Button OF
+Blind_control0_IN_Begin:                           CASE Btn_mode OF
+1:                                  is_Button :=
+c_Blind_control0_IN_Local_c;
+is_Local_control := Blind_control0_IN_Mode1;
+was_Local_control := Blind_control0_IN_Mode1;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE                                                          is_DOWN
+:= c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                              END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                              END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE                                                          is_UP :=
+c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                              END_CASE;
+END_CASE;                                  END_IF;
+is_Mode1 := Blind_control0_IN_Begin;                             2:
+is_Button := c_Blind_control0_IN_Local_c;
+is_Local_control := Blind_control0_IN_Mode2;
+was_Local_control := Blind_control0_IN_Mode2;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE                                                          is_DOWN
+:= c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                              END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                              END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE                                                          is_UP :=
+c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                              END_CASE;
+END_CASE;                                  END_IF;
+is_Mode2 := Blind_control0_IN_Begin;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+0:                                  is_Button :=
+c_Blind_control0_IN_Local_c;
+is_Local_control := Blind_control0_IN_Mode01;
+was_Local_control := Blind_control0_IN_Mode01;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE                                                          is_DOWN
+:= c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                              END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                              END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE                                                          is_UP :=
+c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                              END_CASE;
+END_CASE;                                  END_IF;
+is_Mode01 := Blind_control0_IN_Begin;
+END_CASE;                      c_Blind_control0_IN_HMI_con:
+IF  NOT local_block THEN                               CASE
+is_HMI_control OF
+c_Blind_control0_IN_Start_U:
+HMI_Btn_UP_req := FALSE;
+HMI_Btn_Stop_req := FALSE;
+is_HMI_control := c_Blind_contro_IN_NO_ACTIVE;
+b_Blind_control0_IN_Stop_DO:
+HMI_Btn_Down_req := FALSE;
+HMI_Btn_Stop_req := FALSE;
+is_HMI_control := c_Blind_contro_IN_NO_ACTIVE;
+ELSE                                     is_HMI_control :=
+c_Blind_contro_IN_NO_ACTIVE;                             END_CASE;
+HMI_req := FALSE;                             is_Button :=
+c_Blind_control0_IN_Local_c;                              CASE
+was_Local_control OF
+Blind_control0_IN_Mode01:
+is_Local_control := Blind_control0_IN_Mode01;
+was_Local_control := Blind_control0_IN_Mode01;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                                  END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                                  END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                                  END_CASE;
+END_CASE;                                      END_IF;
+is_Mode01 := Blind_control0_IN_Begin;
+Blind_control0_IN_Mode1:
+is_Local_control := Blind_control0_IN_Mode1;
+was_Local_control := Blind_control0_IN_Mode1;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                                  END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                                  END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                                  END_CASE;
+END_CASE;                                      END_IF;
+is_Mode1 := Blind_control0_IN_Begin;
+Blind_control0_IN_Mode2:
+is_Local_control := Blind_control0_IN_Mode2;
+was_Local_control := Blind_control0_IN_Mode2;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                                  END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                                  END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                                  END_CASE;
+END_CASE;                                      END_IF;
+is_Mode2 := Blind_control0_IN_Begin;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+END_CASE;                          ELSE
+CASE is_HMI_control OF
+Blind_control0_IN_DoStop:
+temporalCounter_i1(timerAction := 2, maxTime := 200);
+IF temporalCounter_i1.done THEN
+is_HMI_control := Blind_control0_IN_IDLE;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+END_IF;                                  Blind_control0_IN_IDLE:
+temporalCounter_i1(timerAction := 2, maxTime := 1000);
+IF temporalCounter_i1.done THEN
+local_block := FALSE;
+is_HMI_control := Blind_control0_IN_IDLE;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+ELSIF HMI_Btn_UP_req THEN
+is_HMI_control := c_Blind_control0_IN_Start_U;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+;                                                             ;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+END_IF;                                                      END_CASE;
+Blind_control0_IN_IDLE:
+is_Motor := Blind_control0_IN_UP_j;
+UP_mode := TRUE;
+is_UP := c_Blind_control0_IN_MOV_UP_;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_DIR := TRUE;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+;                                                             ;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+END_IF;                                                      END_CASE;
+END_CASE;                                          END_IF;
+ELSIF HMI_Btn_Down_req THEN
+is_HMI_control := b_Blind_control0_IN_Stop_DO;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+;                                                             ;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+END_IF;                                                      END_CASE;
+Blind_control0_IN_IDLE:
+is_Motor := Blind_control0_IN_DOWN;
+DOWN_mode := TRUE;
+is_DOWN := c_Blind_control0_IN_MOV_DOW;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_DIR := FALSE;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+;                                                             ;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+END_IF;                                                      END_CASE;
+END_CASE;                                          END_IF;
+END_IF;                                  c_Blind_control0_IN_Start_U:
+IF HMI_Btn_Stop_req OR HMI_Btn_Down_req THEN
+temp1 := TRUE;                                     ELSE
+temporalCounter_i1(timerAction := 2, maxTime :=
+TRUNC(REAL_TO_LREAL(Mot_timeout) * 1000.0));
+IF temporalCounter_i1.done THEN
+temp1 := TRUE;                                         END_IF;
+END_IF;                                  b_Blind_control0_IN_Stop_DO:
+IF HMI_Btn_Stop_req OR HMI_Btn_UP_req THEN
+temp2 := TRUE;                                     ELSE
+temporalCounter_i1(timerAction := 2, maxTime :=
+TRUNC(REAL_TO_LREAL(Mot_timeout) * 1000.0));
+IF temporalCounter_i1.done THEN
+temp2 := TRUE;                                         END_IF;
+END_IF;                              END_CASE;
+END_IF;                      c_Blind_control0_IN_Local_c:
+tmp :=  NOT Btn_1;                          IF HMI_req AND tmp THEN
+CASE is_Local_control OF
+Blind_control0_IN_Mode01:                                       CASE
+is_Mode01 OF
+c_Blind_control0_IN_Pressed:
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;                                                  END_CASE;
+END_IF;                                              is_Mode01 :=
+c_Blind_contro_IN_NO_ACTIVE;
+d_Blind_control0_IN_Pressed:
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;                                                  END_CASE;
+END_IF;                                              is_Mode01 :=
+c_Blind_contro_IN_NO_ACTIVE;
+ELSE                                             is_Mode01 :=
+c_Blind_contro_IN_NO_ACTIVE;
+END_CASE;                                      is_Local_control :=
+c_Blind_contro_IN_NO_ACTIVE;                                 ELSE
+is_Released := c_Blind_contro_IN_NO_ACTIVE;
+is_Mode1 := c_Blind_contro_IN_NO_ACTIVE;
+is_Mode2 := c_Blind_contro_IN_NO_ACTIVE;
+is_Local_control := c_Blind_contro_IN_NO_ACTIVE;
+END_CASE;                              is_Button :=
+c_Blind_control0_IN_HMI_con;
+is_HMI_control := Blind_control0_IN_DoStop;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+IF is_active_Motor <> 0 THEN                                   CASE
+is_Motor OF
+Blind_control0_IN_DOWN:                                           CASE
+is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE                                                      is_DOWN :=
+c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                          END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                          END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;                                         END_IF;
+Blind_control0_IN_UP_j:                                           CASE
+is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE                                                      is_UP :=
+c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;                                          END_CASE;
+END_CASE;                              END_IF;
+ELSE                               CASE is_Local_control OF
+Blind_control0_IN_Mode01:                                       IF
+Btn_mode <> 0 THEN                                           CASE
+is_Mode01 OF
+c_Blind_control0_IN_Pressed:
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+END_CASE;                                                  END_IF;
+is_Mode01 := c_Blind_contro_IN_NO_ACTIVE;
+d_Blind_control0_IN_Pressed:
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+END_CASE;                                                  END_IF;
+is_Mode01 := c_Blind_contro_IN_NO_ACTIVE;
+ELSE                                                 is_Mode01 :=
+c_Blind_contro_IN_NO_ACTIVE;
+END_CASE;                                          is_Local_control :=
+c_Blind_contro_IN_NO_ACTIVE;
+is_Button := Blind_control0_IN_Begin;
+ELSE                                           CASE is_Mode01 OF
+Blind_control0_IN_Begin:
+IF Btn_1 THEN
+is_Mode01 := c_Blind_control0_IN_Pressed;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+;
+;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+is_Motor := Blind_control0_IN_DOWN;
+DOWN_mode := TRUE;
+is_DOWN := c_Blind_control0_IN_MOV_DOW;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_DIR := FALSE;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+;
+;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+END_CASE;                                                      END_IF;
+ELSIF Btn_2 THEN
+is_Mode01 := d_Blind_control0_IN_Pressed;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+;
+;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+is_Motor := Blind_control0_IN_UP_j;
+UP_mode := TRUE;
+is_UP := c_Blind_control0_IN_MOV_UP_;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_DIR := TRUE;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+;
+;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+END_CASE;                                                      END_IF;
+ELSE                                                      is_Mode01 :=
+Blind_control0_IN_Released;
+END_IF;
+c_Blind_control0_IN_Pressed:
+IF  NOT Btn_1 THEN
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+END_CASE;                                                      END_IF;
+is_Mode01 := Blind_control0_IN_Released;
+END_IF;
+d_Blind_control0_IN_Pressed:
+IF  NOT Btn_2 THEN
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+END_CASE;                                                      END_IF;
+is_Mode01 := Blind_control0_IN_Released;
+END_IF;
+Blind_control0_IN_Released:
+IF Btn_1 THEN
+is_Mode01 := c_Blind_control0_IN_Pressed;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+;
+;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+is_Motor := Blind_control0_IN_DOWN;
+DOWN_mode := TRUE;
+is_DOWN := c_Blind_control0_IN_MOV_DOW;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_DIR := FALSE;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+;
+;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+END_CASE;                                                      END_IF;
+ELSIF Btn_2 THEN
+is_Mode01 := d_Blind_control0_IN_Pressed;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+;
+;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+is_Motor := Blind_control0_IN_UP_j;
+UP_mode := TRUE;
+is_UP := c_Blind_control0_IN_MOV_UP_;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_DIR := TRUE;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+;
+;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+END_CASE;                                                      END_IF;
+END_IF;                                          END_CASE;
+END_IF;                                  Blind_control0_IN_Mode1:
+IF Btn_mode <> 1 THEN
+is_Released := c_Blind_contro_IN_NO_ACTIVE;
+is_Mode1 := c_Blind_contro_IN_NO_ACTIVE;
+is_Local_control := c_Blind_contro_IN_NO_ACTIVE;
+is_Button := Blind_control0_IN_Begin;
+ELSE                                           CASE is_Mode1 OF
+Blind_control0_IN_Begin:
+IF Btn_1 THEN
+is_Mode1 := Blind_control0_IN_Pressed;
+b_st := TRUE;                                                 ELSE
+is_Mode1 := c_Blind_control0_IN_Release;
+CASE was_Released OF
+Blind_control0_IN_DOWN:
+is_Released := Blind_control0_IN_DOWN;
+was_Released := Blind_control0_IN_DOWN;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+Blind_control0_IN_DOWN_Tout:
+is_Released := Blind_control0_IN_DOWN_Tout;
+was_Released := Blind_control0_IN_DOWN_Tout;
+b_st := FALSE;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+END_CASE;
+END_IF;
+Blind_control0_IN_STOP_DOWN:
+is_Released := Blind_control0_IN_STOP_DOWN;
+was_Released := Blind_control0_IN_STOP_DOWN;
+Blind_control0_IN_STOP_UP:
+is_Released := Blind_control0_IN_STOP_UP;
+was_Released := Blind_control0_IN_STOP_UP;
+Blind_control0_IN_UP:
+is_Released := Blind_control0_IN_UP;
+was_Released := Blind_control0_IN_UP;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+Blind_control0_IN_UP_Tout:
+is_Released := Blind_control0_IN_UP_Tout;
+was_Released := Blind_control0_IN_UP_Tout;
+b_st := FALSE;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+END_CASE;
+END_IF;                                                          ELSE
+is_Released := Blind_control0_IN_STOP_UP;
+was_Released := Blind_control0_IN_STOP_UP;
+END_CASE;                                                  END_IF;
+Blind_control0_IN_Pressed:
+IF  NOT Btn_1 THEN
+is_Mode1 := c_Blind_control0_IN_Release;
+CASE was_Released OF
+Blind_control0_IN_DOWN:
+is_Released := Blind_control0_IN_DOWN;
+was_Released := Blind_control0_IN_DOWN;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+Blind_control0_IN_DOWN_Tout:
+is_Released := Blind_control0_IN_DOWN_Tout;
+was_Released := Blind_control0_IN_DOWN_Tout;
+b_st := FALSE;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+END_CASE;
+END_IF;
+Blind_control0_IN_STOP_DOWN:
+is_Released := Blind_control0_IN_STOP_DOWN;
+was_Released := Blind_control0_IN_STOP_DOWN;
+Blind_control0_IN_STOP_UP:
+is_Released := Blind_control0_IN_STOP_UP;
+was_Released := Blind_control0_IN_STOP_UP;
+Blind_control0_IN_UP:
+is_Released := Blind_control0_IN_UP;
+was_Released := Blind_control0_IN_UP;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+Blind_control0_IN_UP_Tout:
+is_Released := Blind_control0_IN_UP_Tout;
+was_Released := Blind_control0_IN_UP_Tout;
+b_st := FALSE;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+END_CASE;
+END_IF;                                                          ELSE
+is_Released := Blind_control0_IN_STOP_UP;
+was_Released := Blind_control0_IN_STOP_UP;
+END_CASE;                                                  END_IF;
+c_Blind_control0_IN_Release:
+IF Btn_1 THEN
+is_Released := c_Blind_contro_IN_NO_ACTIVE;
+is_Mode1 := Blind_control0_IN_Pressed;
+b_st := TRUE;                                                 ELSE
+CASE is_Released OF
+Blind_control0_IN_DOWN:
+temporalCounter_i1(timerAction := 2, maxTime :=
+TRUNC(REAL_TO_LREAL(Mot_timeout) * 1000.0));
+IF temporalCounter_i1.done THEN
+is_Released := Blind_control0_IN_DOWN_Tout;
+was_Released := Blind_control0_IN_DOWN_Tout;
+b_st := FALSE;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+END_CASE;
+END_IF;
+ELSIF b_st THEN
+b_st := FALSE;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+END_CASE;
+END_IF;
+is_Released := Blind_control0_IN_STOP_UP;
+was_Released := Blind_control0_IN_STOP_UP;
+END_IF;
+Blind_control0_IN_DOWN_Tout:
+is_Released := Blind_control0_IN_STOP_DOWN;
+was_Released := Blind_control0_IN_STOP_DOWN;
+Blind_control0_IN_STOP_DOWN:
+IF b_st THEN
+b_st := FALSE;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+;
+;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+is_Motor := Blind_control0_IN_DOWN;
+DOWN_mode := TRUE;
+is_DOWN := c_Blind_control0_IN_MOV_DOW;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_DIR := FALSE;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+;
+;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+END_CASE;
+END_IF;
+is_Released := Blind_control0_IN_DOWN;
+was_Released := Blind_control0_IN_DOWN;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+END_IF;
+Blind_control0_IN_STOP_UP:
+IF b_st THEN
+b_st := FALSE;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+;
+;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+is_Motor := Blind_control0_IN_UP_j;
+UP_mode := TRUE;
+is_UP := c_Blind_control0_IN_MOV_UP_;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_DIR := TRUE;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+;
+;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+END_CASE;
+END_IF;
+is_Released := Blind_control0_IN_UP;
+was_Released := Blind_control0_IN_UP;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+END_IF;
+Blind_control0_IN_UP:
+IF b_st THEN
+b_st := FALSE;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+END_CASE;
+END_IF;
+is_Released := Blind_control0_IN_STOP_DOWN;
+was_Released := Blind_control0_IN_STOP_DOWN;
+ELSE
+temporalCounter_i1(timerAction := 2, maxTime :=
+TRUNC(REAL_TO_LREAL(Mot_timeout) * 1000.0));
+IF temporalCounter_i1.done THEN
+is_Released := Blind_control0_IN_UP_Tout;
+was_Released := Blind_control0_IN_UP_Tout;
+b_st := FALSE;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+END_CASE;
+END_IF;
+END_IF;
+END_IF;
+Blind_control0_IN_UP_Tout:
+is_Released := Blind_control0_IN_STOP_UP;
+was_Released := Blind_control0_IN_STOP_UP;
+END_CASE;                                                  END_IF;
+END_CASE;                                      END_IF;
+Blind_control0_IN_Mode2:                                       IF
+Btn_mode <> 2 THEN                                          is_Mode2
+:= c_Blind_contro_IN_NO_ACTIVE;
+is_Local_control := c_Blind_contro_IN_NO_ACTIVE;
+is_Button := Blind_control0_IN_Begin;
+ELSE                                           CASE is_Mode2 OF
+Blind_control0_IN_Begin:
+IF Btn_1 THEN
+is_Mode2 := Blind_control0_IN_Press1;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+ELSE
+temporalCounter_i1(timerAction := 2, maxTime :=
+TRUNC(REAL_TO_LREAL(Mot_timeout) * 1000.0));
+IF temporalCounter_i1.done THEN
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+END_CASE;
+END_IF;
+is_Mode2 := Blind_control0_IN_Begin;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+END_IF;                                                  END_IF;
+Blind_control0_IN_Press1:
+IF is_Motor <> 2 THEN
+is_Mode2 := c_Blind_control0_IN_Stop_mo;
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+END_CASE;                                                      END_IF;
+ELSE
+temporalCounter_i1(timerAction := 2, maxTime := 1000);
+IF temporalCounter_i1.done THEN
+is_Mode2 := Blind_control0_IN_Start_UP;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+;
+;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+is_Motor := Blind_control0_IN_UP_j;
+UP_mode := TRUE;
+is_UP := c_Blind_control0_IN_MOV_UP_;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_DIR := TRUE;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+;
+;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+END_CASE;
+END_IF;                                                      ELSIF
+NOT Btn_1 THEN
+is_Mode2 := Blind_control0_IN_Releas1;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+END_IF;                                                  END_IF;
+Blind_control0_IN_Releas1:
+IF Btn_1 THEN
+is_Mode2 := c_Blind_control0_IN_Start_D;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+;
+;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+is_Motor := Blind_control0_IN_DOWN;
+DOWN_mode := TRUE;
+is_DOWN := c_Blind_control0_IN_MOV_DOW;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_DIR := FALSE;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+;
+;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+END_CASE;                                                      END_IF;
+ELSE
+temporalCounter_i1(timerAction := 2, maxTime := 1000);
+IF temporalCounter_i1.done THEN
+is_Mode2 := Blind_control0_IN_Start_UP;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+;
+;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+is_Motor := Blind_control0_IN_UP_j;
+UP_mode := TRUE;
+is_UP := c_Blind_control0_IN_MOV_UP_;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_DIR := TRUE;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+;
+;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+END_CASE;
+END_IF;                                                      END_IF;
+END_IF;
+c_Blind_control0_IN_Start_D:
+IF  NOT Btn_1 THEN
+is_Mode2 := Blind_control0_IN_Begin;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+ELSE
+temporalCounter_i1(timerAction := 2, maxTime :=
+TRUNC(REAL_TO_LREAL(Mot_timeout) * 1000.0));
+IF temporalCounter_i1.done THEN
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+END_CASE;
+END_IF;
+is_Mode2 := c_Blind_control0_IN_Start_D;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+;
+;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+is_Motor := Blind_control0_IN_DOWN;
+DOWN_mode := TRUE;
+is_DOWN := c_Blind_control0_IN_MOV_DOW;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_DIR := FALSE;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+;
+;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+END_CASE;
+END_IF;                                                      END_IF;
+END_IF;
+Blind_control0_IN_Start_UP:
+IF  NOT Btn_1 THEN
+is_Mode2 := Blind_control0_IN_Begin;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+ELSE
+temporalCounter_i1(timerAction := 2, maxTime :=
+TRUNC(REAL_TO_LREAL(Mot_timeout) * 1000.0));
+IF temporalCounter_i1.done THEN
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN
+Relay_DIR := FALSE;
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_IF;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+END_CASE;
+END_CASE;
+END_IF;
+is_Mode2 := Blind_control0_IN_Start_UP;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+IF is_active_Motor <> 0 THEN
+CASE is_Motor OF
+Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+;
+;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+Blind_control0_IN_IDLE:
+is_Motor := Blind_control0_IN_UP_j;
+UP_mode := TRUE;
+is_UP := c_Blind_control0_IN_MOV_UP_;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_DIR := TRUE;
+Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+END_IF;
+Blind_control0_IN_UP_j:
+CASE is_UP OF
+Blind_control0_IN_MOV_UP:
+;
+;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;
+END_IF;
+END_CASE;
+END_CASE;
+END_IF;                                                      END_IF;
+END_IF;
+c_Blind_control0_IN_Stop_mo:
+IF (is_Motor = 2) AND tmp THEN
+is_Mode2 := Blind_control0_IN_Begin;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+END_IF;                                          END_CASE;
+END_IF;                              END_CASE;
+END_IF;                  END_CASE;                   IF temp2 THEN
+HMI_Btn_Down_req := FALSE;                     HMI_Btn_Stop_req :=
+FALSE;                     is_HMI_control := Blind_control0_IN_DoStop;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+IF is_active_Motor <> 0 THEN                           CASE is_Motor
+OF                             Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;                                         is_Motor
+:= Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;                                         ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;                                         END_IF;
+END_CASE;                              Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN                                          Relay_DIR
+:= FALSE;                                         is_Motor :=
+Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;                                     END_IF;
+END_IF;                              Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;                                 END_IF;
+Blind_control0_IN_UP_j:                                   CASE is_UP
+OF                                     Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;                                         is_Motor :=
+Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;                                         ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;                                             is_Motor
+:= Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;                                         END_IF;
+END_CASE;                          END_CASE;
+END_IF;                  END_IF;                   IF temp1 THEN
+HMI_Btn_UP_req := FALSE;                     HMI_Btn_Stop_req :=
+FALSE;                     is_HMI_control := Blind_control0_IN_DoStop;
+temporalCounter_i1(timerAction := 1, maxTime := 0);
+IF is_active_Motor <> 0 THEN                           CASE is_Motor
+OF                             Blind_control0_IN_DOWN:
+CASE is_DOWN OF
+Blind_control0_IN_MOV_DOWN:
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;                                         is_Motor
+:= Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_DOW:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_DOWN := Blind_control0_IN_MOV_DOWN;
+Relay_PWR := TRUE;                                         ELSE
+is_DOWN := c_Blind_contro_IN_NO_ACTIVE;
+DOWN_mode := FALSE;
+is_Motor := Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;                                         END_IF;
+END_CASE;                              Blind_control0_IN_IDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+IF Relay_DIR THEN                                          Relay_DIR
+:= FALSE;                                         is_Motor :=
+Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;                                     END_IF;
+END_IF;                              Blind_control0_IN_PreIDLE:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_Motor := Blind_control0_IN_IDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;                                 END_IF;
+Blind_control0_IN_UP_j:                                   CASE is_UP
+OF                                     Blind_control0_IN_MOV_UP:
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;                                         is_Motor :=
+Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;
+c_Blind_control0_IN_MOV_UP_:
+temporalCounter_i2(timerAction := 2, maxTime := 100);
+IF temporalCounter_i2.done THEN
+is_UP := Blind_control0_IN_MOV_UP;
+Relay_PWR := TRUE;                                         ELSE
+is_UP := c_Blind_contro_IN_NO_ACTIVE;
+UP_mode := FALSE;                                             is_Motor
+:= Blind_control0_IN_PreIDLE;
+temporalCounter_i2(timerAction := 1, maxTime := 0);
+Relay_PWR := FALSE;                                         END_IF;
+END_CASE;                          END_CASE;
+END_IF;                  END_IF;              END_IF;               IF
+(is_active_HMI_buttons <> 0) AND (is_HMI_buttons = 1) THEN
+IF rtb_FixPtRelationalOperator THEN
+HMI_Btn_UP_req := TRUE;                     HMI_req := TRUE;
+local_block := TRUE;                     is_HMI_buttons :=
+Blind_control0_IN_Btns;                 ELSIF
+c_rtb_FixPtRelationalOperat THEN                      HMI_Btn_Stop_req
+:= TRUE;                     HMI_req := TRUE;
+local_block := TRUE;                     is_HMI_buttons :=
+Blind_control0_IN_Btns;                 ELSIF
+b_rtb_FixPtRelationalOperat THEN                      HMI_Btn_Down_req
+:= TRUE;                     HMI_req := TRUE;
+local_block := TRUE;                     is_HMI_buttons :=
+Blind_control0_IN_Btns;                 END_IF;              END_IF;
+END_IF;          DelayInput1_DSTATE := HMI_Btn_Up;
+DelayInput1_DSTATE_i := HMI_Btn_Down;         DelayInput1_DSTATE_m :=
+HMI_Btn_Stop; END_CASE; Размер кода больше 240 Кб и он рабочий! Код
+был откомпилирован в среде e!COCKPIT , загружен в ПЛК и
+протестирован.Но попытка все реализовать внутри ПЛК привела к большому
+объему кода. В исходном тексте на языке STL  такой программы уже
+невозможно ориентироваться. Выручает только графическая нотация MATLAB
+Stateflow.С другой стороны проект совершенно не зависит от кода на
+стороне HMI. На HMI могут быть только кнопки отражающие состояния
+переменных в ПЛК и никакого кода. Стоит отметить, что нередко HMI
+программируются даже не на STL, а например, на неких диалектах BASIC и
+прочей экзотике и это еще более усложняет программирование скриптов
+HMI. Словом централизация кода с точки зрения создания систем на ПЛК
+удобна если вы работаете в одиночку, без детального утвержденного ТЗ,
+и с неясным составом оборудования. Но даже в этом случае лучше
+подумать о более прогрессивных нотациях чем стандартная пятерка: LAD,
+FBD, SFC, ST, IL.

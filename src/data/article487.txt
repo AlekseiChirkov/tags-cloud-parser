@@ -1,0 +1,387 @@
+Автор: Neoprog
+Дата: 2021-09-29T09:00:02.000Z
+Название: Пишем драйвер виртуального EEPROM для STM32F030
+Теги: Блог компании RUVDS.com, Программирование *, Программирование
+микроконтроллеров *
+Текст:
+Кто хотел сохранять какие-либо данные в FLASH микроконтроллера во
+время работы устройства сталкивались с особенностями работы с этим
+видом памяти. Из-за необходимости стирания страницы большого объёма
+для перезаписи ячейки FLASH памяти, возникает угроза потери данных из-
+за отключения питания во время процесса обновления (один из
+вариантов). В этой статье я расскажу как можно упростить работу с
+FLASH, да и ещё с гарантией сохранения данных при прерывании процедуры
+обновления на любом этапе. Реализуем это на STM32F030.  ▍ Введение
+Можно ли работать с FLASH памятью, так же как и с EEPROM? Почему бы и
+нет? Мы можем сделать прослойку в виде драйвера, который будет
+предоставлять интерфейс EEPROM, а внутри жонглировать FLASH памятью.
+Такая эмуляция EEPROM на FLASH памяти называется виртуальным EEPROM
+(VEEPROM). Такая шутка позволяет не только удобно работать с FLASH, но
+и даёт определённые гарантии на целостность данных.   Требования:
+Обеспечение сохранности данных при прерывании процесса чтения\записи
+на любом этапе Простой интерфейс, который даст возможность записывать
+по 1, 2, 4 и N байт  ▍ Давайте немного подумаем  Страницы FLASH памяти
+имеют относительно большой размер (в STM32F030 страница имеет размер
+1024 байта) и в случае необходимости записи 1 ячейки нам нужно стереть
+эти 1024 байта.   Стоит сделать небольшое отступление. Требование к
+стиранию страницы перед записью актуально для FLASH памяти МК (для
+STM32F030 точно). На данный момент имеются внешние микросхемы FLASH
+памяти, которые умеют выполнять byte write operation.   «Ну и что тут
+такого? Давайте сохраним данные в буфер RAM, сотрём страницу и запишем
+данные, делов-то». Для начала взглянем на datasheet STM32F030 и увидим
+там прекрасную таблицу:  Flash memory characteristics   Нас интересует
+Page erase time — 30 ms, Карл! Этого времени достаточно, чтобы
+выдернуть питание, пока мы стираем страницу. В результате мы потеряем
+данные, т.к. мы их храним во временном буфере в RAM. К тому же,
+выделить буфер в RAM размером 1024 байта далеко не всегда можно.
+Сохранность данных можно обеспечить работая с двумя страницами FLASH
+памяти, не копируя данные в RAM во время процедуры обновления. При
+записи мы копируем данные из одной страницы в другую, попутно меняя
+нужные ячейки. В итоге в одной странице хранятся актуальные данные, а
+в другой устаревшие. Такая процедура продолжается по кругу из одной
+страницы в другую при каждой операции записи. Всё же это не 100%
+решает проблему сохранности данных, т.к. при старте МК мы не сможем
+определить, какая из страниц содержит актуальные данные. Давайте
+думать дальше.   В нашем примере есть 2 страницы по 1024 байта, в этом
+случае размер VEEPROM будет равен 1014 байт: 10 байт мы забираем для
+хранения нужной драйверу информации: 2 байта под контрольную сумму и 8
+байт для состояния страницы. Хранить эту информацию мы будем в конце
+страницы:  Формат страниц   Состояний страницы может быть 5: ERASED,
+WRITE, VALID, COPY, INVALID:   INVALID — страница содержит устаревшие
+данные COPY — страница содержит актуальные данные, но уже началась
+процедура копирования данных в другую страницу VALID — страница
+содержит актуальные данные WRITE — в страницу пишутся данные ERASED —
+страница пустая   Почему так много байт под состояние? FLASH память в
+STM32F030 позволяет записывать данные только по 16 бит и после записи
+мы не сможем повторно как-то изменить значение этой ячейки без
+стирания целой страницы. Нужна возможность менять статус страницы без
+стирания, иначе мы вернёмся в начало. Так вот каждая ячейка по 16 бит
+кодирует одно из состояний. Думаю будет лучше показать их значения:
+#define PAGE_STATE_INVALID
+((uint64_t)(0x0000000000000000)) #define PAGE_STATE_COPY
+((uint64_t)(0x000000000000FFFF)) #define PAGE_STATE_VALID
+((uint64_t)(0x00000000FFFFFFFF)) #define PAGE_STATE_WRITE
+((uint64_t)(0x0000FFFFFFFFFFFF)) #define PAGE_STATE_ERASED
+((uint64_t)(0xFFFFFFFFFFFFFFFF))   Понимаете да о чём я?
+Нерационально, согласен. Я пытался это оптимизировать, но в голову
+ничего не пришло. Очень удачно, что статусы влезают в uint64_t, и мы
+можем работать с ними в коде без танцев с бубном.   Если взглянуть на
+граф, то переход между состояниями сопровождается сбросом значения
+ячейки в 0x0000. Переходы по верхним стрелкам выполняются только 1
+раз, когда VEEPROM ещё не был инициализирован или произошёл серьёзный
+сбой. Граф состояний   В итоге мы получаем следующий алгоритм работы:
+Инициализация  Ищем страницу в состоянии VALID или COPY путём проверки
+состояния страницы. Состояние VALID имеет приоритет; Если нашли, то
+сохраняем её адрес для последующей работы и завершаем на этом
+инициализацию; Если не нашли, то берём любую страницу и стираем её.
+Этим мы автоматически переводим её в ERASED. В эту страницу и будут
+записываться новые данные. Запоминаем и завершаем инициализацию.
+Запись данных  Стираем вторую страницу, которая в INVALID, ERASED или
+WRITTING (при первом запуске тут мы получаем 2 пустые страницы, то что
+нужно); Текущее состояние страниц: [VALID] [ERASED] или [ERASED]
+[ERASED];  Сбрасываем ячейку состояние первой страницы в 0х0000,
+переводя её в COPY. Состояние COPY нужно, чтобы избежать ситуации, при
+которой мы получим 2 страницы в состоянии VALID, при этом одна будет
+содержать более свежие данные. Нам нужна однозначность. Текущее
+состояние страниц: [COPY] [ERASED];  Сбрасываем ячейку второй страницы
+в 0x0000, переводя её в WRITE. Это состояние нужно, на случай
+пропадания питания во время записи данных во вторую страницу. Без
+этого состояния страница останется в состоянии ERASED в процессе
+записи. Пробегаться каждый раз по всей странице, чтобы убедиться в её
+пустоте не очень хорошее решение.  Текущее состояние страниц: [COPY]
+[WRITE]; Копируем данные во вторую страницу и не забываем во время
+этого изменять требуемые ячейки на новые значения. Текущее состояние
+страниц: [COPY] [WRITE]; Сбрасываем ячейку второй страницы в 0x0000,
+переводя её в VALID. Вот тут у нас может получиться 2 страницы в VALID
+состоянии, если бы не было состояния COPY Текущее состояние страниц:
+[COPY] [VALID]; Сбрасываем ячейку второй страницы в 0x0000, переводя
+её в INVALID. Текущее состояние страниц: [INVALID] [VALID];    По
+такому алгоритму гарантируется оптимальная сохранность данных в случае
+потери питания в середине этого процесса. На любой стадии мы будем
+иметь валидные данные и возможность однозначно определить страницу с
+ними, а это нам и нужно. Выглядит страшно, но, к сожалению это
+единственный метод иметь надёжную часто изменяемую область памяти
+внутри МК. Таков путь!   Давайте я лучше покажу это на уже
+реализованном примере. Тут я специально уменьшил размер страницы
+VEEPROM до 256 байт, чтобы удобно было смотреть.   1. Инициализация.
+Обе страницы пустые    2. Началась процедура записи данных. Стираем
+вторую страницу от прошлых итераций и переводим первую в состояние
+COPY    3. Переводим вторую страницу в состояние WRITE    4. Пишем
+данные    5. Незабываем про checksum (считаем и пишем)    6. Переводим
+вторую страницу в состояние VALID (почему бы и нет, она же содержит
+актуальные данные)    7. Переводим первую страницу в состояние INVALID
+(данные там устарели)    8. Делаем вторую страницу активной. Профит!
+▍ Разделяй и властвуй  Итак, алгоритм работы понятен, но какие же нам
+страницы FLASH памяти выбрать для размещения VEEPROM в них? В 95%
+случаев берут либо первые, либо последние (я предпочитаю последние).
+Хорошо, теперь нам нужны адреса страниц — окунёмся в документацию.
+Большое «спасибо» STM за запихивание в один reference manual несколько
+МК, в итоге мне приходится тратить время на чтение великолепных сносок
+под таблицами. Ну сделайте вы эти таблицы отдельными, чтобы глазами
+глянуть и всё было сразу видно     Нас интересует сноска под таблицей.
+В нашем случае память заканчивается на адресе 0x08003FFF (16 страниц
+FLASH по 1024 байта). Берём две последние страницы для VEEPROM с
+адресами 0x08003800-0x08003BFF и 0x08003C00-0x08003FFF.    У нас есть
+адреса страниц и нужно их зарезервировать, т.е. нужно дать знать
+линкеру, что в эти страницы код программы записывать нельзя. Я
+использую IAR для разработки и там есть .icf файл, в котором
+определены области памяти для каждого МК. Добавляем туда новый регион
+и не забываем уменьшить размер ROM региона на 2048 байт:  /*-Memory
+Regions-*/ define symbol __ICFEDIT_region_ROM_start__ = 0x08000000;
+define symbol __ICFEDIT_region_ROM_end__   = 0x080037FF;  define
+symbol __ICFEDIT_region_VEEPROM_start__ = 0x08003800; define symbol
+__ICFEDIT_region_VEEPROM_end__   = 0x08003FFF;  define symbol
+__ICFEDIT_region_RAM_start__ = 0x20000000; define symbol
+__ICFEDIT_region_RAM_end__   = 0x20000FFF;   define region ROM_region
+= mem:[from __ICFEDIT_region_ROM_start__      to
+__ICFEDIT_region_ROM_end__    ]; define region VEEPROM_region =
+mem:[from __ICFEDIT_region_VEEPROM_start__  to
+__ICFEDIT_region_VEEPROM_end__]; define region RAM_region     =
+mem:[from __ICFEDIT_region_RAM_start__      to
+__ICFEDIT_region_RAM_end__    ];   В целом можно просто уменьшить ROM,
+но лучше создать отдельный именованный регион, чтобы потом быстро
+вспомнить распределение FLASH памяти.  ▍ Глянем реализацию  Начнём с
+лица — интерфейс: //  ************************************************
+*************************** /// @brief  VEEPROM driver initializetion
+/// @return true - init success, false - fail //  ********************
+******************************************************* extern bool
+veeprom_init();  //  *************************************************
+************************** /// @brief  Mass erase VEEPROM /// @return
+true - init success, false - fail //  ********************************
+******************************************* extern bool
+veeprom_mass_erase();  //  *******************************************
+******************************** /// @brief  Read data from VEEPROM
+/// @param  [in] veeprom_addr: virtual address [0x0000...size-1] ///
+@param  [out] buffer: pointer to buffer for data /// @param  [in]
+bytes_count: bytes count for read /// @return true - init success,
+false - fail //  *****************************************************
+********************** extern bool veeprom_read(uint32_t veeprom_addr,
+uint8_t* buffer, uint32_t bytes_count); extern uint8_t
+veeprom_read_8(uint32_t veeprom_addr); extern uint16_t
+veeprom_read_16(uint32_t veeprom_addr); extern uint32_t
+veeprom_read_32(uint32_t veeprom_addr);  //  *************************
+************************************************** /// @brief  Write
+data to VEEPROM /// @param  [in] veeprom_addr: virtual address
+[0x0000...size-1] /// @param  [out] data: pointer to data for write
+/// @param  [in] bytes_count: bytes count for write /// @return true -
+init success, false - fail //  ***************************************
+************************************ extern bool
+veeprom_write(uint32_t veeprom_addr, uint8_t* data, uint32_t
+bytes_count); extern bool veeprom_write_8(uint32_t veeprom_addr,
+uint8_t  value); extern bool veeprom_write_16(uint32_t veeprom_addr,
+uint16_t value); extern bool veeprom_write_32(uint32_t veeprom_addr,
+uint32_t value);   Прекрасно, не правда ли? Всё просто и без лишних
+параметров, адреса тут относительные [0x0000… SIZE — 1]. И ведь не
+подумаешь, что за таким интерфейсом скрываются ужасы работы с FLASH
+памятью.    Глянем реализацию. Весь замес происходит в функциях
+veeprom_write и veeprom_init, остальные функции либо обёртки, либо
+функции для сокращения кода.   Код. Много кода //  *******************
+******************************************************** /// @file
+veeprom.c /// @author  NeoProg //  ***********************************
+**************************************** #include "veeprom.h" #include
+"project_base.h" #define FLASH_PAGE_SIZE                     (1024)
+#define VEEPROM_SERVICE_HEADER_SIZE         (10) #define
+VEEPROM_PAGE_1_ADDR                 (0x08003800) #define
+VEEPROM_PAGE_2_ADDR                 (0x08003C00) #define
+VEEPROM_PAGE_SIZE                   (FLASH_PAGE_SIZE -
+VEEPROM_SERVICE_HEADER_SIZE)  #define PAGE_CHECKSUM_OFFSET
+(VEEPROM_PAGE_SIZE)  #define PAGE_STATE_OFFSET
+(VEEPROM_PAGE_SIZE + 2) #define PAGE_STATE_INVALID
+((uint64_t)(0x0000000000000000)) #define PAGE_STATE_COPY
+((uint64_t)(0x000000000000FFFF)) #define PAGE_STATE_VALID
+((uint64_t)(0x00000000FFFFFFFF)) #define PAGE_STATE_WRITE
+((uint64_t)(0x0000FFFFFFFFFFFF)) #define PAGE_STATE_ERASED
+((uint64_t)(0xFFFFFFFFFFFFFFFF))   static uint32_t active_page_addr =
+0; static uint32_t inactive_page_addr = 0;   static bool flash_lock();
+static bool flash_unlock(); static bool flash_wait_and_check(); static
+bool flash_page_erase(uint32_t flash_addr);  static uint64_t
+flash_page_get_state(uint32_t flash_addr); static bool
+flash_page_set_state(uint32_t flash_addr, uint64_t state);  static
+uint16_t flash_page_calc_checksum(uint32_t flash_addr); static
+uint16_t flash_page_read_checksum(uint32_t flash_addr); static bool
+flash_page_write_checksum(uint32_t flash_addr, uint16_t checksum);
+static uint8_t  flash_read_8(uint32_t flash_addr); static uint16_t
+flash_read_16(uint32_t flash_addr); static uint32_t
+flash_read_32(uint32_t flash_addr); static bool
+flash_write_16(uint32_t flash_addr, uint16_t value);    //  **********
+***************************************************************** ///
+@brief  VEEPROM driver initializetion /// @return true - init success,
+false - fail //  *****************************************************
+********************** bool veeprom_init() {     // Search active page
+uint64_t page1_state = flash_page_get_state(VEEPROM_PAGE_1_ADDR);
+uint64_t page2_state = flash_page_get_state(VEEPROM_PAGE_2_ADDR);
+if (page1_state == PAGE_STATE_VALID) {         active_page_addr =
+VEEPROM_PAGE_1_ADDR;         inactive_page_addr = VEEPROM_PAGE_2_ADDR;
+}      else if (page2_state == PAGE_STATE_VALID) {
+active_page_addr = VEEPROM_PAGE_2_ADDR;         inactive_page_addr =
+VEEPROM_PAGE_1_ADDR;     }      else if (page1_state ==
+PAGE_STATE_COPY) {         active_page_addr = VEEPROM_PAGE_1_ADDR;
+inactive_page_addr = VEEPROM_PAGE_2_ADDR;     }     else if
+(page2_state == PAGE_STATE_COPY) {         active_page_addr =
+VEEPROM_PAGE_2_ADDR;         inactive_page_addr = VEEPROM_PAGE_1_ADDR;
+}     else {         if (!flash_page_erase(VEEPROM_PAGE_1_ADDR)) {
+return false;         }         active_page_addr =
+VEEPROM_PAGE_1_ADDR;         inactive_page_addr = VEEPROM_PAGE_2_ADDR;
+return true;     }          // Check checksum     return
+flash_page_read_checksum(active_page_addr) !=
+flash_page_calc_checksum(active_page_addr); }  //  *******************
+******************************************************** /// @brief
+Mass erase VEEPROM /// @return true - init success, false - fail //  *
+**********************************************************************
+**** bool veeprom_mass_erase() {     return
+flash_page_erase(VEEPROM_PAGE_1_ADDR) &&
+flash_page_erase(VEEPROM_PAGE_2_ADDR); }  //  ************************
+*************************************************** /// @brief  Read
+data from VEEPROM /// @param  [in] veeprom_addr: virtual address
+[0x0000...size-1] /// @param  [out] buffer: pointer to buffer for data
+/// @param  [in] bytes_count: bytes count for read /// @return true -
+init success, false - fail //  ***************************************
+************************************ bool veeprom_read(uint32_t
+veeprom_addr, uint8_t* buffer, uint32_t bytes_count) {     if
+(veeprom_addr + bytes_count >= VEEPROM_PAGE_SIZE || !active_page_addr)
+{         return false;     }     while (bytes_count) {
+*buffer = flash_read_8(active_page_addr + veeprom_addr);
+++buffer;         --bytes_count;     }     return true; } uint8_t
+veeprom_read_8(uint32_t veeprom_addr) {     uint8_t data = 0;
+veeprom_read(veeprom_addr, &data, sizeof(data));     return data; }
+uint16_t veeprom_read_16(uint32_t veeprom_addr) {     uint16_t data =
+0;     veeprom_read(veeprom_addr, (uint8_t*)&data, sizeof(data));
+return data; } uint32_t veeprom_read_32(uint32_t veeprom_addr) {
+uint32_t data = 0;     veeprom_read(veeprom_addr, (uint8_t*)&data,
+sizeof(data));     return data; }  //  *******************************
+******************************************** /// @brief  Write data to
+VEEPROM /// @param  [in] veeprom_addr: virtual address
+[0x0000...size-1] /// @param  [out] data: pointer to data for write
+/// @param  [in] bytes_count: bytes count for write /// @return true -
+init success, false - fail //  ***************************************
+************************************ bool veeprom_write(uint32_t
+veeprom_addr, uint8_t* data, uint32_t bytes_count) {     // Erase
+inactive page (set ERASED state)     if
+(!flash_page_erase(inactive_page_addr)) {         return false;     }
+flash_unlock();          // Set COPY state for active page     if
+(!flash_page_set_state(active_page_addr, PAGE_STATE_COPY)) {
+flash_lock();         return false;     }          // Set WRITE state
+for inactive page     if (!flash_page_set_state(inactive_page_addr,
+PAGE_STATE_WRITE)) {         flash_lock();         return false;     }
+// Copy data from active page into inactive with change data     for
+(uint32_t offset = 0; offset < VEEPROM_PAGE_SIZE; /* NONE */) {
+uint8_t byte[2] = {0};         for (uint32_t i = 0; i < 2; ++i) {
+if (offset >= veeprom_addr && offset < veeprom_addr + bytes_count) {
+byte[i] = *data;                 ++data;             } else {
+byte[i] = flash_read_8(active_page_addr + offset);             }
+++offset;         }         uint16_t word = ((byte[0] << 8) & 0xFF00)
+| byte[1];         if (word != flash_read_16(inactive_page_addr +
+offset - 2)) {             // Write data             if
+(!flash_write_16(inactive_page_addr + offset - 2, word)) {
+flash_lock();                 return false;             }         }
+}          // Calc checksum for inactive page     uint16_t checksum =
+flash_page_calc_checksum(inactive_page_addr);     if
+(!flash_page_write_checksum(inactive_page_addr, checksum)) {
+flash_lock();         return false;     }          // Set VALID state
+for inactive page     if (!flash_page_set_state(inactive_page_addr,
+PAGE_STATE_VALID)) {         flash_lock();         return false;     }
+// Set INVALID state for active page     if
+(!flash_page_set_state(active_page_addr, PAGE_STATE_INVALID)) {
+flash_lock();         return false;     }          // Swap pages
+uint32_t tmp = inactive_page_addr;     inactive_page_addr =
+active_page_addr;     active_page_addr = tmp;          flash_lock();
+return true; } bool veeprom_write_8(uint32_t veeprom_addr, uint8_t
+value) {     return veeprom_write(veeprom_addr, &value, 1); } bool
+veeprom_write_16(uint32_t veeprom_addr, uint16_t value) {     return
+veeprom_write(veeprom_addr, (uint8_t*)&value, 2); } bool
+veeprom_write_32(uint32_t veeprom_addr, uint32_t value) {     return
+veeprom_write(veeprom_addr, (uint8_t*)&value, 4); }      //  *********
+****************************************************************** ///
+@brief  Lock/unlock FLASH /// @return true - init success, false -
+fail //  *************************************************************
+************** static bool flash_lock() {     FLASH->CR |=
+FLASH_CR_LOCK;     return (FLASH->CR & FLASH_CR_LOCK) ==
+FLASH_CR_LOCK; } static bool flash_unlock() {     if (FLASH->CR &
+FLASH_CR_LOCK) {         FLASH->KEYR = 0x45670123;         FLASH->KEYR
+= 0xCDEF89AB;     }     return (FLASH->CR & FLASH_CR_LOCK) !=
+FLASH_CR_LOCK; }  //  ************************************************
+*************************** /// @brief  Wait FLASH operation complete
+/// @return true - operation comleted, false - operation comleted with
+error //  ************************************************************
+*************** static bool flash_wait_and_check() {     while
+(FLASH->SR & FLASH_SR_BSY);     if (FLASH->SR & (FLASH_SR_PGERR |
+FLASH_SR_WRPRTERR)) {         FLASH->SR |= FLASH_SR_PGERR |
+FLASH_SR_WRPRTERR | FLASH_SR_EOP;         return false;     }
+FLASH->SR |= FLASH_SR_PGERR | FLASH_SR_WRPRTERR | FLASH_SR_EOP;
+return true; }  //  **************************************************
+************************* /// @brief  Erase FLASH page /// @param
+[in] flash_addr: page address for erase /// @return true - success,
+false - fail //  *****************************************************
+********************** static bool flash_page_erase(uint32_t
+flash_addr) {     flash_unlock();          FLASH->CR |= FLASH_CR_PER;
+FLASH->AR = flash_addr;     FLASH->CR |= FLASH_CR_STRT;     bool
+result = flash_wait_and_check();     FLASH->CR &= ~FLASH_CR_PER;
+flash_lock();     return result; }  //  ******************************
+********************************************* /// @brief  Get/set
+FLASH page state /// @param  [in] flash_addr: page address /// @param
+[in] state: new page state (for flash_page_set_state) /// @return true
+- success, false - fail //  ******************************************
+********************************* static uint64_t
+flash_page_get_state(uint32_t flash_addr) {     uint64_t state = 0;
+for (uint8_t i = 0; i < 4; ++i) {         state = (state << 16) |
+flash_read_16(flash_addr + PAGE_STATE_OFFSET + i * 2);     }
+return state; } static bool flash_page_set_state(uint32_t flash_addr,
+uint64_t state) {     uint64_t mask = 0xFFFF000000000000;     for
+(uint8_t i = 0; i < 4; ++i) {         if (state & mask) {
+if (flash_read_16(flash_addr + PAGE_STATE_OFFSET + i * 2) != 0xFFFF) {
+return false;             }             continue;         }         if
+(!flash_write_16(flash_addr + PAGE_STATE_OFFSET + i * 2, 0x0000)) {
+return false;         }         mask >>= 16;     }     return true; }
+//  ******************************************************************
+********* /// @brief  Calc/read/write checksum /// @param  [in]
+flash_addr: page address /// @param  [in] checksum: new page checksum
+(for flash_page_write_checksum) /// @return true - success, false -
+fail //  *************************************************************
+************** static uint16_t flash_page_calc_checksum(uint32_t
+flash_addr) {     uint32_t bytes_count = VEEPROM_PAGE_SIZE;
+uint16_t checksum = 0;     while (bytes_count) {         checksum +=
+flash_read_8(flash_addr);         ++flash_addr;         --bytes_count;
+}     return checksum; } static uint16_t
+flash_page_read_checksum(uint32_t flash_addr) {     return
+flash_read_16(flash_addr + PAGE_CHECKSUM_OFFSET); } static bool
+flash_page_write_checksum(uint32_t flash_addr, uint16_t checksum) {
+return flash_write_16(flash_addr + PAGE_CHECKSUM_OFFSET, checksum); }
+//  ******************************************************************
+********* /// @brief  Read data from FLASH in BE format /// @param
+[in] flash_addr: page address /// @param  [in] state: new page state
+(for flash_page_set_state) /// @return cell value //  ****************
+*********************************************************** static
+uint8_t flash_read_8(uint32_t flash_addr) {     return
+*((uint8_t*)flash_addr); } static uint16_t flash_read_16(uint32_t
+flash_addr) {     return __REV16(*((uint16_t*)flash_addr)); } static
+uint32_t flash_read_32(uint32_t flash_addr) {     return
+__REV(*((uint32_t*)flash_addr)); }  //  ******************************
+********************************************* /// @brief  Write word
+to FLASH in LE format /// @param  [in] flash_addr: page address ///
+@param  [in] value: new cell value /// @return true - success, false -
+fail //  *************************************************************
+************** static bool flash_write_16(uint32_t flash_addr,
+uint16_t value) {     FLASH->CR |= FLASH_CR_PG;
+*((uint16_t*)flash_addr) = __REV16(value);     bool result =
+flash_wait_and_check();     FLASH->CR &= ~FLASH_CR_PG;          if
+(flash_read_16(flash_addr) != value) {         return false;     }
+return result; }     Есть крайне важное замечание, которое стоит
+сказать. В даташите на МК сказано следующее:    Если своими словами,
+то МК не может обращаться к FLASH памяти, пока мы с ней что-то делаем
+(стираем, пишем), в том числе и не может читать инструкции для
+выполнения. Т.е. по сути МК залипает. Для решения этой проблемы нужно
+использовать __ramfunc — функции, инструкции которых хранятся в RAM, а
+не в FLASH и в этом случае программа будет продолжать работать. При
+использовании VEEPROM рекомендуется скопировать всю таблицу прерываний
+и все критичные обработчики в RAM. И не забываем про функции, которые
+вызываются из этих обработчиков. Не должно быть никакого обращения к
+FLASH, это важно. В нашем случае я не стал так глубоко закапываться и
+__ramfunc опустил.   ▍ Итоги  Какие из этого можно сделать выводы?
+VEEPROM требователен к ресурсам (2 физических страниц на 1
+виртуальную) и на все эти танцы вокруг страниц создают кучу
+процессорных инструкций.    Производительность у него тоже не очень.
+Поэтому лучше всего писать данные большими пачками, иначе на каждый
+байт будут меняться страницы, а это 30мс + время на копирование данных
+из страницы в страницу. Неплохо так, да? Хуже некуда.   Тем не менее,
+когда целостность данных важна он их сохранит. Надеюсь, кому-то это
+поможет и натолкнёт на какую-нибудь мысль. Спасибо за внимание.

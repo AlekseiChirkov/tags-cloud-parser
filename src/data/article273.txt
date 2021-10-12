@@ -1,0 +1,178 @@
+Автор: nick1612
+Дата: 2021-10-04T07:26:25.000Z
+Название: Реализация простого механизма регулярных выражений в 70 строк кода
+Теги: PHP *, Программирование *, Регулярные выражения *
+Текст:
+Эта короткая статья обязана одному интересному тестовому заданию, в
+котором требовалось реализовать базовый функционал утилиты grep на
+языке PHP, не используя никаких встроенных функций по работе с
+регулярными выражениями. Строка с шаблоном должна была включать
+поддержку следующих метасимволов:^ - начало строки$ - конец строки. -
+любой символ* - 0 или более раз? - 0 или 1 раз+ - 1 или более разТак
+же нужно было поддерживать экранирование метасимволов при помощи '\',
+чтобы по ним возможно было производить поиск. В результате,
+получившаяся утилита занимает порядка ста строк кода, из которых 70 -
+это функции регулярных выражений. Для тех кого интересует простая
+реализация механизма регулярных выражений в сугубо обучающих целях,
+здесь приведен ее код и краткий разбор.Конечный результат:
+grep.php#!/bin/env php <?php  const META_CHAR = 1, LITERAL = 2,
+META_CHARS = ["*", "?", "+", "."];  function is_metachar(string $re,
+int $i): bool {         return in_array($re[$i], META_CHARS) ||
+($re[$i] === "^" && $i === 0) || ($re[$i] === "$" && $i ===
+(strlen($re) - 1)); }  function tokenize(string $re, int $i = 0):
+array {         $re_tokens = [];         $len = strlen($re);
+while ($i < $len) {                 if ($re[$i] === '\\' && $i + 1 <
+$len && (is_metachar($re, $i + 1) || ($i === 0 && $re[$i + 1] ===
+"^")))                         $re_tokens[] = [LITERAL, $re[++$i]];
+else                         $re_tokens[] = [is_metachar($re, $i) ?
+META_CHAR : LITERAL, $re[$i]];                 $i++;         }
+return $re_tokens; }  function match_char(array $re_char, string
+$str_char): bool {         return ($re_char[0] === LITERAL &&
+$re_char[1] === $str_char) || ($re_char[0] === META_CHAR &&
+$re_char[1] === "."); }  function match_metachar(array $tokens, int
+$pos, string $char): bool {         return isset($tokens[$pos]) &&
+$tokens[$pos][0] === META_CHAR && $tokens[$pos][1] === $char; }
+function is_end($data, int $pos): bool {         return
+!isset($data[$pos]); }  function re_match(array $re_tokens, string
+$str, int $str_pos = 0): bool {         if (match_metachar($re_tokens,
+0, "^"))                 return match_from_pos($re_tokens, 1, $str,
+0);          $match = false;         while (!$match && !is_end($str,
+$str_pos))                 $match = match_from_pos($re_tokens, 0,
+$str, $str_pos++);         return $match; }  function
+match_from_pos(array $re_tokens, int $re_pos, string $str, int
+$str_pos): bool {         if (is_end($re_tokens, $re_pos))
+return true;          if (match_metachar($re_tokens, $re_pos, "$"))
+return is_end($str, $str_pos);          if (match_metachar($re_tokens,
+$re_pos + 1, "*"))                 return match_from_pos($re_tokens,
+$re_pos + 2, $str, $str_pos) || (!is_end($str, $str_pos) &&
+match_char($re_tokens[$re_pos], $str[$str_pos]) &&
+match_from_pos($re_tokens, $re_pos, $str, $str_pos + 1));          if
+(match_metachar($re_tokens, $re_pos + 1, "+"))                 return
+match_char($re_tokens[$re_pos], $str[$str_pos]) &&
+(match_from_pos($re_tokens, $re_pos + 2, $str, $str_pos + 1) ||
+match_from_pos($re_tokens, $re_pos, $str, $str_pos + 1));          if
+(match_metachar($re_tokens, $re_pos + 1, "?"))                 return
+match_from_pos($re_tokens, $re_pos + 2, $str, $str_pos) ||
+(match_char($re_tokens[$re_pos], $str[$str_pos]) &&
+match_from_pos($re_tokens, $re_pos + 2, $str, $str_pos + 1));
+return !is_end($str, $str_pos) &&
+match_char($re_tokens[$re_pos], $str[$str_pos]) &&
+match_from_pos($re_tokens, $re_pos + 1, $str, $str_pos + 1); }
+function grep($file, array $re_tokens, string $fname = ""): void {
+$line = 0;         while (($str = fgets($file)) !== false && ++$line)
+if (re_match($re_tokens, $str = rtrim($str, "\r\n")))
+echo ($fname ? "{$fname}:" : "") . "{$line}:{$str}\n"; }  if ($argc <
+2)         exit("Usage: {$argv[0]} pattern [file1 file2 ...]\n");
+$re_tokens = tokenize($argv[1]);  if ($argc == 2) {
+grep(STDIN, $re_tokens); } else {         for ($i = 2; $i < $argc;
+$i++) {                 if (is_dir($argv[$i])) {
+fwrite(STDERR, "{$argv[0]}: {$argv[$i]} : Is a directory\n");
+continue;                 }                 $f = @fopen($argv[$i],
+"r");                 if ($f === false) {
+fwrite(STDERR, "Cannot open file: {$argv[$i]}\n");
+continue;                 }                 grep($f, $re_tokens, $argc
+> 3 ? $argv[$i] : "");                 fclose($f);         } }Пример
+работы: ./grep.php '^funct+is?.*pos.*$.*bool$' grep.php 30:function
+match_metachar(array $tokens, int $pos, string $char): bool
+51:function match_from_pos(array $re_tokens, int $re_pos, string $str,
+int $str_pos): boolВ первую очередь нам нужно провести разбор строки с
+регулярным выражением на метасимволы и литералы. Для этого служит
+функция tokenize:<?php  const META_CHAR = 1, LITERAL = 2, META_CHARS =
+["*", "?", "+", "."];  function is_metachar(string $re, int $i): bool
+{         return in_array($re[$i], META_CHARS) || ($re[$i] === "^" &&
+$i === 0) || ($re[$i] === "$" && $i === (strlen($re) - 1)); }
+function tokenize(string $re, int $i = 0): array {         $re_tokens
+= [];         $len = strlen($re);         while ($i < $len) {
+if ($re[$i] === '\\' && $i + 1 < $len && (is_metachar($re, $i + 1) ||
+($i === 0 && $re[$i + 1] === "^")))
+$re_tokens[] = [LITERAL, $re[++$i]];                 else
+$re_tokens[] = [is_metachar($re, $i) ? META_CHAR : LITERAL, $re[$i]];
+$i++;         }         return $re_tokens; }Функция принимает строку с
+регулярным выражением, пробегает по каждому символу и определяет его
+тип на основе принадлежности к массиву метасимволов. Если метасимвол
+экранирован (перед ним стоит слеш "\"), то он считается обычным
+литералом. Так же стоит заметить, что ^ и $ считаются метасимволами
+только в том случае, если они располагаются в начале и конце шаблона
+соответственно.<?php  function match_char(array $re_char, string
+$str_char): bool {         return ($re_char[0] === LITERAL &&
+$re_char[1] === $str_char) || ($re_char[0] === META_CHAR &&
+$re_char[1] === "."); }  function match_metachar(array $tokens, int
+$pos, string $char): bool {         return isset($tokens[$pos]) &&
+$tokens[$pos][0] === META_CHAR && $tokens[$pos][1] === $char; }
+function is_end($data, int $pos): bool {         return
+!isset($data[$pos]); }  function re_match(array $re_tokens, string
+$str, int $str_pos = 0): bool {         if (match_metachar($re_tokens,
+0, "^"))                 return match_from_pos($re_tokens, 1, $str,
+0);          $match = false;         while (!$match && !is_end($str,
+$str_pos))                 $match = match_from_pos($re_tokens, 0,
+$str, $str_pos++);         return $match; }Функция re_match принимает
+массив токенов полученный из функции tokenize и строку, в которой
+производится поиск, а также позицию, с которой начинать поиск в строке
+(по умолчанию 0). Если регулярное выражение начинается с метасимвола
+"^", то совпадение оставшегося шаблона проверяется строго с начальной
+позиции строки. В ином случае производится поиск совпадения в любой
+позиции (в случае неудачи каждый раз сдвигая позицию строки на один
+символ, пока не будет достигнут конец).<?php   function
+match_from_pos(array $re_tokens, int $re_pos, string $str, int
+$str_pos): bool {         if (is_end($re_tokens, $re_pos))
+return true;          if (match_metachar($re_tokens, $re_pos, "$"))
+return is_end($str, $str_pos);          if (match_metachar($re_tokens,
+$re_pos + 1, "*"))                 return match_from_pos($re_tokens,
+$re_pos + 2, $str, $str_pos) || (!is_end($str, $str_pos) &&
+match_char($re_tokens[$re_pos], $str[$str_pos]) &&
+match_from_pos($re_tokens, $re_pos, $str, $str_pos + 1));          if
+(match_metachar($re_tokens, $re_pos + 1, "+"))                 return
+match_char($re_tokens[$re_pos], $str[$str_pos]) &&
+(match_from_pos($re_tokens, $re_pos + 2, $str, $str_pos + 1) ||
+match_from_pos($re_tokens, $re_pos, $str, $str_pos + 1));          if
+(match_metachar($re_tokens, $re_pos + 1, "?"))                 return
+match_from_pos($re_tokens, $re_pos + 2, $str, $str_pos) ||
+(match_char($re_tokens[$re_pos], $str[$str_pos]) &&
+match_from_pos($re_tokens, $re_pos + 2, $str, $str_pos + 1));
+return !is_end($str, $str_pos) &&
+match_char($re_tokens[$re_pos], $str[$str_pos]) &&
+match_from_pos($re_tokens, $re_pos + 1, $str, $str_pos + 1); }В
+функции match_from_pos(ition) находится основной механизм регулярных
+выражений основанный на применении рекурсии. Логику работы можно
+описать следующим образом: Если достигнут конец регулярного выражения,
+то возвращается true, так как любая строка соответствует пустому
+шаблону.Если текущий метасимвол "$", то проверяется достигнут ли конец
+строки.Если за текущей позицией следует метасимвол "*" (0 или более
+повторений текущего символа), то в начале происходит попытка
+рекурсивного поиска оставшейся части регулярного выражения начиная с
+текущей позиции строки (что соответствует варианту с 0 повторений).
+Если совпадений в оставшейся части не обнаружено, то сверяем символы в
+текущей позиции и в случае совпадения вызываем рекурсию со следующей
+позиции в строке (соответствует варианту одного или более
+совпадений).Если за текущей позицией следует метасимвол "+" (1 или
+более повторений текущего символа), то в начале проверяем совпадение
+символов в текущей позиции, а затем рекурсивно сравниваем оставшуюся
+часть регулярного выражения со следующей позицией строки или (если
+этот вариант не совпал) проверяем текущую позицию регулярного
+выражения со следующей позицией строки (соответствует варианту более
+одного совпадения).Если за текущей позицией следует метасимвол "?" (0
+или 1 повторение текущего символа), то как и в варианте с "*", в
+начале обрабатываем случай 0 повторений, а в случае неудачи, сверяем
+символы в текущей позиции и при их совпадении рекурсивно переходим к
+проверке следующей позиции.Последний вариант соответствует простому
+сравнению символов - проверяем, что конец строки еще не достигнут,
+сверяем символы в текущих позициях и рекурсивно вызываем проверку со
+следующей позиции.Оставшаяся часть кода относится к самой утилите -
+обычное чтение строк из файлов или потока стандартного ввода и вывод
+совпавших строк.<?php   function grep($file, array $re_tokens, string
+$fname = ""): void {         $line = 0;         while (($str =
+fgets($file)) !== false && ++$line)                 if
+(re_match($re_tokens, $str = rtrim($str, "\r\n")))
+echo ($fname ? "{$fname}:" : "") . "{$line}:{$str}\n"; }  if ($argc <
+2)         exit("Usage: {$argv[0]} pattern [file1 file2 ...]\n");
+$re_tokens = tokenize($argv[1]);  if ($argc == 2) {
+grep(STDIN, $re_tokens); } else {         for ($i = 2; $i < $argc;
+$i++) {                 if (is_dir($argv[$i])) {
+fwrite(STDERR, "{$argv[0]}: {$argv[$i]} : Is a directory\n");
+continue;                 }                 $f = @fopen($argv[$i],
+"r");                 if ($f === false) {
+fwrite(STDERR, "Cannot open file: {$argv[$i]}\n");
+continue;                 }                 grep($f, $re_tokens, $argc
+> 3 ? $argv[$i] : "");                 fclose($f);         } }Вообщем,
+эта короткая статья носит сугубо обучающий характер простой реализации
+механизма регулярных выражений, может быть кому-то пригодится.

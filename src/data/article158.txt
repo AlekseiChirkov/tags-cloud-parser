@@ -1,0 +1,188 @@
+Автор: NewTechAudit
+Дата: 2021-10-06T05:00:01.000Z
+Название: Быстрая разработка прототипа HTR системы на открытых данных
+Теги: Программирование *, Открытые данные *, Машинное обучение *
+Текст:
+В данной статье представлен способ максимально быстро получить
+результат используя Google Colab в качестве платформы для обучения
+модели HTR. OCR задачи периодически упираются в распознавание
+рукописного текста, когда самая важна информация в документе написана
+именно человеком. На момент написания статьи популярные инструменты
+OCR, такие как FineReader, Tesseract и EasyOCR не имеют полноценного
+функционала, обеспечивающего решение задачи распознавания рукописного
+текста – в лучшем случае, его можно видеть в описании будущих
+обновлений.Распознавание рукописного текста (handwritten text
+recognition, HTR) - это автоматический способ расшифровки записей с
+помощью компьютера. Оцифрованный вид рукописных записей позволило бы
+автоматизировать многие бизнес процессы, упростив работу человека.
+Отметим следующие сложности в разработке инструментов HTR, как общие,
+так и локальные кириллические:-        почерк каждого человека до
+некоторой степени уникален, более того, один и тот же человек может
+писать одну букву по-разному, с разными наклонами и т.д.;-       
+проблема «русского курсива» известна, в том числе, зарубежом -
+например, фраза «лишишь лилии» написанная курсивом вводит в ступор
+многих;-        соединения между буквами очень трудно
+обработать;-        свободные датасеты рукописных букв для кириллицы
+трудно найти.Однако, использование существующих инструментов (таких
+как нейросети) и свободных данных (датасетов) позволяет в кратчайшие
+сроки (пара часов, включая обучение модели) создать прототип
+инструмента HTR, обеспечивающий точность распознавания выше чем
+случайное предположение. К тому же, дальнейшее развитие прототипа
+может позволить создать действительно рабочий инструмент HTR с высокой
+точностью распознавания, который можно будет использовать в работе. В
+разработке использован подход, описанный в статье на Хабр. Суть
+подхода в следующем:1.       Разбить входное изображение на отдельные
+символы исходя из промежутков между буквами;2.       Классифицировать
+каждый отдельный символ предварительно обученной моделью.Исходя из
+данного подхода, возникают ограничения на входные данные, а именно –
+рукописный текст должен быть написан буквами без соединений.В данной
+статье представлен способ максимально быстро получить результат
+используя Google Colab в качестве платформы для обучения модели
+HTR.Для создания прототипа нам понадобится датасет с рукописными
+символами, например, CoMNIST. Загрузим его, распакуем и удалим
+ненужные символы:# скачаем и распакуем датасет CoMNIST ! wget
+https://github.com/GregVial/CoMNIST/raw/master/images/Cyrillic.zip !
+unzip Cyrillic.zip # удалим папку с изображениями буквы "I" и "Ъ" (с
+последним бывают проблемы) ! rm -R Cyrillic/I # пример изображения в
+датасете from IPython.display import Image
+Image(filename=r'Cyrillic/Я/5a7747df79f11.png')Также, нужна модель для
+классификации символов рукописного текста:# Удалим неподходящие пакеты
+для отработки алгоритма !pip uninstall keras tensorflow h5py –y #
+Установим необходимые зависимости !pip install keras==2.2.5
+tensorflow==1.14.0 h5py==2.10.0Желательно после переустановки keras и
+tensorflow перезапустить среду. Данные виртуальной машины при этом
+останутся.Далее, функции для обучения:import os import cv2 import time
+from tqdm import tqdm from PIL import Image, ImageFilter, ImageOps
+import numpy as np  import matplotlib.pyplot as plt import
+matplotlib.image as mpimg from sklearn.model_selection import
+train_test_split  from tensorflow import keras from keras.models
+import Sequential from keras import optimizers from keras.layers
+import Convolution2D, MaxPooling2D, Dropout, Flatten, Dense, Reshape,
+LSTM, BatchNormalization from keras.optimizers import SGD, RMSprop,
+Adam from keras import backend as K from keras.constraints import
+maxnorm import tensorflow as tf  def emnist_model(labels_num=None):
+model = Sequential()     model.add(Convolution2D(filters=32,
+kernel_size=(3, 3), padding='valid', input_shape=(28, 28, 1),
+activation='relu'))     model.add(Convolution2D(filters=64,
+kernel_size=(3, 3), activation='relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))     model.add(Dropout(0.25))
+model.add(Flatten())     model.add(Dense(512, activation='relu'))
+model.add(Dropout(0.5))     model.add(Dense(labels_num,
+activation='softmax'))
+model.compile(loss='categorical_crossentropy', optimizer='adadelta',
+metrics=['accuracy'])     return model  def emnist_train(model,
+X_train, y_train_cat, X_test, y_test_cat):     t_start = time.time()
+# Set a learning rate reduction     learning_rate_reduction =
+keras.callbacks.ReduceLROnPlateau(monitor='val_acc', patience=3,
+verbose=1, factor=0.5, min_lr=0.00001)     # Required for
+learning_rate_reduction:
+keras.backend.get_session().run(tf.global_variables_initializer())
+model.fit(X_train, y_train_cat, validation_data=(X_test, y_test_cat),
+callbacks=[learning_rate_reduction], batch_size=64, epochs=9)
+print("Training done, dT:", time.time() - t_start)Функции для работы с
+изображениями и аугментации:def load_image_as_gray(path_to_image):
+img = Image.open(path_to_image)     return np.array(img.convert("L"))
+def load_image(path_to_image):     img = Image.open(path_to_image)
+return img  def convert_rgba_to_rgb(pil_img):     pil_img.load()
+background = Image.new("RGB", pil_img.size, (255, 255, 255))
+background.paste(pil_img, mask = pil_img.split()[3])     return
+background  def prepare_rgba_img(img_path):     img =
+load_image(img_path)     if np.array(img).shape[2] == 4:       new_img
+= convert_rgba_to_rgb(img)       return new_img     return img  #
+размытие изображений for lett in os.listdir("Cyrillic/"):   for l in
+os.listdir(f"Cyrillic/{lett}"):     if l != ".ipynb_checkpoints":
+img = Image.open(f"Cyrillic/{lett}/"+l)       blurImage =
+img.filter(ImageFilter.BoxBlur(15))
+blurImage.save(f"Cyrillic/{lett}/"+"blur_"+l)  # поворот изображений
+на +20 градусов for lett in os.listdir("Cyrillic/"):   for l in
+os.listdir(f"Cyrillic/{lett}"):     if (l != ".ipynb_checkpoints") &
+("blur_" not in l):       img = Image.open(f"Cyrillic/{lett}/"+l)
+rotImage = img.rotate(20)
+rotImage.save(f"Cyrillic/{lett}/"+"rot20_"+l)  # поворот изображений
+на -20 градусов for lett in os.listdir("Cyrillic/"):   for l in
+os.listdir(f"Cyrillic/{lett}"):     if (".ipynb_checkpoints" not in l)
+& ("rot20_" not in l) & ("blur_" not in l):       img =
+Image.open(f"Cyrillic/{lett}/"+l)       rotImage = img.rotate(-20)
+rotImage.save(f"Cyrillic/{lett}/"+"rot02_"+l)  # изменение размера
+изображений до 28x28 for lett in os.listdir("Cyrillic/"):   for l in
+os.listdir(f"Cyrillic/{lett}"):     if l != ".ipynb_checkpoints":
+img = Image.open(f"Cyrillic/{lett}/"+l)       resized =
+img.resize((28, 28))       resized.save(f"Cyrillic/{lett}/"+l)Следует
+отметить, что изображения в датасете CoMNIST представляют собой PNG
+RGBA, причём, полезная информация хранится только в альфа-канале,
+поэтому, необходимо «прокинуть» альфа-канал на RGB:# преобразование
+изображений из RGBA в RGB for lett in os.listdir("Cyrillic/"):   for l
+in os.listdir(f"Cyrillic/{lett}"):     if l != ".ipynb_checkpoints":
+rgb_img = prepare_rgba_img(f"Cyrillic/{lett}/"+l)
+rgb_img.save(f"Cyrillic/{lett}/"+l)Предобработка:y_num = {l:i+1 for i,
+l in enumerate(np.unique(y_train))}  X_train =
+np.reshape(np.array(X_train), (np.array(X_train).shape[0], 28, 28, 1))
+X_test = np.reshape(np.array(X_test), (np.array(X_test).shape[0], 28,
+28, 1))  X_train = X_train.astype(np.float32) X_train /= 255.0 X_test
+= X_test.astype(np.float32) X_test /= 255.0  y_train_num = [y_num[i]
+for i in y_train] y_test_num = [y_num[i] for i in y_test]  y_train_cat
+= keras.utils.to_categorical(np.array(y_train_num), 33) y_test_cat =
+keras.utils.to_categorical(np.array(y_test_num), 33)Обучение:model =
+emnist_model(len(y_num)+1) emnist_train(model, X_train, y_train_cat,
+X_test, y_test_cat)У автора обучение в Google Colab на ВМ без TPU
+заняло ~40 минут.Далее, можно протестировать модель на примерах
+текста, написанных вручную, например:Рисунок 1 – изображение с
+рукописным текстомДалее, представлен код для разбития изображения на
+отдельные символы. Принцип его работы основывается на увеличении
+жирности отдельно стоящих (не связанных друг с другом) символов и
+нахождении их контуров:# разбитие строки на отдельные буквы def
+letters_extract(image_file: str, out_size=28):     img =
+cv2.imread(image_file)     gray = cv2.cvtColor(img,
+cv2.COLOR_BGR2GRAY)     ret, thresh = cv2.threshold(gray, 200, 255,
+cv2.THRESH_BINARY)     img_erode = cv2.erode(thresh, np.ones((3, 3),
+np.uint8), iterations=1)      # Get contours     contours, hierarchy =
+cv2.findContours(img_erode, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+output = img.copy()      letters = []     for idx, contour in
+enumerate(contours):         (x, y, w, h) = cv2.boundingRect(contour)
+if hierarchy[0][idx][3] == 0:             cv2.rectangle(output, (x,
+y), (x + w, y + h), (70, 0, 0), 1)             letter_crop = gray[y:y
++ h, x:x + w]             size_max = max(w, h)
+letter_square = 255 * np.ones(shape=[size_max, size_max],
+dtype=np.uint8)             if w > h:                 y_pos =
+size_max//2 - h//2                 letter_square[y_pos:y_pos + h, 0:w]
+= letter_crop             elif w < h:                 x_pos =
+size_max//2 - w//2                 letter_square[0:h, x_pos:x_pos + w]
+= letter_crop             else:                 letter_square =
+letter_crop              letters.append((x, w,
+cv2.resize(letter_square, (out_size, out_size),
+interpolation=cv2.INTER_AREA)))      # Sort array in place by
+X-coordinate     letters.sort(key=lambda x: x[0], reverse=False)
+return lettersДемонстрация результата работы алгоритма разбиения
+изображения на символы:import matplotlib.pyplot as plt %matplotlib
+inline lttrs = letters_extract("test.png", 28) plt.imshow(lttrs[0][2],
+cmap="gray")Рисунок 2 – первый символ после разбития
+изображенияОбученная модель будет возвращать цифры – порядковые номера
+классов, поэтому удобно будет, например, сделать словарь для
+облегчения интерпретации (здесь – y_num), однако, следует помнить, что
+буква «Ё», по непонятной причине, не входит в основной алфавит и идёт
+первой. Далее, код для вывода результата:def get_lettr(ind, y_num):
+back_y = {v:k for k, v in y_num.items()}   return back_y[ind]  for i
+in range(len(lttrs)):   img_arr = lttrs[i][2]   img_arr =
+img_arr/255.0   input_img_arr = img_arr.reshape((1, 28, 28, 1))
+result = model.predict_classes([input_img_arr])
+print(get_lettr(result[0], y_num))Результат работы для пары
+изображений:Рисунок 3 – демонстрация результатов работы прототипа
+инструмента HTRНа рисунке 3 продемонстрированы результаты работы
+инструмента. Красным отмечены явные ошибки, жёлтым – проблемное место,
+о котором далее. Следует отметить, что точность распознавания
+удовлетворительная, однако, из-за особенностей алгоритма разбития
+изображения буква «Ы» представлена как два отдельных символа «Ь» и «I»
+и именно в таком виде подаётся модели классификации. Также, нет
+распознавания пробелов между словами.Таким образом, за минимальное
+время удалось получить прототип инструмента HTR, обеспечивающий
+удовлетворительное качество распознавания. Стоит добавить, что данный
+прототип можно сильно улучшить, например:-        сменить/расширить
+датасет букв используя шрифты с сервиса handwritter.ru;-       
+использовать методы аугментации и распознавания, описанные в статье
+«Первое место на AI Journey 2020 Digital Петр», в том числе, метод
+разбития на отдельные символы строк текста, написанных с
+соединениями;-        разработать и подключить алгоритм коррекции
+орфографических ошибок;-        использовать скрытую марковскую модель
+для предсказания следующего символа/слова;-        обучить модель на
+распознавание отдельных слов/фраз, которые можно так же сгенерировать
+с помощью шрифтов Handwriter.

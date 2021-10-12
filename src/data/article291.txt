@@ -1,0 +1,259 @@
+Автор: Mojsha
+Дата: 2021-10-03T18:56:20.000Z
+Название: Выходит первый Python 3.11. Что нового?
+Теги: Блог компании SkillFactory, Python *, Программирование *, API *, C *
+Текст:
+Делимся переводом документации альфы Python 3.11, которая выходит 4
+октября, о разнице в сравнении с версией 3.10. Изменения касаются
+трассировки исключений, модулей math, sqlite, threading, unittest и
+других. Удалена ощутимая часть устаревшей функциональности.Подробности
+читайте под катом, пока у нас начинается курс по Fullstack-разработке
+на Python.Полный список изменений.Пользователи предварительной версии
+должны знать, что этот документ в настоящее время находится в черновом
+варианте. Он будет существенно обновляться по мере продвижения Python
+3.11 к релизу, поэтому стоит вернуться к нему даже после ознакомления
+с предыдущими версиями.Краткое изложение – основные моменты
+выпускаНовые возможностиОшибки в трассировке теперь указываются
+точнееПри печати трассировки интерпретатор теперь точно указывает на
+выражение, которое привело к ошибке, а не на строку:Traceback (most
+recent call last):   File "distance.py", line 11, in <module>
+print(manhattan_distance(p1, p2))           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "distance.py", line 6, in manhattan_distance     return
+abs(point_1.x - point_2.x) + abs(point_1.y - point_2.y)
+^^^^^^^^^ AttributeError: 'NoneType' object has no attribute
+'x'Предыдущие версии интерпретатора указывали только на строку, не
+разъясняя, какой объект оказался None. Эти расширенные ошибки также
+могут быть полезны при работе с глубоко вложенными объектами словаря и
+множественными вызовами функций,Traceback (most recent call last):
+File "query.py", line 37, in <module>     magic_arithmetic('foo')
+^^^^^^^^^^^^^^^^^^^^^^^   File "query.py", line 18, in
+magic_arithmetic     return add_counts(x) / 25
+^^^^^^^^^^^^^   File "query.py", line 24, in add_counts     return 25
++ query_user(user1) + query_user(user2)
+^^^^^^^^^^^^^^^^^   File "query.py", line 32, in query_user     return
+1 + query_count(db, response['a']['b']['c']['user'], retry=True)
+~~~~~~~~~~~~~~~~~~^^^^^ TypeError: 'NoneType' object is not
+subscriptableа также сложными арифметическими выражениями:Traceback
+(most recent call last):   File "calculation.py", line 54, in <module>
+result = (x / y / z) * (a / b / c)               ~~~~~~^~~
+ZeroDivisionError: division by zeroПодробности в PEP 657, это вклад
+Пабло Галиндо, Батухана Таскайи и Аммара Аскара в bpo-43950.Эта
+возможность требует хранения позиций столбцов в объектах кода, что
+может привести к небольшому увеличению использования дискового
+пространства скомпилированными файлами Python или использования памяти
+интерпретатора.Чтобы избежать хранения дополнительной информации и/или
+отключить печать дополнительной информации об отладке, можно
+использовать флаг запуска из командной строки -X no_debug_ranges или
+переменную окружения PYTHONNODEBUGRANGES.Информация о столбцах для
+объектов кода.Информация, используемая расширенной функцией
+трассировки, доступна в виде общего API, который можно задействовать
+для сопоставления инструкций байт-кода и исходного кода. Эту
+информацию можно получить с помощью:метода Python
+codeobject.co_positions();функции PyCode_Addr2Location() из C
+API.Опция -X no_debug_ranges и переменная среды PYTHONNODEBUGRANGES
+могут использоваться для отключения этой функции. Подробности — в PEP
+657, это вклад Пабло Галиндо, Батухана Таскайи и Аммара Аскара в
+bpo-43950.Другие изменения в языкеАсинхронные включения
+(comprehension) теперь разрешены внутри включений в асинхронных
+функциях. Внешнее включение неявно становится асинхронным (автор:
+Сергей Сторчака в bpo-33346).TypeError поднимается вместо
+AttributeError в contextlib.ExitStack.enter_context() и
+contextlib.AsyncExitStack.enter_async_context() для объектов без
+поддержки протоколов контекстного менеджера или асинхронного
+контекстного менеджера соответственно (вклад Сергея Сторчака в
+bpo-44471).TypeError поднимается вместо AttributeError в with и async
+with для объектов без поддержки протоколов контекстного менеджера или
+асинхронного контекстного менеджера соответственно (вклад Сергея
+Сторчака в bpo-44471).Другие изменения реализации CPythonСпециальные
+методы complex.__complex__() и bytes.__bytes__() реализованы для
+поддержки протоколов typing.SupportsComplex и typing.SupportsBytes
+(вклад Марка Дикинсона и Дон-Хи На в bpo-24234).Новые модулиИх ещё
+нет.Улучшенные модулиfractionsПоддержка инициализации дроби из строки
+в стиле PEP 515 (вклад Сергея Б. Кирпичёва в bpo-44258).mathДобавлена
+функция math.cbrt(), она возвращает кубический корень из x. (Вклад
+Аджита Рамачандрана в bpo-44357.Поведение двух крайних случаев
+math.pow() было изменено для обеспечения согласованности со
+спецификацией IEEE 754. Операции math.pow(0.0, -math.inf) и
+math.pow(-0.0, -math.inf) теперь возвращают inf. Ранее они поднимали
+ValueError (вклад Марка Дикинсона в bpo-44339).operatorДобавлена
+функция operator.call, такая, что operator.call(obj, *args, **kwargs)
+== obj(*args, **kwargs) (вклад Энтони Ли в bpo-44019).osНа Windows
+os.urandom() в Python 3.11 использует BcryptGenRandom().sqlite3Теперь
+вы можете отключить авторизер (authorizer), передав параметр None в
+set_authorizer() (предоставлено Эрлендом Аасландом в bpo-44491).Имя
+параметра сортировки create_collation() теперь может содержать любой
+символ Юникода. Имена параметров сортировки с недопустимыми символами
+теперь вызывают UnicodeEncodeError вместо sqlite3.ProgrammingError
+(вклад Эрленда Аасланда в bpo-44688).Исключения sqlite3 сейчас
+содержат код ошибки SQLite как sqlite_errorcode и название ошибки как
+sqlite_errorname (вклад Авива Паливоды, Даниэля Шахафа и Эрленда
+Аасланда в bpo-16379).threadingВ Unix, если функция sem_clockwait()
+доступна в библиотеке C (glibc 2.30 и выше), то
+threading.Lock.acquire() использует монотонные часы
+(time.CLOCK_MONOTONIС) для тайм-аута, а не системные часы
+(time.CLOCK_REALTIME), чтобы не зависеть от изменений последних.
+(Вклад Виктора Стиннера и Ливиуса в bpo-41710).timeВ Unix,
+time.sleep() теперь использует clock_nanosleep() или nanosleep(), если
+таковая имеется, она имеет разрешение в 1 наносекунду (10-9 секунды),
+а не с помощью select() с разрешением 1 мкс (10-6 секунды). (Вклад
+Виктора Стиннера и Ливиуса в  bpo-21302).В Windows time.sleep() теперь
+использует ожидающий таймер, который имеет разрешение 100 наносекунд
+(10-7 секунды). Ранее его разрешение составляло 1 миллисекунду (10-3
+секунды) (вклад Ливиуса и Виктора Стиннера в
+bpo-21302).unicodedataБаза данных Unicode обновлена до версии 14.0.0
+(bpo-45190).ОптимизацииКомпилятор теперь оптимизирует простое
+форматирование в стиле C с литеральным форматом, содержащим только
+коды формата %s, %r и %a, и делает его таким же быстрым, как
+соответствующее выражение f-строки. (Предоставлено Сергеем Сторчака в
+bpo-28307).Реализованы исключения «с нулевыми накладными расходами».
+Затраты на операторы try практически исключены, когда исключение не
+возникает (вклад Марка Шеннона в bpo-40222).Вызовы методов с ключевыми
+словами теперь выполняются быстрее благодаря изменениям в байт-коде,
+которые позволяют избежать создания связанных экземпляров методов.
+Ранее эта оптимизация применялась только к вызовам методов с чисто
+позиционными аргументами (вклад Кена Джина и Марка Шеннона в
+bpo-26110, основанный на идеях, реализованных в PyPy).Чистые ASCII-
+строки теперь нормализуются за константное время с помощью
+unicodedata.normalize() (внесено Дон-Хи На в bpo-44987).Изменения в
+байт-коде CPythonДобавлен новый опкод CALL_METHOD_KW. Вызывает метод в
+той же манере, что и CALL_METHOD, но также поддерживает аргументы в
+виде ключевых слов. Работает в тандеме с LOAD_METHOD.Устаревшееlib2to3
+устарел и может не работать с Python 3.10 или новее. См. PEP 617
+(новый PEG-парсер CPython) (внесено Виктором Стиннером в
+bpo-40360).webbrowser.MacOSX устарел и будет удалён в Python 3.13. Он
+не протестирован и не документирован, а также не используется самим
+веб-браузером. (Вклад Дон-Хи На в bpo-42255).Поведение возврата
+значения из методов тестирования TestCase и IsolatedAsyncioTestCase
+(отличного от значения None по умолчанию) устарело.Устарели следующие
+функции unittest, они будут удалены в Python 3.13:unittest.findTestCas
+es();unittest.makeSuite();unittest.getTestCaseNames().Вместо них
+используйте методы TestLoader:unittest.TestLoader.loadTestsFromModule(
+);unittest.TestLoader.loadTestsFromTestCase();unittest.TestLoader.getT
+estCaseNames().(Внесено Эрландом Аасландом в
+bpo-5846).УдалённоеSMTPD.MailmanProxy удалён: он не используется без
+внешнего модуля mailman. (Вклад Дон-Хи На в bpo-35800).Устаревший в
+Python 3.9 модуль Binhex удалён. Функции BinAscii, устаревшие в этой
+же версии, также удалены:a2b_hqx(), b2a_hqx();rlecode_hqx(),
+rledecode_hqx().Функция binAscii.crc_hqx() доступна.(Внесено Виктором
+Стиннером в bpo-45085).Команда distutils bdist_msi, устаревшая в
+Python 3.9, удалена, вместо неё используйте bdist_wheel — пакеты wheel
+(вклад Хьюго ван Кеменаде в bpo-45124).В связи с серьёзными проблемами
+безопасности параметр reuse_address
+asyncio.loop.create_datagram_endpoint(), отключённый в Python 3.9,
+теперь полностью удалён. Это связано с поведением опции сокета
+SO_REUSEADDR в UDP (вклад Хьюго ван Кеменаде в bpo-45129).Удалены
+методы __getitem__() в xml.dom.pulldom.DOMEventStream,
+wsgiref.util.FileWrapper и fileinput.FileInput, устаревшие в Python
+3.9. (вклад Хьюго ван Кеменаде в bpo-45132).Удалено много устаревших
+функций unittest:Псевдонимы методов TestCase failUnlessEqual,
+failIfEqual, failUnless, failIf, failUnlessRaises,
+failUnlessAlmostEqual, failIfAlmostEqual (устаревшие в Python 3.1),
+assertEquals, assertNotEquals, assert_, assertAlmostEquals,
+assertNotAlmostEquals, assertRegexpMatches, assertRaisesRegexp
+(устаревшие в Python 3.2) и assertNotRegexpMatches (устаревший в
+Python 3.5).Недокументированный и сломанный метод Testcase
+assertdictcontainssset (устарел в Python 3.2).Недокументированный
+параметр <unittest.TestLoader.loadTestsFromModule>
+TestLoader.loadTestsFromModule() use_load_tests (устарел и
+игнорируется с версии 3.2).Псевдоним класса TextTestResult:
+_TextTestResult (устарел в Python 3.2).(вклад Сергея Сторчака в
+bpo-45162).Следующие устаревшие функции и методы удалены в модуле
+gettext: lgettext(), ldgettext(), lngettext() и ldngettext().Функция
+bind_textdomain_codeset(), методы outduct_charset() и
+set_output_charset(), а также параметр сodeset функций translate() и
+install() также удаляются, поскольку они используются только для
+l*getText() (вклад Сергея Сторчака в bpo-44235).Из модуля configparser
+удалены: класс SafeConfigParser, свойство filename класса
+ParsingError, метод readfp() класса ConfigParser, устарел с Python
+3.2. (внесено Хьюго ван Кеменаде в bpo-45173).Декоратор
+@asyncio.coroutine, позволяющий совместить унаследованные генераторы
+сопрограмм с кодом async/await. Функция была устаревшей с Python 3.8,
+и её удаление первоначально планировалось в Python 3.10. Вместо неё
+используйте async def (внесено Ильёй Волочием в
+bpo-43216).asyncio.coroutines.CoroWrapper используется для обёртывания
+унаследованных объектов сопрограммы на основе генератора в режиме
+отладки (внесено Ильёй Волочием в bpo-43216).Из _tkinter.TkappType
+удалён устаревший метод split() (вклад Эрленда Аасланда в
+bpo-38371).Портирование кода на Python 3.11В этом разделе перечислены
+ранее описанные изменения и другие исправления, которые могут
+потребовать изменить ваш код.Изменения в API PythonЗапрещена передача
+не-concurrent.futures.ThreadPoolExecutor исполнителей в
+loop.set_default_executor() после исправления в Python 3.8. (Внесено
+Ильёй Волочием в bpo-43234).open(), io.open(), codecs.open() и
+fileinput.FileInput больше не принимают 'U' (“универсальную новую
+строку”) в режиме файла. Этот флаг был устаревшим с версии Python 3.3.
+В Python 3 "универсальная новая строка" используется по умолчанию,
+когда файл открыт в текстовом режиме. Параметр newline в open()
+управляет тем, как работает универсальная новая строка (внесено
+Виктором Стиннером в bpo-37330).Модуль pdb теперь читает
+конфигурационный файл .pdbrc с кодировкой 'utf-8' (внесено Шринивасом
+Редди Тхатипарти (శ్రీనివాస్ రెడ్డి తాటిపర్తి) в bpo-41137).Изменения
+в сборкеCPython теперь может быть собран с опцией ThinLTO с опцией
+--with-lto=thin. (вклад Дон-Хи На и Бретта Холмана в
+bpo-44340).Изменения в C APIНовые возможностиДобавлена функция
+PyType_GetName() для получения короткого имени типа. (Внесено Хай-Ши в
+bpo-42035).Добавлена новая функция PyType_GetQualName() для получения
+квалифицированного имени типа (внесено Хай-Ши в
+bpo-42035).Портирование на Python 3.11Старые макросы "мусорной
+корзины" (Py_TRASHCAN_SAFE_BEGIN/Py_TRASHCAN_SAFE_END) следует
+заменить новыми макросами Py_TRASHCAN_BEGIN и Py_TRASHCAN_END.Функция
+tp_dealloc, имеющая старые макросы, такие как:static void
+mytype_dealloc(mytype *p) {     PyObject_GC_UnTrack(p);
+Py_TRASHCAN_SAFE_BEGIN(p);     ...     Py_TRASHCAN_SAFE_END }должна
+перейти на новые макросы таким образом:static void
+mytype_dealloc(mytype *p) {     PyObject_GC_UnTrack(p);
+Py_TRASHCAN_BEGIN(p, mytype_dealloc)     ...     Py_TRASHCAN_END
+} Py_TRASHCAN_BEGIN имеет второй аргумент, который должен быть
+функцией освобождения памяти, где он находится. Для поддержки старых
+версий Python в одной и той же кодовой базе можно определить следующие
+макросы и использовать их во всём коде (они были скопированы из
+кодовой базы mypy):#if PY_MAJOR_VERSION >= 3 && PY_MINOR_VERSION >= 8
+#  define CPy_TRASHCAN_BEGIN(op, dealloc) Py_TRASHCAN_BEGIN(op,
+dealloc) #  define CPy_TRASHCAN_END(op) Py_TRASHCAN_END #else #
+define CPy_TRASHCAN_BEGIN(op, dealloc) Py_TRASHCAN_SAFE_BEGIN(op) #
+define CPy_TRASHCAN_END(op) Py_TRASHCAN_SAFE_END(op) #endifФункция
+PyType_Ready() теперь выдаёт ошибку, если тип определён с
+установленным флагом Py_TPFLAGS_HAVE_GC, но не имеет функции обхода
+(PyTypeObject.tp_traverse) (внесено Виктором Стиннером в
+bpo-44263).Типы кучи с флагом Py_TPFLAGS_IMMUTABLETYPE теперь могут
+наследовать протокол векторных вызовов PEP 590. Ранее это было
+возможно только для статических типов (вклад Эрленда Аасланда в
+bpo-43908).Поскольку Py_TYPE() изменён на встроенную статическую
+функцию, Py_TYPE(obj) = new_type должно быть заменено на
+Py_SET_TYPE(obj, new_type): см. функцию Py_SET_TYPE(), которая
+доступна начиная с Python 3.9. Для обратной совместимости можно
+использовать этот макрос:#if PY_VERSION_HEX < 0x030900A4 &&
+!defined(Py_SET_TYPE) static inline void _Py_SET_TYPE(PyObject *ob,
+PyTypeObject *type) { ob->ob_type = type; } #define Py_SET_TYPE(ob,
+type) _Py_SET_TYPE((PyObject*)(ob), type) #endif (Вклад Виктора
+Стиннера в bpo-39573).Поскольку Py_SIZE() изменена на встроенную
+статическую функцию, Py_SIZE(obj) = new_size нужно заменить на
+Py_SET_SIZE(obj, new_size): см. функцию Py_SET_SIZE() (доступна
+начиная с Python 3.9). Для обратной совместимости можно использовать
+этот макрос:#if PY_VERSION_HEX < 0x030900A4 && !defined(Py_SET_SIZE)
+static inline void _Py_SET_SIZE(PyVarObject *ob, Py_ssize_t size) {
+ob->ob_size = size; } #define Py_SET_SIZE(ob, size)
+_Py_SET_SIZE((PyVarObject*)(ob), size) #endif (Внесено Виктором
+Стиннером в bpo-39573).УстаревшееУдалённоеPyFrame_BlockSetup() и
+PyFrame_BlockPop() удалены (вклад Марка Шеннона в bpo-40222).Удалены
+следующие функции настройки инициализации Python:PySys_AddWarnOptionUn
+icode();PySys_AddWarnOption();PySys_AddXOption();PySys_HasWarnOptions(
+);Py_SetPath();Py_SetProgramName();Py_SetPythonHome();Py_SetStandardSt
+reamEncoding();_Py_SetProgramFullPath().Используйте новый API PyConfig
+из Python Initialization Configuration, PEP 587, (внесено Виктором
+Стиннером в bpo-44113).Прокачать навыки или начать изучать Python вы
+можете на наших курсах:Профессия Fullstack-разработчик на Python (15
+месяцев)Курс «Python-разработчик» (10 месяцев)Также вы можете перейти
+на страницы из каталога, чтобы узнать, как мы готовим специалистов в
+других направлениях.Профессии и курсыData Science и Machine
+LearningПрофессия Data ScientistПрофессия Data AnalystКурс «Математика
+для Data Science»Курс «Математика и Machine Learning для Data
+Science»Курс по Data EngineeringКурс «Machine Learning и Deep
+Learning»Курс по Machine LearningPython, веб-разработкаПрофессия
+Fullstack-разработчик на PythonКурс «Python для веб-
+разработки»Профессия Frontend-разработчикПрофессия Веб-
+разработчикМобильная разработкаПрофессия iOS-разработчикПрофессия
+Android-разработчикJava и C#Профессия Java-разработчикПрофессия QA-
+инженер на JAVAПрофессия C#-разработчикПрофессия Разработчик игр на
+UnityОт основ — в глубинуКурс «Алгоритмы и структуры данных»Профессия
+C++ разработчикПрофессия Этичный хакерА также:Курс по DevOps

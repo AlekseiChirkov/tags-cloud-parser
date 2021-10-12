@@ -1,0 +1,356 @@
+Автор: keddok
+Дата: 2021-10-06T09:14:48.000Z
+Название: Что должен, но не знает про конкуренцию в PostgreSQL каждый
+разработчик?
+Теги: Разработка веб-сайтов *, PostgreSQL *, SQL *
+Текст:
+Опыт показывает, что разработчики редко задумываются о проблемах,
+которые могут возникать при многопользовательском доступе к данным.
+При этом практически любое web-приложение является
+многопользовательским и так или иначе использует блокировки при
+доступе к данным в БД. При неправильном использовании эти блокировки
+могут больно бить по пользователям, а иногда и по системе в целом.
+Поэтому рано или поздно каждый разработчик многопользовательских
+систем должен задуматься о том, как ему начать работать с БД так,
+чтобы пользователи не мешали другу другу. Многие считают, что это
+сложно, давайте вместе убедимся, что это не так.Я очень обрадовался,
+когда нашёл статью http://big-elephants.com/2013-09/exploring-query-
+locks-in-postgres/, где доступным языком на простых примерах
+рассказывается о блокировках в СУБД PostgreSQL. Но этой статье скоро
+уже будет 10 лет, поэтому стоит проверить её на последней версии
+PostrgeSQL. Как раз вчера вышла 14 версия.Итак, приступим.ПесочницаДля
+начала нам понадобится установленная СУБД PostgreSQL и место в ней,
+где мы будем играть. Это будет наша песочница:CREATE DATABASE
+sandbox;Добавим в песочницу игрушки:CREATE TABLE toys (   id serial
+NOT NULL,   name character varying(32),   usage integer NOT NULL
+DEFAULT 0,   CONSTRAINT toys_pkey PRIMARY KEY (id) ); INSERT INTO
+toys(name) VALUES ('машинка'), ('лопатка'), ('ведёрко');Отлично! Мы
+создали песочницу, и в ней появились машинка, лопатка и ведёрко.
+Теперь нам нужны те, кто будет играть с ними. Назовем их случайным
+образом, например, Айнур и Алина. Это будут два клиента нашей СУБД,
+для представления которых мы будем использовать консольную утилиту
+psql, которая входит в состав базовой установки. Запустим первую
+консоль psql в базе sandbox и выполним в ней:Установка кириллической
+кодовой страницы в psql на Windows\! chcp 1251sandbox=# \set PROMPT1
+'[Алина] %/%R%# 'Пусть Алина посмотрит какие же игрушки есть в
+песочнице:[Алина] sandbox=# BEGIN; BEGIN [Алина] sandbox=# SELECT *
+FROM toys;  id |  name   | usage ----+---------+-------   1 | машинка
+|     0   2 | лопатка |     0   3 | ведерко |     0 (3 rows)Обратите
+внимание, что мы использовали оператор BEGIN для явного управления
+транзакциями. Транзакция будет открыта пока мы ее не зафиксируем или
+не откатим.Откроем вторую консоль psql и назовём её:sandbox=# \set
+PROMPT1 '[Айнур] %/%R%# 'Айнур полез в песочницу и увидел то же
+самое:[Айнур] sandbox=# BEGIN; BEGIN [Айнур] sandbox=# SELECT * FROM
+toys;  id |  name   | usage ----+---------+-------   1 | машинка |
+0   2 | лопатка |     0   3 | ведерко |     0 (3 rows)На этом примере
+мы видим, что операторы SELECT не пересекаются и могут выполняться
+параллельно, не блокируя друг друга. Это именно то, чего мы ожидаем от
+высокопроизводительной промышленной СУБД.pg_locksИтак, наши транзакции
+открыты, а мы идем дальше и запускаем третью консоль, которую назовем
+Люция:sandbox=# \set PROMPT1 '[Люция] %/%R%# 'В ней мы можем наблюдать
+за текущими блокировками:[Люция] sandbox=# SELECT locktype,
+relation::regclass, mode, transactionid AS tid, virtualtransaction AS
+vtid, pid, granted FROM pg_catalog.pg_locks l LEFT JOIN
+pg_catalog.pg_database db ON db.oid = l.database WHERE (db.datname =
+'sandbox' OR db.datname IS NULL) AND NOT pid = pg_backend_pid();
+locktype  | relation  |      mode       | tid |   vtid   |  pid  |
+granted ------------+-----------+-----------------+-----+----------+--
+-----+---------  relation   | toys_pkey | AccessShareLock |     |
+5/185417 | 13792 | t  relation   | toys      | AccessShareLock |     |
+5/185417 | 13792 | t  virtualxid |           | ExclusiveLock   |     |
+5/185417 | 13792 | t  relation   | toys_pkey | AccessShareLock |     |
+7/8300   | 16944 | t  relation   | toys      | AccessShareLock |     |
+7/8300   | 16944 | t  virtualxid |           | ExclusiveLock   |     |
+7/8300   | 16944 | t (6 строк)Все активные блокировки можно видеть в
+системном представлении pg_catalog.pg_locks. Чтобы видеть только
+блокировки из нашей песочницы добавлено условие на имя БД.Чтобы не
+видеть блокировки, которые вызваны нашим запросом, добавлено условие
+на идентификатор процесса: NOT pid = pg_backend_pid().Преобразование
+типа relation::regclass удобно использовать для получения
+человекочитаемого имени таблицы.Давайте посмотрим на пятую строку
+выборки поближе:  locktype  | relation  |      mode       | tid |
+vtid   |  pid  | granted ------------+-----------+-----------------+--
+---+----------+-------+---------  relation   | toys      |
+AccessShareLock |     | 7/8300   | 16944 | tЭто значит, что на таблицу
+toys успешно получена блокировка AccessShareLock от виртуальной
+транзакции 7/8300  и идентификатора процесса pid=16944. Есть ещё одна
+аналогичная блокировка во второй строке.Блокировки получены и все
+отлично. Алина и Айнур довольны тем, что могут видеть все игрушки в
+песочнице, и они не мешают друг другу.Заметим, что каждая транзакция
+получила ExclusiveLock на виртуальную транзакцию.Далее Алина берет
+машинку:[Алина] sandbox=# UPDATE toys SET usage = usage+1 WHERE "name"
+= 'машинка';И, можно видеть, что у нее это естественно получилось.
+Люция проверяет все ли в порядке в песочнице. Смотрим таблицу
+блокировок:[Люция] sandbox=# SELECT locktype, relation::regclass,
+mode, transactionid AS tid,  virtualtransaction AS vtid, pid, granted
+FROM pg_catalog.pg_locks l LEFT JOIN pg_catalog.pg_database db  ON
+db.oid = l.database WHERE (db.datname = 'sandbox' OR db.datname IS
+NULL)  AND NOT pid = pg_backend_pid();    locktype    | relation  |
+mode       | tid |   vtid   |  pid  | granted ---------------+--------
+---+------------------+-----+----------+-------+---------  relation
+| toys_pkey | AccessShareLock  |     | 5/185417 | 13792 | t  relation
+| toys      | AccessShareLock  |     | 5/185417 | 13792 | t
+virtualxid    |           | ExclusiveLock    |     | 5/185417 | 13792
+| t  relation      | toys_pkey | AccessShareLock  |     | 7/8300   |
+16944 | t  relation      | toys_pkey | RowExclusiveLock |     | 7/8300
+| 16944 | t  relation      | toys      | AccessShareLock  |     |
+7/8300   | 16944 | t  relation      | toys      | RowExclusiveLock |
+| 7/8300   | 16944 | t  virtualxid    |           | ExclusiveLock    |
+| 7/8300   | 16944 | t  transactionid |           | ExclusiveLock    |
+841 | 7/8300   | 16944 | t (9 строк)Добавилось 3 блокировки, их стало
+9. Алина получила RowExclusiveLock на таблицу toys, когда взяла
+машинку. Также появился реальный идентификатор транзакции
+с ExclusiveLock, так как произошло потенциальное изменение состояния
+базы данных.Уже можно заметить, что блокировки вешаются на объекты при
+выполнении соответствующего запроса и не снимаются до конца
+транзакции.MVCCНо Айнур не знает, что машинка уже занята Алиной, так
+как это изменение еще не было зафиксировано и он видит старые
+данные:[Айнур] sandbox=# SELECT * FROM toys;  id |  name   | usage
+----+---------+-------   1 | машинка |     0   2 | лопатка |     0   3
+| ведерко |     0 (3 rows)Так работает механизм MVCC - Multi Version
+Concurrency Control, который используется в PostgreSQL для отображения
+консистентного состояния БД для каждой транзакции. Пока транзакция не
+будет зафиксирована или отменена, все остальные транзакции будут
+видеть состояние БД, как если бы эта транзакция не стартовала вообще.
+Блокирование запросовТеперь допустим, что Айнур тоже захотел поиграть
+с машинкой, что вполне обычно для детей, играющих в песочницах.[Айнур]
+sandbox=# UPDATE toys SET usage = usage+1 WHERE "name" =
+'машинка';Ничего не произошло. По крайней мере внешне. На самом деле
+Айнур пытаясь получить машинку наткнулся на блокировку Алины и теперь
+вынужден ждать, пока Алина освободит ее. Что видит Люция:[Люция]
+sandbox=# SELECT locktype, relation::regclass, mode, transactionid AS
+tid,  virtualtransaction AS vtid, pid, granted  FROM
+pg_catalog.pg_locks l LEFT JOIN pg_catalog.pg_database db  ON db.oid =
+l.database WHERE (db.datname = 'sandbox' OR db.datname IS NULL)  AND
+NOT pid = pg_backend_pid();    locktype    | relation  |       mode
+| tid |   vtid   |  pid  | granted ---------------+-----------+-------
+-----------+-----+----------+-------+---------  relation      |
+toys_pkey | AccessShareLock  |     | 5/185417 | 13792 | t  relation
+| toys_pkey | RowExclusiveLock |     | 5/185417 | 13792 | t  relation
+| toys      | AccessShareLock  |     | 5/185417 | 13792 | t  relation
+| toys      | RowExclusiveLock |     | 5/185417 | 13792 | t
+virtualxid    |           | ExclusiveLock    |     | 5/185417 | 13792
+| t  relation      | toys_pkey | AccessShareLock  |     | 7/8300   |
+16944 | t  relation      | toys_pkey | RowExclusiveLock |     | 7/8300
+| 16944 | t  relation      | toys      | AccessShareLock  |     |
+7/8300   | 16944 | t  relation      | toys      | RowExclusiveLock |
+| 7/8300   | 16944 | t  virtualxid    |           | ExclusiveLock    |
+| 7/8300   | 16944 | t  transactionid |           | ExclusiveLock    |
+842 | 5/185417 | 13792 | t  tuple         | toys      | ExclusiveLock
+|     | 5/185417 | 13792 | t  transactionid |           | ShareLock
+| 841 | 5/185417 | 13792 | f  transactionid |           |
+ExclusiveLock    | 841 | 7/8300   | 16944 | t (14 строк) Люция видит
+еще плюс 5 блокировок. Добавлена транзакция Айнура, так как он тоже
+пытается изменить данные. Айнур также получил RowExclusiveLock на
+игрушки. И транзакцией Айнура добавлен запрос на ShareLock на
+транзакцию Алины, что обозначает его претензии на игрушки, которые
+заняла Алина. Эта блокировка не получена(granted = false), так
+как ShareLock конфликтует с ExclusiveLock на эту же транзакцию. Таким
+образом, Айнур ждет пока Алина освободит свою транзакцию зафиксировав
+или отменив ее.pg_stat_activityЕще одно интересное системное
+представление - это pg_stat_activity, которое показывает запросы и
+транзакции:[Люция] sandbox=# SELECT query, state,
+coalesce(wait_event_type='Lock', 'f') as waiting, pid FROM
+pg_stat_activity   WHERE datname = 'sandbox' AND NOT (state = 'idle'
+OR pid = pg_backend_pid());                         query
+|        state        | waiting |  pid -------------------------------
+----------------------------+---------------------+---------+-------
+UPDATE toys SET usage = usage+1 WHERE "name" = 'машинка'; | active
+| t       | 13792  UPDATE toys SET usage = usage+1 WHERE "name" =
+'машинка'; | idle in transaction | f       | 16944 (2 строки)Видно,
+что запрос Айнура активен и ждет освобождения машинки, а запрос Алины
+неактивен и ее транзакция не закрыта.Можно совместить выборку
+из pg_locks и pg_stat_activity:[Люция] sandbox=# SELECT blockeda.pid
+AS blocked_pid, blockeda.query as blocked_query,    blockinga.pid AS
+blocking_pid, blockinga.query as blocking_query  FROM
+pg_catalog.pg_locks blockedl  JOIN pg_stat_activity blockeda ON
+blockedl.pid = blockeda.pid  JOIN pg_catalog.pg_locks blockingl ON
+(blockingl.transactionid=blockedl.transactionid    AND blockedl.pid !=
+blockingl.pid)  JOIN pg_stat_activity blockinga ON blockingl.pid =
+blockinga.pid  WHERE NOT blockedl.granted AND blockinga.datname =
+'sandbox';  blocked_pid |                       blocked_query
+| blocking_pid |                     blocking_query -------------+----
+-------------------------------------------------------+--------------
++-------------------------------------------------------------
+13792 | UPDATE toys SET usage = usage+1 WHERE "name" = 'машинка'; |
+16944 | UPDATE toys SET usage = usage+1 WHERE "name" = 'машинка'; (1
+строка)В результате Люция видит, кто кого блокирует.Если вдруг Алина
+вспомнит, что не любит играть с машинками, и передумает брать её, то
+она откатит транзакцию:[Алина] sandbox=# ROLLBACK;Тогда Айнур сможет
+завершить свою попытку взять машинку и поиграть с ней:UPDATE 1 [Айнур]
+sandbox=# COMMIT; COMMIT [Айнур] sandbox=# select * from toys;  id |
+name   | usage ----+---------+-------   2 | лопатка |     0   3 |
+ведерко |     0   1 | машинка |     1 (3 строки)Количество
+использований машинки зависит от того, будет ли транзакция Алины
+зафиксирована, либо отменена. В нашем случае транзакция отменена и
+зафиксировано только то, что с машинкой поиграл Айнур.А Алина в то же
+время может свободно и без ожидания играть, например, с
+ведёрком.Смотрим, что происходит в песочнице:[Люция] sandbox=# SELECT
+locktype, relation::regclass, mode, transactionid AS tid,
+virtualtransaction AS vtid, pid, granted  FROM pg_catalog.pg_locks l
+LEFT JOIN pg_catalog.pg_database db  ON db.oid = l.database WHERE
+(db.datname = 'sandbox' OR db.datname IS NULL)  AND NOT pid =
+pg_backend_pid();  locktype | relation | mode | tid | vtid | pid |
+granted ----------+----------+------+-----+------+-----+--------- (0
+строк)Блокировок нет, а значит и конфликтов нет, все довольны.Явные
+блокировки (explicit locks)Еще одна обычная ситуация для песочницы,
+когда кто-то из детей пытается получить все подряд без
+разбора.Допустим Алина решила получить эксклюзивный доступ ко всем
+игрушкам в песочнице.[Алина] sandbox=# BEGIN; BEGIN [Алина] sandbox=#
+LOCK TABLE toys IN EXCLUSIVE MODE; LOCK TABLEВ таком случае Айнуру
+приходится ждать несмотря на то, что Алина на самом деле не взяла ни
+одну игрушку. [Айнур] sandbox=# BEGIN; UPDATE toys SET usage = usage+1
+WHERE "name" = 'лопатка'; BEGINТаблица блокировок будет выглядеть
+так:[Люция] sandbox=# SELECT locktype, relation::regclass, mode,
+transactionid AS tid,  virtualtransaction AS vtid, pid, granted  FROM
+pg_catalog.pg_locks l LEFT JOIN pg_catalog.pg_database db  ON db.oid =
+l.database WHERE (db.datname = 'sandbox' OR db.datname IS NULL)  AND
+NOT pid = pg_backend_pid();   locktype     | relation |        mode
+| tid |   vtid   |  pid  | granted ---------------+----------+--------
+-------------+-----+----------+-------+---------  virtualxid    |
+| ExclusiveLock       |     | 5/185423 | 13792 | t  virtualxid    |
+| ExclusiveLock       |     | 7/8303   | 16944 | t  relation      |
+toys     | ExclusiveLock       |     | 7/8303   | 16944 | t  relation
+| toys     | RowExclusiveLock    |     | 5/185423 | 13792 | f (4
+строки)Так как реальных изменений состояния не происходит, то нет и
+блокировок на реальную транзакцию(locktype=transactionid). И так
+как Айнур не получил еще RowExclusiveLock на лопатку(granted=false), у
+него тоже нет блокировки на реальную транзакцию.В таком случае наш
+запрос, который мы составили выше, не покажет никаких взаимных
+блокировок, так как мы делали объединение по идентификатору реальной
+транзакции. И Люция будет думать, что все в порядке, хотя на самом
+деле, если посмотреть на список ожидающих запросов:[Люция] sandbox=#
+SELECT pid, query, now() - query_start  AS waiting_duration  FROM
+pg_catalog.pg_stat_activity WHERE datname='sandbox'  AND
+wait_event_type='Lock';      pid  |                           query
+| waiting_duration -------+-------------------------------------------
+----------------+------------------  13792 | UPDATE toys SET usage =
+usage+1 WHERE "name" = 'лопатка'; | 00:03:44.066 (1 строка)Мы видим,
+что на самом деле Айнур ждет лопатку уже 3 минуты и у него кончается
+терпение. Если изменить исходный запрос и добавить объединение по
+таблице, то Люция сможет выяснить, кто не дает Айнуру лопатку: [Люция]
+sandbox=# SELECT blockingl.relation::regclass,    blockeda.pid AS
+blocked_pid, blockeda.query as blocked_query,    blockedl.mode as
+blocked_mode,    blockinga.pid AS blocking_pid, blockinga.query as
+blocking_query,    blockingl.mode as blocking_mode  FROM
+pg_catalog.pg_locks blockedl  JOIN pg_stat_activity blockeda ON
+blockedl.pid = blockeda.pid  JOIN pg_catalog.pg_locks blockingl
+ON(blockingl.relation=blockedl.relation   AND
+blockingl.locktype=blockedl.locktype AND blockedl.pid !=
+blockingl.pid)  JOIN pg_stat_activity blockinga ON blockingl.pid =
+blockinga.pid  WHERE NOT blockedl.granted AND
+blockinga.datname='sandbox';  relation | blocked_pid |
+blocked_query                       |   blocked_mode   | blocking_pid
+|           blocking_query           | blocking_mode ----------+------
+-------+-----------------------------------------------------------+--
+----------------+--------------+------------------------------------+-
+------------------  toys     |       13792 | UPDATE toys SET usage =
+usage+1 WHERE "name" = 'лопатка'; | RowExclusiveLock |        16944 |
+LOCK TABLE toys IN EXCLUSIVE MODE; | ExclusiveLock (1 строка)Когда
+Алине было сказано, что нехорошо забирать все игрушки себе без
+необходимости, она закрывает свою бессмысленную транзакцию:[Алина]
+sandbox=# COMMIT; COMMITТеперь Айнур сможет взять свою игрушку. При
+этом он получает блокировку на реальную транзакцию:[Люция] sandbox=#
+SELECT locktype, relation::regclass, mode, transactionid AS tid,
+virtualtransaction AS vtid, pid, granted  FROM pg_catalog.pg_locks l
+LEFT JOIN pg_catalog.pg_database db  ON db.oid = l.database WHERE
+(db.datname = 'sandbox' OR db.datname IS NULL)  AND NOT pid =
+pg_backend_pid();     locktype    | relation  |       mode       | tid
+|   vtid   |  pid  | granted ---------------+-----------+-------------
+-----+-----+------+-------+---------  relation      | toys_pkey |
+RowExclusiveLock |     | 5/185423  | 13792 | t  virtualxid    |
+| ExclusiveLock    |     | 5/185423  | 13792 | t  transactionid |
+| ExclusiveLock    | 845 | 5/185423  | 13792 | t  relation      | toys
+| RowExclusiveLock |     | 5/185423  | 13792 | t (4 строки)Айнур
+доволен и, поиграв с лопаткой, тоже завершает свою транзакцию:[Айнур]
+sandbox=# COMMIT; COMMITRowExclusiveLockПосле того, как Алине
+запретили забирать все игрушки, она решила применить другой
+подход.[Алина] sandbox=# BEGIN; SELECT * FROM toys FOR UPDATE; BEGIN
+id |  name   | usage ----+---------+-------   3 | ведерко |     0   1
+| машинка |     1   2 | лопатка |     1 (3 строки)Этот подход
+называется "я хочу видеть все игрушки и, возможно, я возьму какую-
+нибудь, но пока я не решила какую взять, и поэтому не хочу чтобы их
+кто-либо трогал". И, надо признать, что это тоже распространенный
+подход в песочницах.В итоге Айнур снова не может получить свою
+игрушку:[Айнур] sandbox=# UPDATE toys SET usage = usage+1 WHERE "name"
+= 'лопатка';А Люция видит следующую ситуацию:[Люция] sandbox=# SELECT
+locktype, relation::regclass, mode, transactionid AS tid,
+virtualtransaction AS vtid, pid, granted  FROM pg_catalog.pg_locks l
+LEFT JOIN pg_catalog.pg_database db  ON db.oid = l.database WHERE
+(db.datname = 'sandbox' OR db.datname IS NULL)  AND NOT pid =
+pg_backend_pid();    locktype    | relation  |       mode       | tid
+|   vtid   |  pid  | granted ---------------+-----------+-------------
+-----+---------+----------+-------+---------  relation      |
+toys_pkey | RowExclusiveLock |     | 5/185424 | 13792 | t  relation
+| toys      | RowExclusiveLock |     | 5/185424 | 13792 | t
+virtualxid    |           | ExclusiveLock    |     | 5/185424 | 13792
+| t  relation      | toys_pkey | AccessShareLock  |     | 7/8304   |
+16944 | t  relation      | toys      | RowShareLock     |     | 7/8304
+| 16944 | t  virtualxid    |           | ExclusiveLock    |     |
+7/8304   | 16944 | t  transactionid |           | ShareLock        |
+848 | 5/185424 | 13792 | f  transactionid |           | ExclusiveLock
+| 848 | 7/8304   | 16944 | t  transactionid |           |
+ExclusiveLock    | 849 | 5/185424 | 13792 | t  tuple         | toys
+| ExclusiveLock    |     | 5/185424 | 13792 | t (10 строк)Все очень
+похоже на то, что мы уже видели выше, когда Айнур и Алина пытались
+одновременно играть с машинкой. Айнур ждет транзакцию Алины.Если Люция
+проверит блокировку по таблице, то ничего не увидит:[Люция] sandbox=#
+SELECT blockingl.relation::regclass,    blockeda.pid AS blocked_pid,
+blockeda.query as blocked_query,    blockedl.mode as blocked_mode,
+blockinga.pid AS blocking_pid, blockinga.query as blocking_query,
+blockingl.mode as blocking_mode  FROM pg_catalog.pg_locks blockedl
+JOIN pg_stat_activity blockeda ON blockedl.pid = blockeda.pid  JOIN
+pg_catalog.pg_locks blockingl ON(blockingl.relation=blockedl.relation
+AND blockingl.locktype=blockedl.locktype AND blockedl.pid !=
+blockingl.pid)  JOIN pg_stat_activity blockinga ON blockingl.pid =
+blockinga.pid  WHERE NOT blockedl.granted AND
+blockinga.datname='sandbox';  relation | blocked_pid |
+blocked_query                 |   blocked_mode   | blocking_pid |
+blocking_query               |    blocking_mode ----------+-----------
+--+-----------------------------------------------+------------------+
+--------------+-------------------------------------------+-----------
+---------- (0 строк)Сейчас ей нужен запрос с блокировкой по
+транзакции.Всё вместеЧтобы увидеть все рассмотренные выше виды
+блокировок, нужно составить комбинированный запрос:[Люция] sandbox=#
+SELECT
+COALESCE(blockingl.relation::regclass::text,blockingl.locktype) as
+locked_item,    blockeda.pid AS blocked_pid, blockeda.query as
+blocked_query,    blockedl.mode as blocked_mode, blockinga.pid AS
+blocking_pid,    blockinga.query as blocking_query, blockingl.mode as
+blocking_mode  FROM pg_catalog.pg_locks blockedl  JOIN
+pg_stat_activity blockeda ON blockedl.pid = blockeda.pid  JOIN
+pg_catalog.pg_locks blockingl ON(    (
+(blockingl.transactionid=blockedl.transactionid) OR
+(blockingl.relation=blockedl.relation AND
+blockingl.locktype=blockedl.locktype)    ) AND blockedl.pid !=
+blockingl.pid)  JOIN pg_stat_activity blockinga ON blockingl.pid =
+blockinga.pid  WHERE NOT blockedl.granted  AND
+blockinga.datname=current_database();   locked_item  | blocked_pid |
+blocked_query                       | blocked_mode | blocking_pid |
+blocking_query         | blocking_mode ---------------+-------------+-
+----------------------------------------------------------+-----------
+---+--------------+--------------------------------+-----------------
+transactionid |       13792 | UPDATE toys SET usage = usage+1 WHERE
+"name" = 'лопатка'; | ShareLock    |        16944 | SELECT * FROM toys
+FOR UPDATE; | ExclusiveLock (1 строка)Для удобства в него добавлена
+функция current_database().Теперь Люция всегда может видеть, что
+происходит в песочнице, и что именно не поделили дети. Она налила себе
+чашечку латте макиато и решила
+почитать http://www.postgresql.org/docs/current/static/explicit-
+locking.html, чтобы узнать еще больше интересного про
+блокировки.ИтогСтатья практически не потеряла актуальности, что
+говорит о хорошей стабильности и совместимости версий PostgreSQL между
+собой. Но и нельзя сказать, что СУБД не развивается, в процессе
+проверки я заметил несколько изменений:С версии 9.6 поле waiting в
+pg_stat_activity было заменено на два других, более информативных:
+wait_event_type и wait_event.С 10 версии при явной блокировке таблицы
+в режиме ACCESS EXCLUSIVE добавился ExclusiveLock на текущую реальную
+транзакцию. Это изменение связано с тем, что в 10 версии были по
+умолчанию включены некоторые настройки для поточной репликации.В 11
+версии было добавлено поле backend_type в представление
+pg_stat_activity, которое даст понимание источника активности: вакуум,
+репликация или обычный клиент приложения.В 14 версии в представление
+pg_locks добавлено поле waitstart, в котором отображается время начала
+ожидания получения блокировки, а в pg_stat_activity  добавлено поле
+query_id - уникальный идентификатор запроса, который позволяет
+получить статистику по запросу из pg_stat_statements.

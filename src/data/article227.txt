@@ -1,0 +1,121 @@
+Автор: Surf_Studio
+Дата: 2021-10-05T06:00:02.000Z
+Название: Функциональный подход в Jetpack Compose: каррирование функций
+Теги: Блог компании Surf, Программирование *, Разработка мобильных
+приложений *, Разработка под Android *, Функциональное
+программирование *
+Текст:
+28 июля в мире Android произошло важное событие: анонсировали Jetpack
+Compose 1.0. Вместе с этим нововведением места для ключевого слова
+class стало ещё меньше. Kotlin поддерживает парадигму функционального
+программирования (ФП), и разработчики Google этим умело
+пользуются. Часто объектно-ориентированный подход (ООП) ставят в
+противовес ФП. Это ошибка: они не соперники и могут друг друга
+дополнить. Одно из понятий ФП — каррирование функций. Оно позволяет
+произвести частичное применение в ожидании данных, минимизируя
+количество ошибок в коде: это может пригодиться при разработке в
+Compose и не только :) Давайте посмотрим, что такое каррирование и как
+его можно использовать на практике.Несколько слов об аргументах
+функцииДля ООП-мира привычно думать, что функции могут иметь несколько
+аргументов. На самом деле это не так. Функция описывает связь между
+исходным (областью определения) и конечным множеством данных (областью
+значений). Она не связывает несколько исходных множеств с конечным
+множеством. Таким образом, функция не может иметь несколько
+аргументов. По сути, аргументы — это множество:// Привычный вид
+функции fun f(a: Int, b: Int) = a + b  // Скрытый вид функции fun
+f(vararg a: Int) = a.first() + a.last()Следуя соглашению, лишний код
+опущен. Но всё же это функция одного аргумента, а не двух.Что такое
+каррирование функцийИтак, теперь мы знаем, что аргумент один — массив
+данных (кортеж). Тогда функцию f(a, b) можно рассматривать как
+множество всех функций на N от множества всех функций на N. Это
+выглядело бы так: f(a)(b). В таком случае можно записать: f(a) = f2;
+f2(b) = a + b. Когда применяется функция f(a), аргумент a перестаёт
+быть переменной и превращается в константу для функции f2(b).
+Результат выполнения f(a) — функция, которую можно выполнить
+отложенно. Преобразование функции в вид f(a)(b) и называется
+каррированием — в честь математика Хаскелла Карри. Хотя он это
+преобразование и не изобретал :)// Пример каррированой функции с
+применением fun fun f(a: Int) = { b: Int -> a + b }  // Пример
+каррированой функции с применением переменной val f2: (Int) -> (Int)
+-> Int = { b -> { a -> a + b } }Jetpack Compose и частичное применение
+функцийКаррирование позволяет разбить функцию на несколько блоков и
+выполнить их отложенно по мере надобности. Для этого подхода
+существует термин — «частичное применение».Приведу практический пример
+частичного применения в Jetpack Compose. Добавим простой
+BottomNavigation с логикой переключения в приложение, любезно
+сгенеренное нам Android Studio.Demo currying appCurryingTheme {
+var currentTab by remember { mutableStateOf(0) }      Scaffold(
+bottomBar = {             BottomNavigation {
+BottomNavigationItem(                     selected = currentTab == 0,
+icon = { Icon(Icons.Filled.Person, null) },
+onClick = {                         currentTab = 0
+}                 )                 BottomNavigationItem(
+selected = currentTab == 1,                     icon = {
+Icon(Icons.Filled.Phone, null) },                     onClick = {
+currentTab = 1                     }                 )             }
+}     ) {         Greeting("Android")     } }Подправим Greeting для
+переключения текста в зависимости от состояния BottomNavigation.when
+(currentTab) {     0 -> Greeting("Selected - Person")     1 ->
+Greeting("Selected - Phone") }Это работает, но подобный подход чреват
+багами: использование случайных констант принесёт путаницу в них.
+Давайте заменим произвольные константы на sealed class, который
+поможет нам избежать возможных проблем.sealed class
+BottomNavigationTab {     object Person : BottomNavigationTab()
+    object Phone : BottomNavigationTab() }Выглядит намного надёжней.
+Добавим ещё небольшую фичу — вывод Snackbar при переключении. В данном
+случае он хорошо подчёркивает важность упрощения onClick и карринга в
+дальнейшем.CurryingTheme {      val scope = rememberCoroutineScope()
+val scaffoldState: ScaffoldState = rememberScaffoldState()     var
+currentTab: BottomNavigationTab by remember {
+mutableStateOf(BottomNavigationTab.Person) }      Scaffold(
+scaffoldState = scaffoldState,         bottomBar = {
+BottomNavigation {                 BottomNavigationItem(
+selected = currentTab == BottomNavigationTab.Person,
+icon = { Icon(Icons.Filled.Person, null) },
+onClick = {                         currentTab =
+BottomNavigationTab.Person                         scope.launch {
+scaffoldState.snackbarHostState.showSnackbar("Selected -
+${currentTab::class.simpleName}")                         }
+}                 )                 BottomNavigationItem(
+selected = currentTab == BottomNavigationTab.Phone,
+icon = { Icon(Icons.Filled.Phone, null) },                     onClick
+= {                         currentTab = BottomNavigationTab.Phone
+scope.launch {
+scaffoldState.snackbarHostState.showSnackbar("Selected -
+${currentTab::class.simpleName}")                         }
+}                 )             }         }     ) {         when
+(currentTab) {             BottomNavigationTab.Person ->
+Greeting("Selected - Person")             BottomNavigationTab.Phone ->
+Greeting("Selected - Phone")         }     } }Допустим,
+BottomNavigationItem будет далеко не один. onClick выглядит удручающе
+— много дублирующего кода. Это можно легко подправить, вынеся код во
+вложенную функцию.fun onClick(tab: BottomNavigationTab) {
+currentTab = tab     scope.launch {
+scaffoldState.snackbarHostState.showSnackbar("Selected -
+${currentTab::class.simpleName}")     } }С применением этой функции
+onClick будет выглядеть следующим образом:BottomNavigationItem(
+selected = currentTab == BottomNavigationTab.Person,     icon = {
+Icon(Icons.Filled.Person, null) },     onClick = {
+onClick(BottomNavigationTab.Person)     } ) BottomNavigationItem(
+selected = currentTab == BottomNavigationTab.Phone,     icon = {
+Icon(Icons.Filled.Phone, null) },     onClick = {
+onClick(BottomNavigationTab.Phone)     } )Это рабочий вариант, но
+карринг с помощью частичного применения поможет ещё больше упростить
+onClick.// каррированая функция fun onClick(tab: BottomNavigationTab):
+() -> Unit = {     currentTab = tab     scope.launch {
+scaffoldState.snackbarHostState.showSnackbar("Selected -
+${currentTab::class.simpleName}")     } }// частичное применение
+BottomNavigationItem(     selected = currentTab ==
+BottomNavigationTab.Person,     icon = { Icon(Icons.Filled.Person,
+null) },     onClick = onClick(BottomNavigationTab.Person) )
+BottomNavigationItem(     selected = currentTab ==
+BottomNavigationTab.Phone,     icon = { Icon(Icons.Filled.Phone, null)
+},     onClick = onClick(BottomNavigationTab.Phone) )Мы рассмотрели
+один из примеров применения каррированной функции в Jetpack Compose,
+но цели данного преобразования значительно шире.Каррирование широко
+используется в языках программирования, поддерживающих функциональную
+парадигму. Все языки, поддерживающие замыкание, позволяют записывать
+каррированные функции: например, JavaScript, C#, Kotlin, Haskell.
+Имеет смысл освоить этот приём, чтобы минимизировать баги в коде,
+упростить его для понимания, сократить количество строк, обогатить
+ООП-код. Удачи!Проект доступен на GitHub

@@ -1,0 +1,651 @@
+Автор: KivyMD
+Дата: 2021-09-27T09:18:38.000Z
+Название: Python GUI. Библиотека KivyMD. Шаблон MVC, parallax эффект и анимация
+контента слайдов
+Теги: Python *, Разработка мобильных приложений *, Разработка под MacOS *,
+Разработка под Linux *, Разработка под Windows *
+Текст:
+Приветствую вас, дорогие любители и знатоки Python! Прошло пол года с
+момента моей последней публикации на Хабре. Был погружен в пучину
+обстоятельств и сторонние проекты. Начиная с сегодняшней, статьи будут
+выходить с периодичностью раз в месяц. В этой статье мы рассмотрим как
+создать и анимировать контент для слайдов а также сделать parallax
+эффект для фонового изображения с помощью фреймворка Kivy и библиотеки
+KivyMD. Для тех, кто незнаком ни с первым ни со второй, вкратце
+напомню:Kivy - кроссплатформенный фреймворк с открытым исходным кодом,
+написанный с использованием Python/Cython. Поддерживает устройства
+ввода: WM_Touch, WM_Pen, Mac OS X Trackpad Magic Mouse, Mtdev, Linux
+Kernel HID, TUIO...KivyMD - библиотека, реализующая набор виджетов в
+стиле Google Material Design, для использования с фреймворком Kivy.
+Вне экосистемы Kivy библиотека не используется. Текущее состояние -
+бета.Установка зависимостейpip install "kivy[base] @
+https://github.com/kivy/kivy/archive/master.zip" pip install
+https://github.com/kivymd/KivyMD/archive/master.zipПервая команда
+установит фреймворк Kivy мастер версии, а вторая - библиотеку KivyMD
+также мастер версии. Все. Можем работать. Но для начала нам нужно
+познакомиться с архитектурой демонстрационного проекта
+PizzaAppConcept, которое сегодня мы будем разбирать. Приложение
+небольшое, всего один экран, но поскольку я люблю организацию в любом
+своем коде, я решил, что архитектура проекта будет построена на
+паттерне MVC, потому что по моему субъективному мнению этот шаблон как
+нельзя лучше подходит для организации порядка в проекте. Что такое
+архитектура MVC я не буду подробно рассматривать здесь. Детали
+раскроются сами собой по ходу углубления в сегодняшний
+материал.Архитектура MVCПроект выглядит следующим образом:assets -
+изображения, шрифты и дополнительные файлы проектаController - модули
+контроллеровModel - модули моделейUtility - дополнительные модули
+проектаView - пакеты представленийРазвернутый проект имеет следующую
+структуру:Обратите внимание, что модули модели, представления и
+контроллера имеют одинаковые имена.Это помогает быстро ориентироваться
+в проекте, если проект большой. Например, в моем последнем проекте
+шестнадцать моделей и соответственно столько же представлений и
+контроллеров.Перед тем как приступить к созданию представления экрана
+приложения нам нужно создать абстрактный класс-наблюдатель. Этот класс
+должен быть унаследован каждым представлением. Класс-наблюдатель
+реализует единственный метод model_is_changed - метод, который будет
+вызываться каждый раз, когда изменяются данные в классах моделей,
+таким образом сигнализируя представлению о произошедших
+изменениях.Класс-наблюдатель модуля observer.py:# Of course, "very
+flexible Python" allows you to do without an abstract # superclass at
+all or use the clever exception `NotImplementedError`. In my #
+opinion, this can negatively affect the architecture of the
+application. # I would like to point out that using Kivy, one could
+use the on-signaling # model. In this case, when the state changes,
+the model will send a signal # that can be received by all attached
+observers. This approach seems less # universal - you may want to use
+a different library in the future.   class Observer:     """Abstract
+superclass for all observers."""      def model_is_changed(self):
+"""         The method that will be called on the observer when the
+model changes.         """Как объясняется в комментариях к классу
+Observer, мы можем использовать properties такие как NumericProperty,
+StringProperty, DictProperty и др. Давайте сравним свойства Python и
+Kivy:Python:class MyClass:     def __init__(self, a=1.0):
+super().__init__()         self.a = aKivy:class MyClass:     a =
+NumericProperty(1.0)Properties в Kivy удобнее. Кроме того, в
+properties Kivy реализован ряд полезный методов, таких, например, как
+on_ методы:class MyClass:     a = NumericProperty(1)      def
+on_a(self, instance_my_class, new_a_value):         """         The
+method called as soon as a new value has been set for the         'a'
+attribute.         """          print("My property a changed to",
+new_a_value)Как видим, мы могли бы использовать properties которые
+предоставляет фреймворк Kivy, для отслеживания состояния атрибутов
+класса, что, конечно, намного проще, чем приведенная в статье
+реализация. Но в таком случае, весь код будет заточен под фреймворк
+Kivy и в дальнейшем, если вы захотите использовать другой GUI
+фреймворк для вашего приложения, вам нужно будет все переделывать под
+новый фреймворк - и модели, и представления, и контроллеры. Данная же
+реализация выполнена таким образом, что вам достаточно изменить только
+представление, модель и контроллеры остаются без изменений.Теперь,
+когда у нас есть класс наблюдателя, мы можем реализовать представление
+нашего единственного экрана со слайдами сортов пиццы. В пакете View
+создадим новый пакет представления с именем SliderMenuScreen, в
+котором разместим модуль slider_menu_screen.py с классом нашего
+экрана:Класс представления SliderMenuScreenView модуля
+slider_menu_screen.py:from kivy.properties import ObjectProperty  from
+kivymd.uix.screen import MDScreen  from Utility.observer import
+Observer   class SliderMenuScreenView(MDScreen, Observer):     """
+A class that implements a visual representation of the model data
+:class:`~Model.slider_menu_screen.SliderMenuScreenModel`.
+Implements a screen with slides of pizza varieties.     """
+controller = ObjectProperty()     """     Controller object -
+:class:`~Controller.slider_menu_screen.SliderMenuScreenController`.
+:attr:`controller` is an :class:`~kivy.properties.ObjectProperty`
+and defaults to `None`.     """      model = ObjectProperty()     """
+Model object -
+:class:`~Model.slider_menu_screen.SliderMenuScreenModel`.
+:attr:`model` is an :class:`~kivy.properties.ObjectProperty`     and
+defaults to `None`.     """      manager_screens = ObjectProperty()
+"""     Screen manager object -
+:class:`~kivy.uix.screenmanager.ScreenManager`.
+:attr:`manager_screens` is an :class:`~kivy.properties.ObjectProperty`
+and defaults to `None`.     """      def __init__(self, **kw):
+super().__init__(**kw)         self.model.add_observer(self)      def
+model_is_changed(self):         """         The method that will be
+called on the observer when the model changes.         """Каждый класс
+представления должен иметь три обязательных поля:controller - объект
+класса контроллераmodel - объект класса моделиmanager_screens - объект
+класса kivy.uix.screenmanager.ScreenManager (экранный менеджер,
+который управляет переключением экранов приложения)В конструкторе мы
+добавляем наблюдателя, которым является само представление и реализуем
+метод model_is_changed для отслеживания изменений модели. Также класс
+представления SliderMenuScreenView наследуется от класса
+kivymd.uix.screen.MDScreen: любой экран, который добавляется в
+ScreenManager должен быть унаследован от класса MDScreen.Теперь
+создадим модель для представления SliderMenuScreenView:Класс модели
+SliderMenuScreenModel:# The model implements the observer pattern.
+This means that the class must # support adding, removing, and
+alerting observers. In this case, the model is # completely
+independent of controllers and views. It is important that all #
+registered observers implement a specific method that will be called
+by the # model when they are notified (in this case, it is the
+`model_is_changed` # method). For this, observers must be descendants
+of an abstract class, # inheriting which, the `model_is_changed`
+method must be overridden.   class SliderMenuScreenModel:
+"""Implements screen logic for pizza variety slides."""      def
+__init__(self):         # List of observer classes. In our case, this
+will be the         # `View.SliderMenuScreen.slider_menu_screen.py`
+class.         # See `__init__` method of the above class.
+self._observers = []      def notify_observers(self):         """
+The method that will be called on the observer when the model changes.
+"""          for observer in self._observers:
+observer.model_is_changed()      def add_observer(self, observer):
+self._observers.append(observer)      def remove_observer(self,
+observer):         self._observers.remove(observer)Модель реализует
+три метода: добавление/удаление/оповещение наблюдателей. Пока наша
+модель не имеет данных. Перейдем к созданию контроллера:Класс
+контроллера SliderMenuScreenController:from
+View.SliderMenuScreen.slider_menu_screen import SliderMenuScreenView
+class SliderMenuScreenController:     """     The
+`SliderMenuScreenController` class represents a controller
+implementation. Coordinates work of the view with the model.      The
+controller implements the strategy pattern. The controller connects
+to the view to control its actions.     """      def __init__(self,
+model):         self.model = model  #
+Model.slider_menu_screen.SliderMenuScreenModel         self.view =
+SliderMenuScreenView(controller=self, model=self.model)      def
+get_view(self) -> SliderMenuScreenView:         return
+self.viewКонтроллер отслеживает все события, которые происходят на
+экране: пользовательский ввод, взаимодействие с элементами
+пользовательского интерфейса и т.д. Регистрируя эти события,
+контроллер вызывает соответствующие методы модели и представления,
+координируя таким образом логику и отображение данных представлением.
+В конструкторе класса SliderMenuScreenController мы создаем объект
+представления и возвращаем этот объект в методе get_view. Пока никаких
+событий пользовательского интерфейса в контроллере мы не отслеживаем.
+На этом мы закончим с шаблоном MVC. Двигаемся дальше...Точка входа в
+приожениеС этого модуля начинается выполнение Kivy приложения. Но
+перед тем как начать рассматривать этот модуль нам нужно создать
+модуль screens.py в директории View:Этот модуль содержит словарь с
+классами модулей и контроллеров. В точке входа в приложении - в модуле
+main.py - в цикле мы пройдемся по элементам этого словаря, создадим
+все необходимые объекты, передадим им нужные аргументы, создадим
+представления экранов, добавим их в экранный менеджер и отобразим этот
+менеджер на экране. Это очень удобно, когда нам, например,
+понадобиться в будущем добавить еще несколько экранов в приложение. Мы
+просто откроем модуль screens.py и добавим нужные классы в
+словарь.Модуль screens.py:# The screens dictionary contains the
+objects of the models and controllers # of the screens of the
+application.  from Model.slider_menu_screen import
+SliderMenuScreenModel from Controller.slider_menu_screen import
+SliderMenuScreenController  screens = {     # name screen     "slider
+menu screen": {         "model": SliderMenuScreenModel,  # class of
+model         "controller": SliderMenuScreenController,  # class of
+controller     }, }Ключи словаря screens - это имена экранов по
+которым мы сможем в дальнейшем эти экраны переключать, устанавливая в
+экранном менеджере имя текущего экрана, значения - словарь типа
+'model/controller': 'Model class/Controller class'.Точка входа в
+приложение - модуль main.py:""" The entry point to the application.
+The application uses the MVC template. Adhering to the principles of
+clean architecture means ensuring that your application is easy to
+test, maintain, and modernize.  You can read more about this template
+at the links below:  https://github.com/HeaTTheatR/LoginAppMVC
+https://en.wikipedia.org/wiki/Model–view–controller """  from
+kivy.uix.screenmanager import ScreenManager from kivy.config import
+Config  Config.set("graphics", "height", "799") Config.set("graphics",
+"width", "450")  from kivymd.app import MDApp  from View.screens
+import screens   class PizzaAppConcept(MDApp):     def __init__(self,
+**kwargs):         super().__init__(**kwargs)
+self.load_all_kv_files(self.directory)         # This is the screen
+manager that will contain all the screens of your         #
+application.         self.manager_screens = ScreenManager()      def
+build(self):         """         Initializes the application; it will
+be called only once.         If this method returns a widget (tree),
+it will be used as the root         widget and added to the window.
+:return:             None or a root :class:`~kivy.uix.widget.Widget`
+instance             if no self.root exists.         """
+self.theme_cls.primary_palette = "DeepOrange"
+self.generate_application_screens()         return
+self.manager_screens      def generate_application_screens(self):
+"""         Creating and adding screens to the screen manager.
+You should not change this cycle unnecessarily. He is self-sufficient.
+If you need to add any screen, open the `View.screens.py` module and
+see how new screens are added according to the given application
+architecture.         """          for i, name_screen in
+enumerate(screens.keys()):             model =
+screens[name_screen]["model"]()             controller =
+screens[name_screen]["controller"](model)             view =
+controller.get_view()             view.manager_screens =
+self.manager_screens             view.name = name_screen
+self.manager_screens.add_widget(view)   PizzaAppConcept().run()Этот
+код вы можете вообще не менять - это шаблон. Выполнение Kivy
+приложения начинается с класса, который унаследован от класса
+kivy.app.App или от класса kivymd.app.MDApp если вы используете
+библиотеку KivyMD. В нашем случае это класс PizzaAppConcept. Данный
+класс должен в обязательном порядке переопределять метод build (этот
+метод выполняется после запуска приложения), который должен возвращать
+любой виджет Kivy/KivyMD (есть условия при которых возвращение виджета
+не требуется, но мы не будем это рассматривать).  Мы будем возвращать
+виджет менеджера экранов -
+kivy.uix.screenmanager.ScreenManager.Пройдемся по логике класса
+PizzaAppConcept так, как она будет выполняться интерпретатором
+Python:В конструкторе класса загружаем все *kv (декларативное описание
+GUI на DSL языке KV Language) файлы из корневой директории приложения
+и создаем объект менеджера экранов.В методе build вызовем метод
+generate_application_screens, в котором будут созданы все
+представления на основе данных словаря screen из модуля
+View.screens.py, представления добавлены в менеджер экранов.Менеджер
+экранов будет возвращен из метода build.Вот теперь уж мы можем
+запустить приложение командой python main.py, увидеть пустой экран и
+перейти к главному - созданию экрана со слайдами сортов пиццы:Создание
+экрана слайдовКак вы помните, у нас уже есть класс
+SliderMenuScreenView. Но пока это просто пустой экран, наследник от
+класса MDScreen. Пора разместить в нем виджеты. Для отображения
+слайдов будем использовать класс kivymd.uix.carousel.MDCarousel. Весь
+UI будет описан в *kv файлах, в Python модулях мы будем лишь
+динамически создавать (если требуется) и изменять свойства виджетов.
+То есть, в Kivy описание виджетов также отделено от логики как
+представление от модели в шаблоне MVC. Разместим в пакете нашего
+представления файл slider_menu_screen.kv:Обратите внимание, что модуль
+с классом представления и kv файл описанием GUI носят идентичные
+имена. Это не правило, но хороший тон. Также в модуле представления
+должен размещаться только один класс самого представления, как и в
+файле kv должно быть только описание класса представления. Это также
+не является правилом, но заметно облегчит вам жизнь, когда ваш проект
+начнет расти.Описание GUI класса SliderMenuScreenView в файле
+slider_menu_screen.kv:MDCarousel:     id: carousel А вот здесь уже
+правило  должно совпадать с именем базового Python класса для которого
+мы создаем разметку на языке KV Language и это - правило. В kv файлах
+не нужно импортировать Kivy/KivyMD виджеты, они уже импортированы
+автоматически.Теперь наш экран содержит виджет MDCarousel, но все еще
+будет пустым, если мы запустим приложение, так как MDCarousel пока не
+содержит других виджетов. Для простой демонстрации мы можем разместить
+в MDCarousel три кнопки:MDCarousel:     id: carousel
+MDRaisedButton:         text: "SLIDE 1"         pos_hint: {"center_x":
+.5, "center_y": .5}      MDRaisedButton:         text: "SLIDE 2"
+pos_hint: {"center_x": .5, "center_y": .5}      MDRaisedButton:
+text: "SLIDE 3"         pos_hint: {"center_x": .5, "center_y": .5}
+Отлично! Все работает. Теперь немного об архитектуре самого
+представления. У нас есть пакет SliderMenuScreen, который содержит
+базовый класс представления и файл kv с описанием GUI на языке KV
+Language:Теперь нам нужно создать слад, который будет размещаться к
+виджете MDCarousel. Для этих целей я создаю в каждом пакете
+представления пакет с именем components в котором размещаются все
+виджеты, использующиеся в текущем экране:Каждый компонент должен быть
+отдельным пакетом с базовым Python классом и его kv правилом. Создадим
+компонент card:Начнем с базовых Python классов в модуле card.py.
+Реализуем слайд на основе виджета MDCard:from kivymd.uix.card import
+MDCard   class PizzaCard(MDCard):     """The class implements the
+slide card."""Опишем свойства карточки PizzaCard в правиле kv файла
+card.kv:<PizzaCard>     size_hint: .9, .95     pos_hint: {"center_x":
+.5, "center_y": .5}     radius: 20     elevation: 24Мы дали значения
+параметрам карточки: подсказка размера для ширины и высоты (значения
+от 0 до 1, что эквивалентно 0-100%), позиция карточки на экране
+(значения от 0 до 1, что эквивалентно 0-100%), радиус округления
+уголов и значение тени карточки. Теперь, поскольку у нас на экране,
+скорее всего, будет не одна, а несколько карточек, мы будем создавать
+их в Python коде и добавлять в виджет MDCarousel. Откроем класс
+представления
+View.SliderMenuScreen.slider_menu_screen.SliderMenuScreenView и
+добавим два метода:from View.SliderMenuScreen.components import
+PizzaCard   class SliderMenuScreenView(MDScreen, Observer):     def
+on_enter(self):         self.ids.carousel.clear_widgets()
+self.generate_and_added_slides_to_carousel()      def
+generate_and_added_slides_to_carousel(self):         for i in
+range(3):             card = PizzaCard()
+self.ids.carousel.add_widget(card)Для наглядности все, что мы ранее
+уже добавляли в этот класс, я не буду дублировать из примера в пример.
+Это экономит и место и сразу видно, что конкретно мы добавили/изменили
+в классе. Добавили мы (точнее, переопределили) метод on_enter, который
+вызывается автоматически как только экран станет виден пользователю. В
+этом методе мы через id получили ссылку на объект виджета MDCarousel,
+который у нас находится в kv файле, очистили MDCarousel  от всех
+виджетов и вызвали метод generate_and_added_slides_to_carousel для
+генерации и добавление слайдов в MDCarousel. После запуска приложения
+получаем при пустых слайда:Теперь, перед тем как пробовать добавлять
+элементы в слайд, давайте создадим json файл с названиями сортов и
+описаний пиццы:Файл pizza-description.json:{   "Mexican":       [
+"Olive oil, bacon, pepperoni sausages, red onion, cherry tomatoes,
+mozzarella cheese, chicken fillet, barbecue sauce, minced beef,
+pickled hot peppers",           "$3.50"       ],   "Contandino":
+[           "Eggplant, green onion, tomato, parmesan cheese,
+mozzarella cheese, chicken fillet, zucchini",           "$4.75"
+],   "Munich":       [           "Olive oil, salami, hunting sausages,
+pepperoni sausages, homemade sausages, red onion, parsley, mozzarella
+cheese, sweet and sour sauce",           "$2.99"       ] }Поскольку
+файл pizza-description.json в данном демонстрационном приложении
+хранит данные для приложения мы прочитаем эти данные в нашей модели и
+будем пользоваться ими в
+представлении.Model.slider_menu_screen.SliderMenuScreenModel:import
+json from pathlib import Path  BASE_DIR =
+Path(__file__).resolve().parent.parent DATA_DIR =
+BASE_DIR.joinpath("assets", "data")   class SliderMenuScreenModel:
+def __init__(self):         self.pizza_description = {}
+path_to_pizza_description = DATA_DIR.joinpath(             DATA_DIR,
+"pizza-description.json"         )         if
+path_to_pizza_description.exists():             with
+open(path_to_pizza_description) as json_file:
+self.pizza_description = json.loads(json_file.read())
+self._observers = []Теперь мы можем создать слайды с более менее
+реальными данными и добавить в слайд первый элемент - фоновое
+изображение. Для этого в классе
+View.SliderMenuScreen.components.card.card.PizzaCard нужно добавить
+поле (path_to_bg_image), которое будет принимать строковое значение -
+путь к фоновому изображению слайда:from kivy.properties import
+StringProperty  from kivymd.uix.card import MDCard   class
+PizzaCard(MDCard):     path_to_bg_image = StringProperty()... и
+описать виджет фонового изображения в соответствующем правиле в kv
+файле.View/SliderMenuScreen/components/card/card.kv:<PizzaCard>
+size_hint: .9, .95     pos_hint: {"center_x": .5, "center_y": .5}
+radius: 20     elevation: 24      MDRelativeLayout:          FitImage:
+id: image_bg             source: root.path_to_bg_image
+size_hint: None, .8             width: root.width             y:
+root.height - self.heightВ правиле PizzaCard фоновое изображение,
+представленное виджетом FitImage, как и все последующие виджеты, будет
+размещаться в макете MDRelativeLayout. Этот макет позволяет размещать
+виджеты один над другим и, поскольку в слайде у нас над фоновым
+изображением еще будут "летать" метки с названием и описанием пиццы, а
+также изображение самой пиццы, то макет MDRelativeLayout подходит для
+нашей задачи. Виджет же FitImage позволяет вписывать изображение без
+искажения пропорций в указанный размер.Сейчас мы уже можем переделать
+цикл создания слайдов на основе данных модели в методе
+generate_and_added_slides_to_carousel в классе представления:import os
+class SliderMenuScreenView(MDScreen, Observer):     def
+generate_and_added_slides_to_carousel(self):         for pizza_name in
+self.model.pizza_description.keys():             card = PizzaCard(
+path_to_bg_image=os.path.join(                     "assets", "images",
+f"{pizza_name}-bg.png"                 )             )
+self.ids.carousel.add_widget(card)Я намеренно дал изображениям имена
+названий сортов пиццы из фала pizza-description.json, чтобы в коде
+особо не парится с путями к изображениям:После запуска приложения
+слайды выглядят следующим образом:Как добавить parallax эффект к
+фоновому изображению слайда? Какого-то встроенного API для этого ни
+фреймворк Kivy, ни библиотека KivyMD пока не предоставляют
+(ParallaxContainer для класса MDCarousel библиотеки KivyMD находится
+на стадии разработки). Поэтому сделаем все сами. План такой:Увеличить
+ширину фонового изображения для parallax сдвигаПрименить к классу
+PizzaCard трафаретЗарегистрировать событие движения слайдов□
+локализовать направление движения слайдов□ вычислить offset значение
+положения слайда относительно ширины экрана□ сделать
+инкремент/декремент offset значения для ширины фонового изображения
+Виджет MDCarousel, в котором размещены наши слайды, имеет событие
+on_slide_progress, вызываемое автоматически при свайпе слайдов. Для
+его использования мы должны назначить этому событию соответствующий
+метод, который в качестве аргументов принимает два параметра: объект
+класса MDCarousel и offset значение слайда. Как мы помним, все события
+в нашем мини проекте обрабатывает класс контроллера. Поэтому добавим
+нужный метод в класс контроллера
+Controller.slider_menu_screen.SliderMenuScreenController:class
+SliderMenuScreenController:     def on_slide_progress(self,
+instance_carousel, offset_value):         """         Called when the
+user swipes on the screen (the moment the slides move).         """
+self.view.do_animation_card_content(instance_carousel,
+offset_value)Атрибут self.view, как вы уже поняли, это объект класса
+представления. Теперь в правиле представления SliderMenuScreen в файле
+View.SliderMenuScreen.slider_menu_screen.kv  присвоим событию
+on_slide_progress метод on_slide_progress, который мы только что
+создали в классе контроллера:<SliderMenuScreenView>      MDCarousel:
+id: carousel         on_slide_progress:
+root.controller.on_slide_progress(*args)Идентификатор root в kv файлах
+всегда ссылается на свой базовый Python класс. Здесь базовый Python
+класс для правила SliderMenuScreenView это
+View.SliderMenuScreen.slider_menu_screen.SliderMenuScreenView. Добавим
+в этот класс новый метод do_animation_card_content, который вызывается
+из класса контроллера и два новый поля - parallax_step (значение
+сдвига фонового изображения для слайда) и внутренний для поиска
+направления слайда - _cursor_pos_x. Также определим метод
+get_direction_swipe, который будет возвращать строку с направлением
+свайпа слайда ("left/right"):class SliderMenuScreenView(MDScreen,
+Observer):     # The value to shift the background image for the
+slide.     parallax_step = NumericProperty(50)      _cursor_pos_x = 0
+def on_slide_progress(self, instance_carousel, offset_value):
+"""         Called when the user swipes on the screen (the moment the
+slides move).         """      def get_direction_swipe(self,
+offset_value):         if self._cursor_pos_x > offset_value:
+direction = "left"         else:             direction = "right"
+return directionПередадим классу слайда объект представления, чтобы мы
+могли иметь доступ к свойству parallax_step и объекту MDCarousel в
+правиле PizzaCard в файле
+View.SliderMenuScreen.components.card.card.kv:<PizzaCard>
+size_hint: .9, .95     pos_hint: {"center_x": .5, "center_y": .5}
+radius: 20     elevation: 24      MDRelativeLayout:          FitImage:
+id: image_bg             source: root.path_to_bg_image
+size_hint: None, .8             x: -root.view.parallax_step
+y: root.height - self.height             width:
+root.width + \                 root.view.parallax_step *
+len(root.view.ids.carousel.slides)Из нового: мы увеличили ширину
+фонового изображения слайда (умножили значение сдвига фонового
+изображения на количество слайдов) и сдвинули фоновое изображение на
+50 пикселей влево (тоже самое значение parallax_step):Теперь в базовом
+Python классе PizzaCard создадим поле view - объект представления
+экрана SliderMenuScreenView:from kivy.properties import ObjectProperty
+class PizzaCard(MDCard):     #
+View.SliderMenuScreen.slider_menu_screen.SliderMenuScreenView class
+view = ObjectProperty()При создании слайдов в методе
+generate_and_added_slides_to_carousel в классе представления
+SliderMenuScreenView передам классу PizzaCard аргумент view:class
+SliderMenuScreenView(MDScreen, Observer):     def
+generate_and_added_slides_to_carousel(self):         for pizza_name in
+self.model.pizza_description.keys():             card = PizzaCard(
+path_to_bg_image=os.path.join(                     "assets", "images",
+f"{pizza_name}-bg.png"                 ),                 view=self,
+)             self.ids.carousel.add_widget(card)Уже можно добавить код
+в метод do_animation_card_content класса представления
+SliderMenuScreenView, который будет управлять parallax эффектом:class
+SliderMenuScreenView(MDScreen, Observer):     def
+do_animation_card_content(self, instance_carousel, offset_value):
+direction = self.get_direction_swipe(offset_value)
+self._cursor_pos_x = offset_value         offset_value =
+max(min(abs(offset_value) / Window.width, 1), 0)          for
+instance_slide in [             instance_carousel.current_slide,
+instance_carousel.next_slide,
+instance_carousel.previous_slide         ]:             if
+instance_slide:                 if direction == "left":
+instance_slide.ids.image_bg.x -= offset_value                 elif
+direction == "right":
+instance_slide.ids.image_bg.x += offset_valueВычисляем направление
+свайпа, offset_value значение сдвига слайда (от 0 до 1) и, в
+зависимости от направления свайпа делаем инкремент/декремент для
+позиции фонового изображения по оси x проходя в цикле по
+предыдущему/текущему/следующему слайдам. Получается не очень:Это
+потому, что нам еще нужно унаследовать класс трафарета
+(kivymd.uix.templates.StencilWidget) для класса PizzaCard:from
+kivymd.uix.templates import StencilWidget   class PizzaCard(MDCard,
+StencilWidget):     [...]Уже лучше:На текущий момент модель,
+представление, контроллер и компонент слайда имеют следующий
+код:Модельimport json from pathlib import Path  BASE_DIR =
+Path(__file__).resolve().parent.parent DATA_DIR =
+BASE_DIR.joinpath("assets", "data")   class SliderMenuScreenModel:
+def __init__(self):         self.pizza_description = {}
+path_to_pizza_description = DATA_DIR.joinpath(             DATA_DIR,
+"pizza-description.json"         )         if
+path_to_pizza_description.exists():             with
+open(path_to_pizza_description) as json_file:
+self.pizza_description = json.loads(json_file.read())
+self._observers = []      def notify_observers(self):         for
+observer in self._observers:             observer.model_is_changed()
+def add_observer(self, observer):
+self._observers.append(observer)      def remove_observer(self,
+observer):         self._observers.remove(observer)Представлениеimport
+os  from kivy.core.window import Window from kivy.properties import
+ObjectProperty, NumericProperty  from kivymd.uix.screen import
+MDScreen  from Utility.observer import Observer from
+View.SliderMenuScreen.components import PizzaCard   class
+SliderMenuScreenView(MDScreen, Observer):     controller =
+ObjectProperty()     model = ObjectProperty()     manager_screens =
+ObjectProperty()     parallax_step = NumericProperty(50)
+_cursor_pos_x = 0      def __init__(self, **kw):
+super().__init__(**kw)         self.model.add_observer(self)      def
+on_enter(self):         self.ids.carousel.clear_widgets()
+self.generate_and_added_slides_to_carousel()      def
+generate_and_added_slides_to_carousel(self):         for pizza_name in
+self.model.pizza_description.keys():             card = PizzaCard(
+path_to_bg_image=os.path.join(                     "assets", "images",
+f"{pizza_name}-bg.png"                 ),                 view=self,
+)             self.ids.carousel.add_widget(card)      def
+do_animation_card_content(self, instance_carousel, offset_value):
+direction = self.get_direction_swipe(offset_value)
+self._cursor_pos_x = offset_value         offset_value =
+max(min(abs(offset_value) / Window.width, 1), 0)          for
+instance_slide in [             instance_carousel.current_slide,
+instance_carousel.next_slide,
+instance_carousel.previous_slide         ]:             if
+instance_slide:                 if direction == "left":
+instance_slide.ids.image_bg.x -= offset_value                 elif
+direction == "right":
+instance_slide.ids.image_bg.x += offset_value      def
+get_direction_swipe(self, offset_value):         if self._cursor_pos_x
+> offset_value:             direction = "left"         else:
+direction = "right"         return direction      def
+model_is_changed(self):         passКонтролерfrom
+View.SliderMenuScreen.slider_menu_screen import SliderMenuScreenView
+class SliderMenuScreenController:     def __init__(self, model):
+self.model = model         self.view =
+SliderMenuScreenView(controller=self, model=self.model)      def
+on_slide_progress(self, instance_carousel, offset_value):
+self.view.do_animation_card_content(instance_carousel, offset_value)
+def get_view(self):         return self.viewСлайдfrom kivy.properties
+import StringProperty, ObjectProperty  from kivymd.uix.card import
+MDCard from kivymd.uix.templates import StencilWidget   class
+PizzaCard(MDCard, StencilWidget):     path_to_bg_image =
+StringProperty()     view = ObjectProperty()<PizzaCard>     size_hint:
+.9, .95     pos_hint: {"center_x": .5, "center_y": .5}     radius: 20
+elevation: 24      MDRelativeLayout:          FitImage:
+id: image_bg             source: root.path_to_bg_image
+size_hint: None, .8             x: -root.view.parallax_step
+y: root.height - self.height             width:
+root.width + \                 root.view.parallax_step *
+len(root.view.ids.carousel.slides)Ну и последнее, что нам осталось
+сделать, - добавить в слайд название и описание сортов и изображения
+пиццы:Здесь уже все просто. Мы добавляем виджет для изображения пиццы,
+виджет для подписи сортов пиццы в уже написанное нами правило
+PizzaCard и изменяем свойства этих виджетов (позицию по оси x для
+меток и значения scale и angle,масштаб и вращение, для изображения) в
+том же методе класса представления, который управляет parallax
+эффектом. Для начала создадим новый класс PizzaImage и одноименное
+правило для изображения пиццы в модуле
+View/SliderMenuScreen/components/card/card.py и файле
+View/SliderMenuScreen/components/card/card.kv:from kivy.properties
+import StringProperty, NumericProperty from kivy.uix.image import
+Image  from kivymd.uix.card import MDCard from kivymd.uix.templates
+import StencilWidget, ScaleWidget, RotateWidget   class
+PizzaImage(Image, ScaleWidget, RotateWidget):     """The class
+implements the pizza image in the slide card."""      angle =
+NumericProperty(-45)     scale = NumericProperty(1)   class
+PizzaCard(MDCard, StencilWidget):     pizza_image = StringProperty()
+pizza_name = StringProperty()     pizza_description = StringProperty()
+pizza_cost = StringProperty()Помимо класса Image, мы унаследовали
+класс PizzaImage от классов ScaleWidge и RotateWidget, с помощью
+которых мы будем управлять вращением и масштабом изображения
+пиццы.<PizzaImage>     scale_value_x: self.scale     scale_value_y:
+self.scale     rotate_value_angle: self.angle     rotate_value_axis:
+(0, 0, 1)Полный код правила с фоновым изображением слайда,
+изображением пиццы, метками сортов пиццы и кнопкой цены в файле
+View/SliderMenuScreen/components/card/card.kv:<PizzaImage>
+scale_value_x: self.scale     scale_value_y: self.scale
+rotate_value_angle: self.angle     rotate_value_axis: (0, 0, 1)
+<PizzaCard>     size_hint: .9, .95     pos_hint: {"center_x": .5,
+"center_y": .5}     radius: 20     elevation: 24
+MDRelativeLayout:          FitImage:             id: image_bg
+source: root.path_to_bg_image             size_hint: None, .8
+x: -root.view.parallax_step             y: root.height - self.height
+width:                 root.width + \
+root.view.parallax_step * len(root.view.ids.carousel.slides)
+PizzaImage:             id: pizza_image             source:
+root.pizza_image             size_hint: None, None             size:
+root.width / 1.2, root.width / 1.2             pos_hint: {"center_x":
+.5}             y: image_bg.y - dp(24)          MDLabel:
+id: pizza_name             text: root.pizza_name             bold:
+True             adaptive_size: True             font_style: "H4"
+font_name: "assets/font/hot-pizza.ttf"             color: 1, 1, 1, 1
+x: dp(20)             y: root.height - self.height - dp(20)
+MDLabel:             text: root.pizza_description
+adaptive_size: True             text_size: root.width - (root.width *
+dp(30) / 100), None             color: 1, 1, 1, 1
+font_name: "assets/font/hot-pizza.ttf"             x: pizza_name.x
+y: pizza_name.y - self.height - dp(20)          MDRoundFlatButton:
+text: root.pizza_cost             size_hint: .3, .065
+pos_hint: {"center_x": .5}             y: "18dp"
+line_width: 2             font_name: "assets/font/hot-pizza.ttf"
+font_size: "24sp"Если более наглядно, то это выглядит следующим
+образом:Поскольку мы добавили новые поля в класс PizzaCard для
+изображения пиццы, меток и пр., нам нужно обновить метод
+generate_and_added_slides_to_carousel в классе представления:class
+SliderMenuScreenView(MDScreen, Observer):     def
+generate_and_added_slides_to_carousel(self):         for pizza_name in
+self.model.pizza_description.keys():             pizza_name =
+pizza_name.lower()             scale = 1 if pizza_name == "mexican"
+else 2             card = PizzaCard(
+path_to_bg_image=os.path.join(                     "assets", "images",
+f"{pizza_name}-bg.png"                 ),
+pizza_name=pizza_name.capitalize(),                 pizza_description=
+self.model.pizza_description[pizza_name.capitalize()][
+0                 ],
+pizza_cost=self.model.pizza_description[pizza_name.capitalize()][1],
+pizza_image=os.path.join("assets", "images", f"{pizza_name}.png"),
+view=self,             )             card.ids.pizza_image.scale =
+scale             self.ids.carousel.add_widget(card)На первом слайде с
+сортом пиццы Mexican изображению пиццы мы дали масштаб 1, остальным
+слайдам задали масштаб равным 2. Так что при запуске приложения
+получим следующую картину:Анимация изображения пиццы и меток текста
+проста: для предыдущего/текущего/следующего слайдов в каждом
+направлении свайпа ("right/left") мы делаем инкремент/декремент
+значения offset_value для таких свойств как масштаб изображения пиццы,
+его вращение, положение метки текста по оси x:# Current slide.
+instance_carousel.current_slide.ids.image_bg.width += offset_value
+instance_carousel.current_slide.ids.pizza_image.scale = 1 -
+offset_value instance_carousel.current_slide.ids.pizza_image.angle +=
+offset_value instance_carousel.current_slide.ids.pizza_name.x = (
+self.width - abs(progress_value - self.width) + dp(20) )После этих
+вычислений метод do_animation_card_content в классе представления
+становится немного раздутым:    def do_animation_card_content(self,
+instance_carousel, offset_value):         direction =
+self.get_direction_swipe(offset_value)         self._cursor_pos_x =
+offset_value         progress_value = offset_value
+offset_value = max(min(abs(offset_value) / Window.width, 1), 0)
+for instance_slide in [             instance_carousel.current_slide,
+instance_carousel.next_slide,
+instance_carousel.previous_slide,         ]:             if
+instance_slide:                 if direction == "left":
+instance_slide.ids.image_bg.x -= offset_value                 elif
+direction == "right":
+instance_slide.ids.image_bg.x += offset_value          if direction ==
+"left":             # Current slide.
+instance_carousel.current_slide.ids.image_bg.width += offset_value
+instance_carousel.current_slide.ids.pizza_image.scale = 1 -
+offset_value
+instance_carousel.current_slide.ids.pizza_image.angle += offset_value
+instance_carousel.current_slide.ids.pizza_name.x = (
+self.width - abs(progress_value - self.width) + dp(20)             )
+# Next slide.             if instance_carousel.next_slide:
+instance_carousel.next_slide.ids.image_bg.width += offset_value
+instance_carousel.next_slide.ids.pizza_image.scale = 2 - offset_value
+instance_carousel.next_slide.ids.pizza_image.angle += offset_value
+instance_carousel.next_slide.ids.pizza_name.x = (
+self.width - abs(progress_value) + dp(20)                 )
+# Previous slide.             if instance_carousel.previous_slide:
+instance_carousel.previous_slide.ids.image_bg.width += offset_value
+instance_carousel.previous_slide.ids.pizza_image.scale = 2 -
+offset_value
+instance_carousel.previous_slide.ids.pizza_image.angle += offset_value
+instance_carousel.previous_slide.ids.pizza_name.x = dp(20) -
+abs(progress_value)         elif direction == "right":             #
+Current slide.
+instance_carousel.current_slide.ids.image_bg.width -= offset_value
+instance_carousel.current_slide.ids.pizza_image.scale = 1 -
+offset_value
+instance_carousel.current_slide.ids.pizza_image.angle -= offset_value
+instance_carousel.current_slide.ids.pizza_name.x = (
+self.width - abs(progress_value - self.width) + dp(20)             )
+# Next slide.             if instance_carousel.next_slide:
+instance_carousel.next_slide.ids.image_bg.width -= offset_value
+instance_carousel.next_slide.ids.pizza_image.scale = 2 - offset_value
+instance_carousel.next_slide.ids.pizza_image.angle -= offset_value
+# Previous slide.             if instance_carousel.previous_slide:
+instance_carousel.previous_slide.ids.image_bg.width -= offset_value
+instance_carousel.previous_slide.ids.pizza_image.scale = 2 -
+offset_value
+instance_carousel.previous_slide.ids.pizza_image.angle -= offset_value
+instance_carousel.previous_slide.ids.pizza_name.x = -(
+self.width - (progress_value + dp(20))                 )В методе явно
+прослеживаются однотипные вычисления и, скорее всего, все эти
+вычисления можно ужать до одного цикла, но мне уже было лень. Статья
+переписывалась два раза с нуля после того, как новый редактор Хабра
+вдруг показал мне пустой экран после нажатия кнопки "Вы хотите
+восстановить старые изменения". Я уже молчу про добавление
+изображений, которые загружаются только спустя десять попыток... Но
+это уже другая статья. После запуска приложения мы наконец-то получаем
+долгожданный эффект:P.S.Видео было залито несколько ранее, чем вышла
+данная статья, и parallax эффекта для фонового изображения на нем нет.
+И, конечно, в статье не раскрыто полностью использование шаблона MVC,
+но такая цель и не преследовалась. Более приближенный к реальности
+шаблон MVC для Kivy доступен в этом репозитории. До новых встреч!

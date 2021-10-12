@@ -1,0 +1,180 @@
+Автор: KompotKot
+Дата: 2021-09-20T14:38:19.000Z
+Название: Serverless хранение файлов с AWS lambda
+Теги: Python *, Amazon Web Services *, API *, DevOps *
+Текст:
+Добрый день, сегодня мы развернем serverless инфраструктуру на базе
+AWS lambda для загрузки изображений (или любых файлов) с хранением в
+приватном AWS S3 bucket. Использовать мы будем terraform скрипты,
+залитые и доступные в моем репозитории kompotkot/hatchery на
+GitHub.У изложенного подхода следующие преимущества:lambda вызывается
+по запросу и если данный функционал не является ключевым для вашего
+приложения, то позволяет экономить на содержании серверау функций
+lambda изолированная среда работы, что идеально подходит для задач
+обработки загружаемых файлов. В случае загрузки вредоносного кода,
+атакующий не сможет выйти за пределы песочницы, сессия которой, в свою
+очередь, будет принудительно завершена спустя определенное
+времяхранение файлов на S3 bucket крайне дешевое удовольствиеСтруктура
+проектаДля примера мы будем использовать абстрактное приложение для
+ведения заметок с API. В каждую заметку мы можем загрузить картинку, а
+структура аналогична директории с файлами:- journal_1   - entry_1
+- image_1   - entry_2     - image_1     - image_n   - entry_n -
+journal_nУ нашего гипотетического API имеется эндпоинт для получения
+заметки (entry) в журнале (journal):curl \   --request GET \   --url
+'https://api.example.com/journals/{journal_id}/entries/{entries_id}'
+--header 'Authorization: {token_id}'Если в ответ на этот эндпоинт
+status_code равен 200, значит пользователь авторизован и имеет доступ
+к данному журналу. Соответственно мы позволим ему сохранить картинки
+для этой заметки. Регистрация приложения на Bugout.devВо избежание
+добавления дополнительной таблицы в БД, которая нам обязательно
+потребуется для хранения записей о том, какой заметке, какая картинка
+принадлежит, мы воспользуемся resources от Bugout.dev.Данный подход
+использован в целях упрощения нашей инфраструктуры, но если
+необходимо, то данный шаг можно заменить на создание новой таблицы в
+вашей БД и написание API для сохранения, изменения и удаления записей
+о сохраняемых картинках. Код Bugout.dev открыт и вы можете
+ознакомиться документацией API ресурсов в репозитории на GitHub.Нам
+понадобится аккаунт и группа под названием myapp (название может быть
+любым в зависимости от вашего проекта) на странице Bugout.dev Teams и
+сохраним ID этой группы для следующего шага (в нашем случае, это
+e6006d97-0551-4ec9-aabd-da51ee437909):Далее создадим Bugout.dev
+Application под нашу группу myappс помощью curl запроса, токен можно
+сгенерировать на странице Bugout.dev Tokens, и сохраним его под
+переменной BUGOUT_ACCESS_TOKEN:curl \         --request POST \   --url
+'https://auth.bugout.dev/applications' \   --header "Authorization:
+Bearer $BUGOUT_ACCESS_TOKEN" \   --form
+'group_id=e6006d97-0551-4ec9-aabd-da51ee437909' \   --form
+'name=myapp-images' \   --form 'description=Image uploader for myapp
+notes' \   | jq .В ответ мы получим подтверждение, об успешно
+созданном приложении:{         "id":
+"f0a1672d-4659-49f6-bc51-8a0aad17e979",         "group_id":
+"e6006d97-0551-4ec9-aabd-da51ee437909",         "name": "myapp-
+images",         "description": "Image uploader for myapp notes"
+}Данный ID f0a1672d-4659-49f6-bc51-8a0aad17e979 мы будем использовать
+для хранения resources, где каждый ресурс - это метаданные загружаемой
+картинки. Структура задается в произвольной форме в зависимости от
+необходимых ключей, в нашем случае она будет выглядеть следующим
+образом:{         "id": "a6423cd1-317b-4f71-a756-dc92eead185c",
+"application_id": "f0a1672d-4659-49f6-bc51-8a0aad17e979",
+"resource_data": {                 "id":
+"d573fab2-beb1-4915-91ce-c356236768a4",                 "name":
+"random-image-name",                 "entry_id":
+"51113e7d-39eb-4f68-bf99-54de5892314b",                 "extension":
+"png",                 "created_at": "2021-09-19 15:15:00.437163",
+"journal_id": "2821951d-70a4-419b-a968-14e056b49b71"         },
+"created_at": "2021-09-19T15:15:00.957809+00:00",
+"updated_at": "2021-09-19T15:15:00.957809+00:00" }Итого мы получаем
+своего рода удаленную БД, где мы будем каждый раз писать во время
+загрузки картинки в S3 bucket о том в какой журнал (journal_id) и в
+какую заметку (entry_id) была добавлена картинка с каким ID, названием
+и расширением.Подготовка окружения под проект на AWSНа AWS будут
+храниться картинки в S3 bucket и функционировать сервер на lambda для
+манипуляций с картинками. Нам понадобиться аккаунт AWS и настроенный
+IAM пользователь для terraform. Это аккаунт типа Programmatic access с
+доступом ко всем ресурсам без возможно работы с веб консолью:Нам
+понадобятся ключи, для этого добавьте в свое окружение следующие
+переменные:export
+AWS_ACCESS_KEY_ID=<your_aws_terraform_account_access_key> export
+AWS_SECRET_ACCESS_KEY=<your_aws_terraform_account_secret_key>Также
+развернем свою VPC с подсетями:2 приватного доступа2 публичного
+доступаОни пригодятся для настройки AWS Load Balancer. Код данного
+модуля находится в files_distributor/network, отредактировав
+переменные в файле variables.tf запустим скрипт:terraform applyИз
+вывода добавьте в переменные окружения значения для
+AWS_HATCHERY_VPC_ID, AWS_HATCHERY_SUBNET_PUBLIC_A_ID и
+AWS_HATCHERY_SUBNET_PUBLIC_B_ID.Код сервераВ нашем проекте мы будем
+использовать простую AWS lambda функцию. По опыту использования, я
+заметил, что при превышении размера пакета с кодом свыше 10МБ, резко
+падает скорость загрузки кода на AWS. Даже при предварительной заливке
+на S3 bucket и последующем создании lambda из него, AWS может
+подвистуть на продолжительный срок. Поэтому если вам необходимы
+сторонние библиотеки, то имеет смысл воспользоваться lambda layers.
+Так же, если вы планируете обойтись без сторонних библиотек с
+легковесным кодом в связке с CloudFront, то имеет смысл присмотреться
+к lambda@edge.Полная версия кода представлена в файле
+lambda_function.py в репозитории. На мой взгляд, эффективнее работать
+на nodejs, но для детальной работы с файлами мы воспользуемся python.
+Код состоит из основных блоков:MY_APP_JOURNALS_URL =
+"https://api.example.com"     # API эндпоинт для доступа к нашему
+приложению с заметками BUGOUT_AUTH_URL = "https://auth.bugout.dev"
+# Bugout.dev эндпоинт для записи ресурсов (метаданных картинок)
+FILES_S3_BUCKET_NAME = "hatchery-files"      # Название S3 bucket, где
+мы будем хранить картинки FILES_S3_BUCKET_PREFIX = "dev"
+# Префикс S3 bucket, где мы будем хранить картинки
+BUGOUT_APPLICATION_ID = os.environ.get("BUGOUT_FILES_APPLICATION_ID")
+# Bugout.dev application ID созданный ранееРасширим базовое
+исключение, чтобы проксировать ответ от Bugout.dev Resources.
+Например, если картинки не существует, то при запросе необходимого
+ресурса, нам вернется 404 ошибка, что мы в свою очередь и вернем
+клиенту, как ответ на запрос о несуществующей картинке.class
+BugoutResponseException(Exception):     def __init__(self, message,
+status_code, detail=None) -> None:         super().__init__(message)
+self.status_code = status_code         if detail is not None:
+self.detail = detailДля сохранения картинки в S3 bucket воспользуемся
+стандартной библиотекой cgi, позволяющей нам распарсить тело запроса
+переданное в формате multipart/<image_type>. И сохранять картинки
+будем с указанием пути
+{journal_id}/entries/{entry_id}/images/{image_id} без указания
+расширения и названия файла.def put_image_to_bucket(     journal_id:
+str,     entry_id: str,     image_id: UUID,     content_type: str,
+content_length: int,     decoded_body: bytes, ) -> None:     _, c_data
+= parse_header(content_type)     c_data["boundary"] =
+bytes(c_data["boundary"], "utf-8")     c_data["CONTENT-LENGTH"] =
+content_length      form_data = parse_multipart(BytesIO(decoded_body),
+c_data)      for image_str in form_data["file"]:         image_path = 
+f"{FILES_S3_BUCKET_PREFIX}/{journal_id}/entries/{entry_id}/images/{str
+(image_id)}"         s3.put_object(             Body=image_str,
+Bucket=FILES_S3_BUCKET_NAME, Key=image_path         )Во время
+извлечения картинки из S3 bucket нам потребуется закодировать в base64
+для корректной передачи.def get_image_from_bucket(journal_id: str,
+entry_id: str, image_id: str) -> bytes:     image_path = f"{FILES_S3_B
+UCKET_PREFIX}/{journal_id}/entries/{entry_id}/images/{image_id}"
+response = s3.get_object(Bucket=FILES_S3_BUCKET_NAME, Key=image_path)
+image = response["Body"].read()     encoded_image =
+base64.b64encode(image)     return encoded_imageКод функции
+lambda_handler(event,context) доступен на GitHub по ссылке, где
+происходит следующее:В начале мы проверяем, что запрос правильного
+формата и содержит journal_id и entry_idВыполняем запрос к API нашего
+гипотетического приложения
+https://api.example.com/journals/{journal_id}/entries/{entry_id} с
+заголовком авторизации headers={"authorization":
+auth_bearer_header}Далее в зависимости от метода запроса: GET, POST
+или DELETE мы читаем, загружаем или удаляем картинку для заметки в
+журналеВо время добавления файла в S3 bucket, мы проверяем расширение
+и размер файла. Данный функционал можно расширить проверкой хэша,
+чтобы избежать загрузки одинаковых файлов и тд.Далее нам потребуется
+упаковать в lambda библиотеку requests, к счастью boto3 для работы с
+AWS функционалом доступна из коробки lambda функции. Создадим пустое
+python окружение, установим библиотеку и упакуем содержимое site-
+packages:python3 -m venv .venv source .venv/bin/activate pip install
+requests cd .venv/lib/python3.8/site-packages zip -r9
+"lambda_function.zip" .Поместим созданный архив lambda_function.zip в
+директорию files_distributor/bucket/modules/s3_bucket/files и добавим
+код самой lambda функции:zip -g lambda_function.zip -r
+lambda_function.pyНаш сервер готов, теперь можно загружать код на AWS
+и разворачивать lambda сервер, для чего воспользуемся скриптом в
+files_distributor/bucket:terraform applyВ итоге мы получим:Приватный
+AWS S3 bucket hatchery-sources, где хранится код для lambda
+функцииПриватный AWS S3 bucket hatchery-files куда мы будем сохранять
+наши картинки с префиксом devAWS lambda функцию с рабочим кодом
+сервераIAM роль для lambda, позволяющий писать в конкретный S3 bucket
+и логиПравила для IAM роли находятся в files_distributor/bucket/module
+s/iam/files/iam_role_lambda_inline_policy.json. Другой файл
+iam_role_lambda_policy.json необходим для корректного функционирования
+lambda функции. Для дебага lambda достаточно добавить print
+необходимых значений или воспользоваться стандартным пакетом logging в
+python. Вывод выполнения каждого вызова функции доступен в AWS
+CloudWatch:После создания функции добавьте переменную
+BUGOUT_FILES_APPLICATION_ID из нашего кода в lambda окружение, что
+можно сделать во вкладке Configuration/Environment variables.Для
+последнего шага сохраните AWS lambda arn в переменную
+AWS_HATCHERY_LAMBDA_ARN.Настройка AWS Load Balancer и выход в
+мирТеперь остался один шаг, создать AWS Security Group, где мы
+создадим порт на котором будет слушать AWS Load Balancer для
+последующей передачи данных в lambda функцию (в нашем случае это 80 и
+443).terraform apply \     -var hatchery_vpc_id=$AWS_HATCHERY_VPC_ID \
+-var hatchery_sbn_public_a_id=$AWS_HATCHERY_SUBNET_PUBLIC_A_ID \
+-var hatchery_sbn_public_b_id=$AWS_HATCHERY_SUBNET_PUBLIC_B_ID \
+-var hatchery_lambda_arn=$AWS_HATCHERY_LAMBDA_ARNПоздравляю, наша AWS
+lambda функция открыта миру и готова загружать и отдавать картинки для
+нашего приложения с заметками!

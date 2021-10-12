@@ -1,0 +1,122 @@
+Автор: Maccimo
+Дата: 2021-10-05T07:24:16.000Z
+Название: Сюрпризы конкатенации
+Теги: Java *
+Текст:
+Вопрос в стиле головоломок с offline-конференций: Что выведет этот код
+при запуске? import java.util.concurrent.atomic.AtomicInteger;  public
+class Disturbed {      public static void main(String... args) {
+AtomicInteger counter = new AtomicInteger(1);
+System.out.println(             "First two positive numbers: " +
+counter +              ", " +             counter.incrementAndGet()
+);     }  } Помедитируйте немного над кодом и приходите за ответом под
+кат. Вероятно, что увидев код многие воскликнули «Это же элементарно,
+Ватсон!»  Ответом, однако, будет фраза «Зависит от компилятора и
+параметров компиляции». Код, скомпилированный JDK 8 и более ранними
+выдаст ожидаемое: First two positive numbers: 1, 2 Однако при
+компиляции в JDK 9 и более новых мы внезапно получим ответ: First two
+positive numbers: 2, 2 Всё изложенное в данной заметке проверялось на
+компиляторах из Oracle JDK/OpenJDK, в других реализациях могут быть
+другие баги. Предпосылки Среди нововведений Java 9 был JEP 280, новый
+механизм конкатенации строк.  Конкатена́ция (лат. concatenatio
+«присоединение цепями; сцепле́ние») — операция склеивания объектов
+линейной структуры, обычно строк. Например, конкатенация слов «микро»
+и «мир» даст слово «микромир».  Конкатенация — Википедия Целью было
+сделать возможной оптимизацию конкатенации строк без необходимости
+перекомпиляции программ из исходников. Обновил JDK — увеличил
+производительность. Магия! Традиционно, с самого начала времён,
+конкатенация строк транслировалась компилятором в создание экземпляра
+класса StringBuilder, серию вызовов StringBuilder::append() и
+преобразование результата в строку при помощи вызова
+StringBuilder::toString() в финале. Так, например, конструкция
+System.out.println("Hello, " + name + "!"); превращалась в
+System.out.println(   (new StringBuilder())   .append("Hello, ")
+.append(name)   .append("!")   .toString() ); При новом подходе все
+манипуляции с StringBuilder исчезают и заменяются одной инструкцией
+invokedynamic. В качестве bootstrap-метода при этом используется один
+из методов класса java.lang.invoke.StringConcatFactory. Чистой Java
+это не передать, но javap -c -v покажет нам примерно такой байткод:
+0: getstatic     #23                 // Field
+java/lang/System.out:Ljava/io/PrintStream;    3: aload_0    4:
+invokedynamic #27,  0             // InvokeDynamic
+#0:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+9: invokevirtual #31                 // Method
+java/io/PrintStream.println:(Ljava/lang/String;)V  ...
+LocalVariableTable:   Start  Length  Slot  Name   Signature       0
+13     0  name   Ljava/lang/String;  ...  BootstrapMethods:   0: #50
+REF_invokeStatic java/lang/invoke/StringConcatFactory.makeConcatWithCo
+nstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljav
+a/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/l
+ang/invoke/CallSite;     Method arguments:       #56 Hello, \u0001! В
+чём проблема? Само собой, предполагалось, что изменение никак не
+повлияет на поведение пользовательского кода. Но не всегда и не всё
+можно предусмотреть. Java 9 была выпущена в 2017 году, а в сентябре
+этого года был зарегистрирован баг JDK-8273914. Как обнаружилось,
+javac генерирует байткод, нарушающий JLS, пункт §15.7.1. Последний
+требует для бинарных операций чтобы левая часть выражения была
+полностью вычислена перед тем, как будет вычислена правая: 15.7.1.
+Evaluate Left-Hand Operand First   The left-hand operand of a binary
+operator appears to be fully evaluated before any part of the right-
+hand operand is evaluated.  Это требование без всяких ухищрений
+выполняется при использовании старого-доброго StringBuilder, но не
+всегда выполняется при использовании новой стратегии. Сравним
+поведение на примере выражения из Кода Для Привлечения Внимания,
+предварявшего эту статью: StringBuilder     // Создаём буфер для
+формирования результата конкатенации.     (new StringBuilder())     //
+Добавляем к результату строку "First two positive numbers: "
+.append("First two positive numbers: ")     // Разыменовываем ссылку
+на объект counter и переводим его в     // строковое представление,
+неявно вызывая метод toString()     .append(counter)     // Добавляем
+к результату строку ", "     .append(", ")     // Увеличиваем значение
+счётчика на единицу и получаем новое значение как     // целое число.
+Полученное число переводим в строковое предствление      // и
+добавляем к результату.     .append(counter.incrementAndGet())     //
+Получаем содержимое буфера в виде строки.     .toString() JEP 280 Это
+ассемблер, но не пугайтесь, дальше будет псевдокод.     // Помещаем
+ссылку на экземпляр счётчика на стек.     // Сейчас его внутреннее
+состояние хранит значение равное единице,     // но это ничего не
+значит.     aload_1;     // Разыменовываем ссылку на экземпляр
+счётчика и вызываем его метод incrementAndGet()     // Состояние
+счётчика меняется с 1 на 2, новое значение в виде целого числа      //
+типа int возвращается в качестве результата вызова и помещается на
+вершину     // стека.     aload_1;     invokevirtual   Method
+java/util/concurrent/atomic/AtomicInteger.incrementAndGet:"()I";
+// Ссылка на экземпляр счётчика и его последнее значение приходят в
+качестве     // параметров в метод, реализующий конкатенацию. Там они
+будут переведены в     // строковое представление и подставлены в
+строку-шаблон.     invokedynamic            InvokeDynamic
+REF_invokeStatic         :Method
+java/lang/invoke/StringConcatFactory.makeConcatWithConstants         :
+"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/
+invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/inv
+oke/CallSite;":makeConcatWithConstants
+:"(Ljava/util/concurrent/atomic/AtomicInteger;I)Ljava/lang/String;"
+{       // Строка-шаблон. Символами \u0001 обозначаются места, в
+которые будут       // подставлены значения из параметров.
+String "First two positive numbers: \u0001, \u0001"     };
+Процитированный выше фрагмент можно представить в виде такого
+псевдокода:     // Помещаем ссылку на экземпляр счётчика на стек.
+// Сейчас его внутреннее состояние хранит значение равное единице,
+// но это ничего не значит.     AtomicInteger temp1 = counter;     //
+Разыменовываем ссылку на экземпляр счётчика и вызываем его метод
+incrementAndGet()     // Состояние счётчика меняется с 1 на 2, новое
+значение в виде целого числа      // типа int возвращается в качестве
+результата вызова и помещается на вершину     // стека.     int temp2
+= counter.incrementAndGet();     // Ссылка на экземпляр счётчика и его
+последнее значение приходят в качестве     // параметров в метод,
+реализующий конкатенацию. Там они будут переведены в     // строковое
+представление и подставлены в строку-шаблон.     String result =
+makeConcatWithConstants(         "First two positive numbers: \u0001,
+\u0001",         temp1,         temp2     );      ...
+System.out.println(result); Другими словами, в метод
+makeConcatWithConstants() объект count придёт уже в изменённом
+состоянии и результат будет неверным. Мистерия раскрыта! Добиться
+стабильной работы нашего КДПВ можно просто заменив в выражении counter
+на counter.get(), а в более общем случае — явно приведя к строковому
+представлению все значения ссылочных типов, встречающиеся в выражении.
+Если этот баг вызывает у вас серьёзное беспокойство, то вы можете
+временно откатиться на использование старого способа конкатенации
+строк. Для это нужно при компиляции передать javac параметр
+-XDstringConcat=inline: javac -XDstringConcat=inline Disturbed.java
+Мораль Пишите хороший код, не пишите плохой и остерегайтесь побочных
+эффектов при конкатенации строк. Баги коварны и умеют ждать.

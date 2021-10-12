@@ -1,0 +1,218 @@
+Автор: boffart
+Дата: 2021-09-29T12:35:40.000Z
+Название: MikoPBX на Aster conf, TTS скрипт для голосования
+Теги: Open source *, *nix *, API *, Asterisk *
+Текст:
+Совсем недавно завершилась ежегодная конференция Asterconf. Нам
+посчастливилось в ней участвовать. На этот раз мы приготовили ряд
+мастер классов по настройке и кастомизации MikoPBX - бесплатной АТС с
+открытым исходным кодом. Одной из задач мастер классов стояла
+разработка скрипта для интерактивного голосования за строительство
+гаражного кооператива. Голосование должно было производится без
+участия оператора, автоматизированное, с защитой от повторного
+голосования и конечно с механизмом генерации речи. Если
+заинтересовало, то под кат, подробно разберем пример реализации... В
+конце статьи ссылка на видео с конференции... Хочу обратить внимание,
+что описанный кейс, лишь пример кастомизации MikoPBX, демонстрация
+работы с API генерации речи. Его можно использовать как отправную
+точную для более сложных задач и внедрений, к примеру для функционала
+интерактивных помощников и функций умной маршрутизации. Итак, имеем
+установленную MikoPBX. Для начала приведу примера простого класса для
+генерации речи с использованием API Yandex:Класс YandexSynthesize для
+генерации речи <?php class YandexSynthesize {     public  const
+TTS_DIR = '/storage/usbdisk1/mikopbx/media/yandex-tts';     public
+const API_KEY = '...';     private string $voice = 'alena';
+public function __construct()     {
+if(!file_exists(self::TTS_DIR)){
+Util::mwMkdir(self::TTS_DIR);         }     }      /**      *
+Генерирует и скачивает в на внешний диск файл с речью.      *      *
+@param $text_to_speech - генерируемый текст      * @param $voice
+- голос      *      * @return null|string      *      *
+https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize      */
+public function makeSpeechFromText($text_to_speech): ?string     {
+$speech_extension        = '.raw';         $result_extension        =
+'.wav';         $speech_filename         = md5($text_to_speech .
+$this->voice);         $fullFileName            = self::TTS_DIR .'/'.
+$speech_filename . $result_extension;         $fullFileNameFromService
+= self::TTS_DIR .'/'. $speech_filename . $speech_extension;
+// Проверим вдург мы ранее уже генерировали такой файл.         if
+(file_exists($fullFileName) && filesize($fullFileName) > 0) {
+return self::TTS_DIR .'/'. $speech_filename;         }          //
+Файла нет в кеше, будем генерировать новый.         $post_vars = [
+'lang'            => 'ru-RU',             'format'          => 'lpcm',
+'speed'           => '1.0',             'sampleRateHertz' => '8000',
+'voice'           => $this->voice,             'text'            =>
+urldecode($text_to_speech),         ];          $fp   =
+fopen($fullFileNameFromService, 'wb');         $curl = curl_init();
+curl_setopt($curl, CURLOPT_HTTPHEADER, ["Authorization: Api-Key
+".self::API_KEY]);         curl_setopt($curl, CURLOPT_FILE, $fp);
+curl_setopt($curl, CURLOPT_POST, true);         curl_setopt($curl,
+CURLOPT_TIMEOUT, 4);         curl_setopt($curl, CURLOPT_POSTFIELDS,
+http_build_query($post_vars));         curl_setopt($curl, CURLOPT_URL,
+'https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize');
+curl_exec($curl);         $http_code = (int)curl_getinfo($curl,
+CURLINFO_HTTP_CODE);         curl_close($curl);         fclose($fp);
+if (200 === $http_code && file_exists($fullFileNameFromService) &&
+filesize($fullFileNameFromService) > 0) {             exec("sox -r
+8000 -e signed-integer -b 16 -c 1 -t raw $fullFileNameFromService
+$fullFileName");             if (file_exists($fullFileName)) {
+// Удалим raw файл.                 @unlink($fullFileNameFromService);
+// Файл успешно сгененрирован                 return
+self::TTS_DIR.'/'.$speech_filename;             }         } elseif
+(file_exists($fullFileNameFromService)) {
+@unlink($fullFileNameFromService);         }         return null;
+} }Файл позволяет:Преобразовать текст в речьДля каждого текста
+проверяет хэш сумму, если файл уже был создан ранее, то обращения к
+API не происходит Требования PHP 7.4+В классе необходимо прописать
+значение "API_KEY" - ключ для генерации речи YandexПри необходимости
+следует указать диктора $voice, по умолчанию выбран голос "alena"Итак,
+начнем работу. Первым делом необходимо ответить на вызов:<?php $agi
+= new AGI(); $agi->set_variable('AGIEXITONHANGUP', 'yes');
+$agi->set_variable('AGISIGHUP', 'yes');
+$agi->set_variable('__ENDCALLONANSWER', 'yes');
+$agi->answer();Установленные переменные канала необходимы для
+корректного завершения работы скрипта при hangup на
+канале.Поприветствуем клиента:<?php $ys = new YandexSynthesize();
+$infoMessage = 'Добрый день,  я голосовой помощник для интерактивного
+голосования  по строительству гаражного кооператива';  $filenameInfo
+= $ys->makeSpeechFromText($infoMessage);Результаты голосования будут
+храниться в файлах. Пример структуры
+каталогов:/storage/usbdisk1/mikopbx/log/voting ├── 0 │   ├──
+74952232222 │   └── 74952293042 └── 1     └── 79257180000 В каталоге
+"0" сохраняется информация, по номерам, что проголосовали противВ
+каталоге "1", номера, что проголосовали "ЗА"Добавим проверку на
+повторное голосование:<?php $logDir =
+'/storage/usbdisk1/mikopbx/log/voting'; $ys = new YandexSynthesize();
+$res = Processes::mwExec('ls -l
+'.$logDir.'/*/'.$agi->request['agi_callerid']); if($res === 0){
+$filenameAlert = $ys->makeSpeechFromText('Вы уже голосовали ранее.
+Результат голосования:');     $agi->exec('Playback', $filenameAlert);
+$yes = shell_exec('ls -l '.$logDir.'/1/ | grep -v total | wc -l');
+$agi->exec('Playback', $ys->makeSpeechFromText('Поддержали '.$yes));
+$no  = shell_exec('ls -l '.$logDir.'/0/ | grep -v total | wc -l');
+$agi->exec('Playback', $ys->makeSpeechFromText('Против '.$no));
+$agi->hangup();     exit(0); }Если клиент уже голосовал со своего
+номера телефона, то система проверит это и сообщит результат
+голосования. Теперь добавим проверку, что звонящий не является
+роботом. Предложим решить простой пример.<?php $a = random_int(1, 4);
+$b = random_int(1, 5);  $checkRobots = "Проверим, что Вы не робот.
+Введите верный ответ в тональном режиме.  Решите пример! $a плюс $b";
+$filenameCheck = $ys->makeSpeechFromText($checkRobots);Проверим
+результат ввода:<?php $agi->exec('Playback', $filenameInfo); $result
+= $agi->getData($filenameCheck, 3000, 1); $selectedNum =
+$result['result']??''; if (empty($selectedNum) || (int)$selectedNum
+!== ($a + $b)) {     $filenameAlert = $ys->makeSpeechFromText("Ответ
+не верный");     $agi->exec('Playback', $filenameAlert);
+$filenameAlert = $ys->makeSpeechFromText("Вы ввели цифру " .
+$selectedNum);     $agi->exec('Playback', $filenameAlert);
+$agi->hangup();     exit(0); }  $filenameAlert =
+$ys->makeSpeechFromText("Пример решен верно."); $agi->exec('Playback',
+$filenameAlert);Зафиксируем результат голосования:<?php $text = 'Если
+Вы "ЗА" строительство,  то нажмите ОДИН, если против, то НОЛЬ';
+$filenameAlert = $ys->makeSpeechFromText($text);  $result =
+$agi->getData($filenameAlert, 3000, 1); $selectedNum =
+(int)($result['result']??'0');  $resultDir = $logDir.'/'.$selectedNum;
+Util::mwMkdir($resultDir);
+file_put_contents("$resultDir/{$agi->request['agi_callerid']}", '1');
+$filenameAlert = $ys->makeSpeechFromText('Спасибо, ваш голос учтен!');
+$agi->exec('Playback', $filenameAlert); $agi->hangup();Итоговый
+вариант скрипта:<?php require_once('Globals.php');  use
+MikoPBX\Core\System\Util; use MikoPBX\Core\Asterisk\AGI; use
+MikoPBX\Core\System\Processes; class YandexSynthesize {     public
+const TTS_DIR = '/storage/usbdisk1/mikopbx/media/yandex-tts';
+public  const API_KEY = '...';     private string $voice = 'alena';
+public function __construct()     {
+if(!file_exists(self::TTS_DIR)){
+Util::mwMkdir(self::TTS_DIR);         }     }      /**      *
+Генерирует и скачивает в на внешний диск файл с речью.      *      *
+@param $text_to_speech - генерируемый текст      * @param $voice
+- голос      *      * @return null|string      *      *
+https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize      */
+public function makeSpeechFromText($text_to_speech): ?string     {
+$speech_extension        = '.raw';         $result_extension        =
+'.wav';         $speech_filename         = md5($text_to_speech .
+$this->voice);         $fullFileName            = self::TTS_DIR .'/'.
+$speech_filename . $result_extension;         $fullFileNameFromService
+= self::TTS_DIR .'/'. $speech_filename . $speech_extension;
+// Проверим вдург мы ранее уже генерировали такой файл.         if
+(file_exists($fullFileName) && filesize($fullFileName) > 0) {
+return self::TTS_DIR .'/'. $speech_filename;         }          //
+Файла нет в кеше, будем генерировать новый.         $post_vars = [
+'lang'            => 'ru-RU',             'format'          => 'lpcm',
+'speed'           => '1.0',             'sampleRateHertz' => '8000',
+'voice'           => $this->voice,             'text'            =>
+urldecode($text_to_speech),         ];          $fp   =
+fopen($fullFileNameFromService, 'wb');         $curl = curl_init();
+curl_setopt($curl, CURLOPT_HTTPHEADER, ["Authorization: Api-Key
+".self::API_KEY]);         curl_setopt($curl, CURLOPT_FILE, $fp);
+curl_setopt($curl, CURLOPT_POST, true);         curl_setopt($curl,
+CURLOPT_TIMEOUT, 4);         curl_setopt($curl, CURLOPT_POSTFIELDS,
+http_build_query($post_vars));         curl_setopt($curl, CURLOPT_URL,
+'https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize');
+curl_exec($curl);         $http_code = (int)curl_getinfo($curl,
+CURLINFO_HTTP_CODE);         curl_close($curl);         fclose($fp);
+if (200 === $http_code && file_exists($fullFileNameFromService) &&
+filesize($fullFileNameFromService) > 0) {             exec("sox -r
+8000 -e signed-integer -b 16 -c 1 -t raw $fullFileNameFromService
+$fullFileName");             if (file_exists($fullFileName)) {
+// Удалим raw файл.                 @unlink($fullFileNameFromService);
+// Файл успешно сгененрирован                 return
+self::TTS_DIR.'/'.$speech_filename;             }         } elseif
+(file_exists($fullFileNameFromService)) {
+@unlink($fullFileNameFromService);         }         return null;
+} }  $agi    = new AGI(); $agi->set_variable('AGIEXITONHANGUP',
+'yes'); $agi->set_variable('AGISIGHUP', 'yes');
+$agi->set_variable('__ENDCALLONANSWER', 'yes'); $agi->answer();
+$logDir = '/storage/usbdisk1/mikopbx/log/voting'; $ys = new
+YandexSynthesize(); $cmd = 'ls -l
+'.$logDir.'/*/'.$agi->request['agi_callerid']; $res =
+Processes::mwExec($cmd); if($res === 0){     $filenameAlert =
+$ys->makeSpeechFromText('Вы уже голосовали ранее. Результат
+голосования:');     $agi->exec('Playback', $filenameAlert);      $yes
+= shell_exec('ls -l '.$logDir.'/1/ | grep -v total | wc -l');
+$agi->exec('Playback', $ys->makeSpeechFromText('Поддержали '.$yes));
+$no  = shell_exec('ls -l '.$logDir.'/0/ | grep -v total | wc -l');
+$agi->exec('Playback', $ys->makeSpeechFromText('Против '.$no));
+$agi->hangup();     exit(0); }   $infoMessage = 'Добрый день,  я
+голосовой помощник для интерактивного голосования  по строительству
+гаражного кооператива. '; $filenameInfo  =
+$ys->makeSpeechFromText($infoMessage);  $a = random_int(1, 4); $b =
+random_int(1, 5); $checkRobots = "Проверим, что Вы не робот.  Введите
+верный ответ в тональном режиме.  Решите пример! $a плюс $b";
+$filenameCheck = $ys->makeSpeechFromText($checkRobots);
+$agi->exec('Playback', $filenameInfo); $result =
+$agi->getData($filenameCheck, 3000, 1); $selectedNum =
+$result['result']??''; if (empty($selectedNum) || (int)$selectedNum
+!== ($a + $b)) {     $filenameAlert = $ys->makeSpeechFromText("Ответ
+не верный");     $agi->exec('Playback', $filenameAlert);
+$filenameAlert = $ys->makeSpeechFromText("Вы ввели цифру " .
+$selectedNum);     $agi->exec('Playback', $filenameAlert);
+$agi->hangup();     exit(0); }  $filenameAlert =
+$ys->makeSpeechFromText("Пример решен верно."); $agi->exec('Playback',
+$filenameAlert);  $text = 'Если Вы "ЗА" строительство,  то нажмите
+ОДИН, если против, то НОЛЬ'; $filenameAlert =
+$ys->makeSpeechFromText($text); $result =
+$agi->getData($filenameAlert, 3000, 1); $selectedNum =
+(int)($result['result']??'0');  $resultDir = $logDir.'/'.$selectedNum;
+Util::mwMkdir($resultDir);
+file_put_contents("$resultDir/{$agi->request['agi_callerid']}", '1');
+$filenameAlert = $ys->makeSpeechFromText('Спасибо, ваш голос учтен!');
+$agi->exec('Playback', $filenameAlert); $agi->hangup();Теперь
+распустим скрипт в работу на MikoPBX:Добавим новое приложение
+dialplan:Заполните поля "Название", "Номер для вызова приложения",
+"тип кода"На вкладке "Программный код"  вставьте текст скрипта и
+выполните действие "Сохранить". Направьте входящий маршрут на
+созданное приложение:Теперь можно начать тестировать:)На приложение
+можно позвонить и с внутреннего номера, набрав его добавочный
+(2200110).Видео с конференцииИсточники знанийСайт проекта -
+www.mikopbx.ruДокументация - wiki.mikopbx.comСайт AsterConf -
+https://asterconf.ruРепозиторий MikoPbx https://github.com/mikopbx/Cor
+ehttps://wiki.asterisk.orghttps://cloud.yandex.ru/services/speechkitИт
+огиИспользуя функционал "Приложения dialplan" возможно реализовать
+произвольные сценарии значительно расширяющие возможности АТС. К
+примеру из PHP возможно обратиться к REST API стороннего сервиса и
+получив ответ выполнить маршрутизацию канала. Данный пример не
+претендует на завершенное решение, но является неплохой отправной
+точкой для интересных решений :)Спасибо всем, кто присутствовал на
+нашем мастер классе Asterconf, и конечно большое спасибо организатором
+за три интересных, увлекательных дня, было очень круто!

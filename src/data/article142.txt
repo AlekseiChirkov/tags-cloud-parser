@@ -1,0 +1,362 @@
+Автор: CrowdSec
+Дата: 2021-10-06T10:08:10.000Z
+Название: Обеспечиваем безопасность стеков Docker Compose с помощью CrowdSec
+Теги: Блог компании CrowdSec, Информационная безопасность *, Open source *,
+Системное администрирование *
+Текст:
+В этой статье рассказывается, как объединить CrowdSec и Docker Compose
+для защиты приложений, заключенных в контейнеры. Это позволит
+нам:автоматически закрывать скомпрометированным IP-адресам доступ к
+нашим контейнерным сервисам;вручную добавлять/удалять и проверять
+решения о запрете;отслеживать поведение CrowdSec (с помощью cli и
+дашбордов)Эта статья была подготовлена технической командой
+CrowdSec. Целевая архитектураНа схеме ниже представлена наша целевая
+архитектура:Сначала создадим файл Docker Compose, который определит
+следующие настройки:обратный прокси-сервер, использующий
+Nginx;тестовое приложение, выводящее «hello world» на
+Apache2;контейнер CrowdSec, который считывает журналы обратного
+прокси-сервера с целью обнаружения атак на службу HTTP;контейнер
+Metabase, который будет генерировать сложные дашборды для отслеживания
+происходящего.Мы выбрали самый простой способ сбора логов: с помощью
+разделения томов между контейнерами. Если вы работаете в
+производственной среде, то вы, скорее всего, используете логирование
+для централизации журналов с помощью rsyslog или другой механизм.
+Поэтому не забудьте отладить конфигурацию CrowdSec Docker Compose для
+правильного чтения журналов.Файл docker-compose.yml выглядит следующим
+образом: version: '3'   services:  #the application itself : static
+html served by apache2.  #the html can be found in ./app/  app:
+image: httpd:alpine    restart: always    volumes:      -
+./app/:/usr/local/apache2/htdocs/    networks:      crowdsec_test:
+ipv4_address: 172.20.0.2    #the reverse proxy that will serve the
+application  #you can see nginx's config in ./reverse-proxy/nginx.conf
+reverse-proxy:    image: nginx:alpine    restart: always    ports:
+- 8000:80    depends_on:      - 'app'    volumes:      - ./reverse-
+proxy/nginx.conf:/etc/nginx/nginx.conf      - logs:/var/log/nginx
+networks:      crowdsec_test:        ipv4_address: 172.20.0.3
+#crowdsec : it will be fed nginx's logs  #and later we're going to
+plug a firewall bouncer to it  crowdsec:    image:
+crowdsecurity/crowdsec:v1.0.8    restart: always    environment:
+#this is the list of collections we want to install
+#https://hub.crowdsec.net/author/crowdsecurity/collections/nginx
+COLLECTIONS: "crowdsecurity/nginx"      GID: "${GID-1000}"
+depends_on:      - 'reverse-proxy'    volumes:      -
+./crowdsec/acquis.yaml:/etc/crowdsec/acquis.yaml      -
+logs:/var/log/nginx      - crowdsec-db:/var/lib/crowdsec/data/      -
+crowdsec-config:/etc/crowdsec/    networks:      crowdsec_test:
+ipv4_address: 172.20.0.4   #metabase, because security is cool, but
+dashboards are cooler  dashboard:    #we're using a custom Dockerfile
+so that metabase pops with pre-configured dashboards    build:
+./crowdsec/dashboard    restart: always    ports:      - 3000:3000
+environment:      MB_DB_FILE: /data/metabase.db      MGID:
+"${GID-1000}"    depends_on:      - 'crowdsec'    volumes:      -
+crowdsec-db:/metabase-data/    networks:      crowdsec_test:
+ipv4_address: 172.20.0.5   volumes:  logs:  crowdsec-db:  crowdsec-
+config:   networks:  crowdsec_test:    ipam:      driver: default
+config:        - subnet: 172.20.0.0/24Контейнер обратного прокси-
+сервера reverse-proxy (nginx) записывает свои логи в том логов,
+установленный контейнером crowdsec.База данных SQLite CrowdSec
+находится в томе crowdsec-db, установленном dashboard-контейнером
+(metabase).Первоначальное развертываниеОбязательные требования:
+наличие Docker / Docker Compose. Мы поместили все файлы конфигурации в
+это хранилище, чтобы можно было просто клонировать их для
+развёртывания.Вы можете выполнить развёртывание из каталога Docker
+Compose с помощью команды docker-compose up -d, а затем проверить
+работоспособность с помощью docker-compose ps.> git clone
+https://github.com/crowdsecurity/example-docker-compose > cd example-
+docker-compose > sudo docker-compose up > sudo docker-compose ps  # cd
+examples/docker-compose # docker-compose up -d ... # docker-compose ps
+Name                           Command               State
+Ports          -------------------------------------------------------
+----------------------------------------- docker-compose_app_1
+httpd-foreground                 Up      80/tcp
+docker-compose_crowdsec_1        /bin/sh -c /bin/sh docker_ ...   Up
+docker-compose_dashboard_1       /app/run_metabase.sh             Up
+0.0.0.0:3000->3000/tcp docker-compose_reverse-proxy_1   /docker-
+entrypoint.sh ngin ...   Up      0.0.0.0:8000->80/tcp  Давайте
+проверим, что все работает!  Проверка демонстрационного приложения С
+помощью этой команды мы можем проверить, правильно ли работает доступ
+к нашему демонстрационному приложению. curl http://localhost:8000/
+Hello world !%ПроверкаНам нужно проверить, правильно ли CrowdSec
+читает журналы.docker-compose exec crowdsec cscli metrics  sudo
+docker-compose exec crowdsec cscli metrics INFO[25-02-2021 03:38:50
+PM] Buckets Metrics:                              +-------------------
+-------------------+---------------+-----------+--------------+-------
+-+---------+ |                BUCKET                | CURRENT COUNT |
+OVERFLOWS | INSTANCIATED | POURED | EXPIRED | +-----------------------
+---------------+---------------+-----------+--------------+--------+--
+-------+ | crowdsecurity/http-crawl-non_statics | -             | -
+|            2 |      2 |       2 | +---------------------------------
+-----+---------------+-----------+--------------+--------+---------+
+INFO[25-02-2021 03:38:50 PM] Acquisition Metrics:
++-----------------------------------+------------+--------------+-----
+-----------+------------------------+ |              SOURCE
+| LINES READ | LINES PARSED | LINES UNPARSED | LINES POURED TO BUCKET
+| +-----------------------------------+------------+--------------+---
+-------------+------------------------+ |
+/var/log/nginx/example.access.log |          2 |            2 | -
+|                      2 | +-----------------------------------+------
+------+--------------+----------------+------------------------+
+INFO[25-02-2021 03:38:50 PM] Parser Metrics:
++--------------------------------+------+--------+----------+ |
+PARSERS             | HITS | PARSED | UNPARSED |
++--------------------------------+------+--------+----------+ | child-
+crowdsecurity/http-logs  |    6 |      2 |        4 | | child-
+crowdsecurity/nginx-logs |    2 |      2 | -        | |
+crowdsecurity/dateparse-enrich |    2 |      2 | -        | |
+crowdsecurity/geoip-enrich     |    2 |      2 | -        | |
+crowdsecurity/http-logs        |    2 | -      |        2 | |
+crowdsecurity/nginx-logs       |    2 |      2 | -        | |
+crowdsecurity/non-syslog       |    2 |      2 | -        |
++--------------------------------+------+--------+----------+
+INFO[25-02-2021 03:38:50 PM] Local Api Metrics:
++--------------------+--------+------+ |       ROUTE        | METHOD |
+HITS | +--------------------+--------+------+ | /v1/watchers/login |
+POST   |    2 | +--------------------+--------+------+Что произошло и
+что здесь к чему? Команда cscli metrics запрашивает метрики из
+Prometheus, доступные CrowdSec локально, и представляет их в таком
+необычном виде:Acquisition metrics («метрики извлечения») показывают
+нам, что наши запросы действительно создают журналы, которые читаются
+(LINES READ), анализируются (LINES PARSED) и даже сопоставляются с
+установленными сценариями (LINES POURED TO BUCKET),Buckets metrics
+(«метрики сегментов») и parser metrics («метрики анализатора»)
+показывают нам, какие анализаторы и сценарии запускаются.Проверка
+конфигурации CrowdSecКоманда cscli hub list показывает, какие
+анализаторы и сценарии развёрнуты.sudo docker-compose exec crowdsec
+cscli hub list INFO[25-02-2021 03:46:41 PM] Loaded 14 collecs, 19
+parsers, 23 scenarios, 3 post-overflow parsers  INFO[25-02-2021
+03:46:41 PM] unmanaged items : 20 local, 0 tainted
+INFO[25-02-2021 03:46:41 PM] PARSERS:
+----------------------------------------------------------------------
+---------------------------------------  NAME
+STATUS   VERSION  LOCAL PATH
+----------------------------------------------------------------------
+---------------------------------------  crowdsecurity/sshd-logs
+✔  enabled  0.1      /etc/crowdsec/parsers/s01-parse/sshd-logs.yaml
+crowdsecurity/syslog-logs       ✔  enabled  0.1
+/etc/crowdsec/parsers/s00-raw/syslog-logs.yaml
+crowdsecurity/dateparse-enrich  ✔  enabled  0.1
+/etc/crowdsec/parsers/s02-enrich/dateparse-enrich.yaml
+crowdsecurity/geoip-enrich      ✔  enabled  0.2
+/etc/crowdsec/parsers/s02-enrich/geoip-enrich.yaml
+crowdsecurity/nginx-logs        ✔  enabled  0.2
+/etc/crowdsec/parsers/s01-parse/nginx-logs.yaml
+crowdsecurity/http-logs         ✔  enabled  0.4
+/etc/crowdsec/parsers/s02-enrich/http-logs.yaml         --------------
+----------------------------------------------------------------------
+------------------------- INFO[25-02-2021 03:46:41 PM] SCENARIOS:
+----------------------------------------------------------------------
+----------------------------------------------------  NAME
+STATUS   VERSION  LOCAL PATH
+----------------------------------------------------------------------
+----------------------------------------------------
+ltsich/http-w00tw00t                       ✔  enabled  0.1
+/etc/crowdsec/scenarios/http-w00tw00t.yaml
+crowdsecurity/http-crawl-non_statics       ✔  enabled  0.2
+/etc/crowdsec/scenarios/http-crawl-non_statics.yaml
+crowdsecurity/http-probing                 ✔  enabled  0.2
+/etc/crowdsec/scenarios/http-probing.yaml
+crowdsecurity/http-path-traversal-probing  ✔  enabled  0.2
+/etc/crowdsec/scenarios/http-path-traversal-probing.yaml
+crowdsecurity/http-xss-probing             ✔  enabled  0.2
+/etc/crowdsec/scenarios/http-xss-probing.yaml
+crowdsecurity/http-bad-user-agent          ✔  enabled  0.3
+/etc/crowdsec/scenarios/http-bad-user-agent.yaml
+crowdsecurity/ssh-bf                       ✔  enabled  0.1
+/etc/crowdsec/scenarios/ssh-bf.yaml
+crowdsecurity/http-backdoors-attempts      ✔  enabled  0.2
+/etc/crowdsec/scenarios/http-backdoors-attempts.yaml
+crowdsecurity/http-sensitive-files         ✔  enabled  0.2
+/etc/crowdsec/scenarios/http-sensitive-files.yaml
+crowdsecurity/http-sqli-probing            ✔  enabled  0.2
+/etc/crowdsec/scenarios/http-sqli-probing.yaml            ------------
+----------------------------------------------------------------------
+---------------------------------------- INFO[25-02-2021 03:46:41 PM]
+COLLECTIONS:                                  ------------------------
+----------------------------------------------------------------------
+--------------  NAME                                STATUS   VERSION
+LOCAL PATH                                          ------------------
+----------------------------------------------------------------------
+--------------------  crowdsecurity/sshd                 ✔  enabled
+0.1      /etc/crowdsec/collections/sshd.yaml
+crowdsecurity/base-http-scenarios  ✔  enabled  0.3
+/etc/crowdsec/collections/base-http-scenarios.yaml
+crowdsecurity/linux                ✔  enabled  0.2
+/etc/crowdsec/collections/linux.yaml
+crowdsecurity/nginx                ✔  enabled  0.1
+/etc/crowdsec/collections/nginx.yaml                ------------------
+----------------------------------------------------------------------
+-------------------- INFO[25-02-2021 03:46:41 PM] POSTOVERFLOWS:
+--------------------------------------  NAME   STATUS  VERSION  LOCAL
+PATH  --------------------------------------
+--------------------------------------Проверка MetabaseMetabase — это
+один из развернутых компонентов, который позволяет создавать дашборды
+для более комфортного отслеживания происходящего. Вы можете перейти на
+http://127.0.0.1:3000/ и войти в систему с помощью почтового адреса
+crowdsec@crowdsec.net и пароля !!Cr0wdS3c_M3t4b4s3??Metabase
+поставляется с паролем по умолчанию в зависимости от способа его
+развертывания. Не забудьте сменить пароль по умолчанию и ограничить
+доступ к metabase, разрешив его только для необходимых IP-адресов или
+сетевых диапазонов.Сначала дашборды будут пустыми, так как атак еще не
+обнаружено. Основной дашборд должен выглядеть так:Если какая-либо из
+проверок не прошла, просмотрите логи контейнеров с помощью команды
+docker-compose logs сrowdsec (как пример).  Функции
+обнаруженияПримечание. В реальных условиях используются белые списки
+для предотвращения запрета частных IP-адресов.Убедившись, что всё
+готово к работе, можно попробовать некоторые функции обнаружения.
+Поскольку мы работаем с открытой службой HTTP, запустим Nikto с
+другого компьютера в локальной сети nikto -host
+http://192.168.2.227:8000Примечание. IP-адрес зависит от настроек
+локальной сети и плана адресации.Мы также можем следить за логами
+CrowdSec с помощью следующей команды: docker-compose logs -f
+crowdsecЗдесь видно, что IP-адрес нашего клиента (192.168.2.211) был
+помечен, так как запустил несколько сценариев:crowdsecurity/http-bad-
+user-agent: IP принадлежит известному вредоносному пользовательскому
+агенту;crowdsecurity/http-probing: пытался получить доступ к
+нескольким отдельным несуществующим файлам;crowdsecurity/http-crawl-
+non_statics: попытка доступа к нескольким нестатическим
+ресурсам;crowdsecurity/http-sensitive-files: IP пытался получить
+доступ к большому количеству конфиденциальных
+файлов;crowdsecurity/http-path-traversal-probing: IP пытался выполнить
+атаку по обходному пути. Мы видим, что наш IP-адрес был заблокирован с
+помощью docker-compose exec crowdsec cscli decisions list.Мы можем
+просматривать и проверять оповещения с помощью docker-compose exec
+crowdsec cscli alerts list и docker-compose exec crowdsec cscli alerts
+inspect -d XX:Примечание. cscli alerts list показывает список всех
+сработавших оповещений.sudo docker-compose exec crowdsec cscli alerts
+inspect -d 43  #######################################################
+#########################################   - ID         : 43  - Date
+: 2021-02-26T08:26:07Z  - Machine    :
+ee0ebe5b529c4995964ff0b3e01b1801sxSpiCdYj9lpSD9W  - Simulation : false
+- Reason     : crowdsecurity/http-sensitive-files  - Events Count : 5
+- Scope:Value: Ip:192.168.2.211  - Country    :   - AS         :    -
+Active Decisions  : +-----+------------------+--------+---------------
+-----+----------------------+ | ID  |   SCOPE:VALUE    | ACTION |
+EXPIRATION     |      CREATED AT      | +-----+------------------+----
+----+--------------------+----------------------+ | 802 |
+Ip:192.168.2.211 | ban    | 3h53m15.124782708s | 2021-02-26T08:26:07Z
+| +-----+------------------+--------+--------------------+------------
+----------+   - Events  :  - Date: 2021-02-26 08:26:07 +0000 UTC
++---------------+-----------------+ |      KEY      |      VALUE
+| +---------------+-----------------+ | ASNNumber     |
+0 | | http_args_len |               0 | | log_type      | http_access-
+log | | service       | http            | | source_ip     |
+192.168.2.211   | | http_status   |             404 | | http_path
+| /CyNqbugR.bak   | | IsInEU        | false           |
++---------------+-----------------+  - Date: 2021-02-26 08:26:07 +0000
+UTC +---------------+-----------------+ |      KEY      |      VALUE
+| +---------------+-----------------+ | log_type      | http_access-
+log | | service       | http            | | source_ip     |
+192.168.2.211   | | http_status   |             404 | | http_path
+| /CyNqbugR.sql   | | IsInEU        | false           | | ASNNumber
+|               0 | | http_args_len |               0 |
++---------------+-----------------+  - Date: 2021-02-26 08:26:07 +0000
+UTC +---------------+-----------------+ |      KEY      |      VALUE
+| +---------------+-----------------+ | service       | http
+| | source_ip     | 192.168.2.211   | | http_status   |
+404 | | http_path     | /CyNqbugR.exe   | | IsInEU        | false
+| | ASNNumber     |               0 | | http_args_len |
+0 | | log_type      | http_access-log |
++---------------+-----------------+  - Date: 2021-02-26 08:26:07 +0000
+UTC +---------------+-------------------+ |      KEY      |
+VALUE       | +---------------+-------------------+ | IsInEU        |
+false             | | ASNNumber     |                 0 | |
+http_args_len |                 0 | | log_type      | http_access-log
+| | service       | http              | | source_ip     |
+192.168.2.211     | | http_status   |               404 | | http_path
+| /CyNqbugR.printer | +---------------+-------------------+  - Date:
+2021-02-26 08:26:07 +0000 UTC +---------------+--------------------+ |
+KEY      |       VALUE        | +---------------+--------------------+
+| ASNNumber     |                  0 | | http_args_len |
+0 | | log_type      | http_access-log    | | service       | http
+| | source_ip     | 192.168.2.211      | | http_status   |
+404 | | http_path     | /CyNqbugR.htaccess | | IsInEU        | false
+| +---------------+--------------------+Примечание. cscli alerts
+inspect -d <ID> позволяет получить более подробную информацию об
+оповещении.  Мониторинг действий с помощью дашбордовПосле запуска
+нескольких сценариев мы можем вернуться к дашбордам Metabase
+(http://127.0.0.1:3000 с настройкой по умолчанию) и проверить
+активность.Если бы трафик поступал с общедоступного IP-адреса (а не с
+частного, как в данном примере), crowdsecurity/geoip-enrich обогатил
+бы события данными геолокации и информацией об AS/диапазоне.Блокировка
+атак с помощью баунсеровТеперь, когда у нас есть полнофункциональная
+служба CrowdSec, мы можем обнаруживать входящие атаки на наш сервис с
+помощью установленных сценариев сбора данных.После обнаружения атак
+наша цель — заблокировать их. Для этого мы будем использовать cs-
+firewall-bouncer. Начните с его установки на хосте и заблокируйте
+вредоносный трафик непосредственно в DOCKER-USER, пути по умолчанию,
+созданном Docker для фильтрации трафика, предназначенного для
+контейнеров.Вы можете найти firewall bouncer на CrowdSec Hub. Его
+последняя версия — v0.0.16.wget https://github.com/crowdsecurity/cs-
+firewall-bouncer/releases/download/v0.0.10/cs-firewall-bouncer.tgz tar
+xvzf cs-firewall-bouncer.tgz cd cs-firewall-bouncer-v0.0.10 sudo
+./install.shС июля Debian, Ubuntu, CentOS, RHEL и Amazon Linux
+включают собственные пакеты firewall-баунсеров. Проверьте наш
+репозиторий GitHub для дополнительной информации. Установка очень
+проста. Она включает развертывание модуля systemd для службы и
+проверку на соответствие требованиям. Здесь у нас не был запущен
+ipset, поэтому он был для нас установлен.Здесь мы установили баунсер
+на хост, на котором не запущен CrowdSec. Поэтому служба
+недовольна.Теперь настроим баунсер, чтобы он взаимодействовал с
+локальным API на нашем контейнере CrowdSec. Начнем с создания токена
+API для нашего баунсера с помощью cscli.docker-compose exec crowdsec
+cscli bouncers add HostFirewallBouncer  sudo docker-compose exec
+crowdsec cscli bouncers add HostFirewallBouncer Api key for
+'HostFirewallBouncer':     aaebb3708fe67eeeccbb52a21e5e7862  Please
+keep this key since you will not be able to retrive it!Затем вам
+необходимо настроить баунсер так, чтобы он использовал этот токен для
+аутентификации с помощью локального API CrowdSec. В /etc/crowdsec/cs-
+firewall-bouncer/cs-firewall-bouncer.yaml, отредактируйте
+api_url, api_key, и iptables_chains. В этом случае IPv6 также был
+отключен с помощью команды disable_ipv6:mode: iptables piddir:
+/var/run/ update_frequency: 10s daemonize: true log_mode: file
+log_dir: /var/log/ log_level: info api_url: http://172.20.0.4:8080/
+api_key: aaebb3708fe67eeeccbb52a21e5e7862 disable_ipv6: true #if
+present, insert rule in those chains iptables_chains:  - DOCKER-
+USERПримечание. Мы отредактировали пути, чтобы в них использовался
+только путь DOCKER-USER, а также установили api_url в соответствии с
+нашим файлом docker-compose.yml и указали только что сгенерированный
+токен api.  CrowdSec в действииТеперь мы можем запустить настроенный
+баунсер с помощью sudo systemctl start cs-firewall-bouncer.service,
+после чего посмотрим на новую конфигурацию брандмауэра:sudo iptables
+-L -n
+... Chain DOCKER-USER (1 references) target     prot opt source
+destination          DROP       all  --  0.0.0.0/0
+0.0.0.0/0            match-set crowdsec-blacklists src ...Мы видим,
+что наш путь DOCKER-USER получил правило для сопоставления входящего
+трафика с нашим ipset, а ipset заполнен соответствующей информацией.
+sudo ipset -L crowdsec-blacklists             Name: crowdsec-
+blacklists Type: hash:net Revision: 6 Header: family inet hashsize
+1024 maxelem 65536 timeout 300 Size in memory: 6016 References: 1
+Number of entries: 61 Members: 178.20.157.98 timeout 80103
+52.184.35.59 timeout 80103 ...Как вы уже могли заметить, ipset
+заполнен не только нашими локальными решениями, но и решениями
+сообщества. Однако мы видим, что наши «локальные» решения попали в
+список ipset.   sudo ipset -L crowdsec-blacklists  | grep 192
+192.168.2.211 timeout 12859Теперь мы можем посмотреть на машину
+злоумышленника и обнаружить, что осуществлена блокировка и доступ к
+приложению нет.  $ curl -vv 192.168.2.227:8000 * Rebuilt URL to:
+192.168.2.227:8000/ *   Trying 192.168.2.227... * TCP_NODELAY set
+^CЗлоумышленник не может получить доступ ко всем приложениям Docker
+Compose. Мы намеренно ограничили решение путем DOCKER-USER, поэтому
+локальные приложения на хосте будут по-прежнему доступны. Если мы
+хотим запретить весь входящий трафик, то можно добавить в список путь
+INPUT так же, как и настройку по умолчанию.ЗаключениеВ этом
+руководстве мы развернули с помощью Docker Compose минимально
+возможный, но при этом полный прикладной стек. Затем мы рассмотрели,
+как защитить его с помощью CrowdSec. Хотя большинство использует
+CrowdSec как механизм защиты на основе хоста, мы узнали, что он также
+подходит для Docker сред. Если вы хотите пообщаться с командой и
+поделиться своим мнением, вы можете связаться с нами на нашем канале
+Gitter или в чате на нашем сайте. Об автореТибо Кошлен (Thibault
+Koechlin) - CTO CrowdSec, окончил IT-школу EPITECH по специальности
+«Безопасность ИТ-систем и сетей». Он начал карьеру в NBS в 2004 году в
+качестве эксперта по пен-тестированию, а затем был назначен главой
+группы безопасности. Затем он стал директором по информационной
+безопасности и углубил свои знания в области оборонительной
+безопасности, после чего начал разработку собственных продуктов с
+открытым исходным кодом и собрал команду экспертов с редкими навыками.
+Он достиг вершины карьеры в компании, став операционным партнером, и
+возглавил создание флагманского продукта компании: Cerberhost. В
+декабре 2019 года он стал соучредителем CrowdSec вместе с Филиппом
+Хюмо (Philippe Humeau) и Лораном Субревилла (Laurent Soubrevilla). Он
+является техническим директором компании.

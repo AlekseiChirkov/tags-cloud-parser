@@ -1,0 +1,64 @@
+Автор: scorpka
+Дата: 2021-09-30T08:29:50.000Z
+Название: Уроки по SDL 2: Урок 12 Музыка и мышь
+Теги: C++ *, Разработка игр *, C *
+Текст:
+В этом уроке мы научимся реагировать на действия мыши, такие как
+движения и клики, а так же добавим фоновую музыку, и музыку на
+действие.Приступим к коду:#include<SDL2/SDL.h>
+#include<SDL2/SDL_image.h> #include<SDL2/SDL_mixer.h>    int
+main(void) {  SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);  SDL_Window*
+window = SDL_CreateWindow("mouse move", SDL_WINDOWPOS_UNDEFINED,SDL_WI
+NDOWPOS_UNDEFINED,640,480,SDL_WINDOW_SHOWN);  SDL_Surface*
+backgroundImage = IMG_Load("button.png") ;  SDL_Renderer* gRenderer =
+SDL_CreateRenderer(window,-1,SDL_RENDERER_ACCELERATED);
+Mix_OpenAudio( 44100, MIX_DEFAULT_FORMAT,2,2048);   Добавляем новую
+библиотеку(SDL_mixer.h), инициализируем видео и аудио, стандартно
+подгружаем окно(window), фон(backgroundImage)  и переменную
+отображения (gRenderer). включаем аудио Mix_OpenAudio( частота звука,
+Формат музыки,количество каналов для звука, количество байт в каждом
+куске output sample)  Mix_Chunk *fireMusic = Mix_LoadWAV("blaster-
+firing.wav");   Mix_Music *music = Mix_LoadMUS("Imperial-March-Star-
+Wars.wav");Подгружаем звук нажатия(fireMusic) и фоновую
+музыку(music).SDL_Texture* bgTexture =
+SDL_CreateTextureFromSurface(gRenderer,backgroundImage); SDL_Rect box
+= {0,0,300,200};  SDL_Rect mousePostion = {0,0,320,240}; SDL_Event e;
+int quit = 0,x=0,y=0; Создаем текстуру из фона, создаем
+прямоугольник(box), отображающий часть нужного нам фона, задаем
+границы для мыши(mousePosition), задаем чекер действий(e), и создаем
+три переменные выход(quit), и положение мыши(x,y) в данный момент.
+Mix_PlayMusic(music,-1);  while(!quit)  {     while(SDL_PollEvent(&e)
+!=0)    {       if(e.type == SDL_QUIT) {         quit = 1;       }else
+if (e.type == SDL_MOUSEMOTION) {
+SDL_GetMouseState(&x,&y);                 if (x <320 && y<240) {
+box.y = 200;
+SDL_RenderCopy(gRenderer,bgTexture,&box,&mousePostion);
+SDL_RenderPresent(gRenderer);                 }else {
+box.y = 0;
+SDL_RenderCopy(gRenderer,bgTexture,&box,&mousePostion);
+SDL_RenderPresent(gRenderer);                 }Запускаем музыку в
+любой свободный канал(Mix_PlayMusic)Создаем два цикла , пока
+переменная quit равна нулю, и если есть какое нибудь действие
+SDL_PollEvent(&e) != 0 если есть Выход, тогда выходим из приложения,
+иначе если есть движение мыши SDL_MOUSEMOTION, проверяем , положение
+мыши не вышло из нужного нам квадрата, если не вышло, то отрисовываем
+одну картинку, если вышло тогда отрисовываем вторую картинку.
+}else if (e.type == SDL_MOUSEBUTTONDOWN) {
+Mix_PlayChannel(-1,fireMusic,0);               box.y = 400;
+SDL_RenderCopy(gRenderer,bgTexture,&box,&mousePostion);
+SDL_RenderPresent(gRenderer);              }else if (e.type ==
+SDL_MOUSEBUTTONUP) {               box.y = 600;
+SDL_RenderCopy(gRenderer,bgTexture,&box,&mousePostion);
+SDL_RenderCopy(gRenderer,bgTexture,&box,&mousePostion);
+SDL_RenderPresent(gRenderer); Если нажата мышь(SDL_MOUSEBUTTONDOWN)
+тогда отрисовываем третью картинку и проигрываем
+звук(Mix_PlayChannel), если отжата(SDL_MOUSEBUTTONUP), тогда
+четвертую. Для того чтобы изменить картинку, изменяем значение box.y
+}else if (e.type == SDL_KEYDOWN) {
+switch(e.key.keysym.sym)               {                 case SDLK_1:
+Mix_ResumeMusic();                 break;                  case
+SDLK_2:                 Mix_PauseMusic();                 break;
+}             }    }  } Если нажата клавиша 1 запускаем музыку
+(Mix_ResumeMusic()), если нажата клавиша 2 останавливаем
+(Mix_PauseMusic()). SDL_DestroyWindow(window);  SDL_Quit(); }Ссылка на
+файлы<< предыдущий урок

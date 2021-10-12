@@ -1,0 +1,230 @@
+Автор: Alex_BBB
+Дата: 2021-10-02T08:15:21.000Z
+Название: Blazor WebAssembly: Drag and Drop в SVG
+Теги: Разработка веб-сайтов *, .NET *, ASP *, WebAssembly *
+Текст:
+Demo | GitHubBlazor WebAssembly: Drag and Drop SVG объектовВ статье
+описан способ реализации перетаскивания SVG объектов. Попутно
+рассмотрены следующие моменты разработки на Blazor:Шаблонные
+компоненты. Содержимое шаблонного компонента можно задавать в
+родительском компоненте.Передача событий от родительского компонента
+дочернему (Parent -> Child);Проблема перезаписи входных параметров
+компонента внутри самого компонента (Overwritten parameters
+problem);Двухсторонний биндинг между родителем и дочерним компонентом.
+Т.е. входной параметр дочернего компонента может менять и родительский
+компонент и дочерний;Как сделать stopPropagation на Blazor;Что
+получится в итогеВ итоге получится Blazor компонент - Draggable.
+Пример использования:@inject MouseService mouseSrv;  <svg
+xmlns="http://www.w3.org/2000/svg"     @onmousemove=@(e =>
+mouseSrv.FireMove(this, e))      @onmouseup=@(e =>
+mouseSrv.FireUp(this, e))>>      <Draggable X=250 Y=150>
+<circle r="60" fill="#ff6600" />         <text text-anchor="middle"
+alignment-baseline="central" style="fill:#fff;">Sun</text>
+</Draggable> </svg>Листинг 1. Использование шаблонного компонента
+DraggableDraggable вместе с содержимым будет перетаскиваться.Параметры
+X и Y поддерживают двусторонний биндинг:@inject MouseService mouseSrv;
+<svg xmlns="http://www.w3.org/2000/svg"     @onmousemove=@(e =>
+mouseSrv.FireMove(this, e))      @onmouseup=@(e =>
+mouseSrv.FireUp(this, e))>>      <Draggable @bind-X=X @bind-Y=Y>
+<circle r="60" fill="#ff6600" />         <text text-anchor="middle"
+alignment-baseline="central" style="fill:#fff;">Sun</text>
+</Draggable> </svg>  @code {     double X = 250;     double Y = 150;
+}Листинг 2. Использование Draggable с двухсторонним биндингом X, YЕсли
+вам просто нужно готовое решение, статью читать не обязательно - сразу
+переходите к блоку “Как использовать Draggable-компонент в своем
+проекте”.Основная идеяДля позиционирования SVG объектов удобно
+использовать группирующий элемент g и translate:<svg
+style="width:500px; height:300px" xmlns="http://www.w3.org/2000/svg">
+<g transform="translate(250, 150)">         <circle r="60"
+fill="#ff6600" />         <text text-anchor="middle" alignment-
+baseline="central" style="fill:#fff;">Sun</text>     </g>
+</svg>Листинг 3. Позиционирование группы SVG объектов с помощью
+translateРис 1. Позиционирование группы SVG объектов с помощью
+translateДля “перетаскивания” нужно подписаться на событие перемещения
+мышки и менять значения translate.Шаблонный компонент DraggableВ
+листинге 1 показано использование компонента Draggable. Draggable это
+шаблонный компонент, который оборачивает содержимое в <g>:<g
+transform="translate(@x, @y)">     @ChildContent </g>  @code {
+[Parameter] public RenderFragment? ChildContent { get; set; }
+double x = 250;     double y = 150; }Листинг 4. Шаблонный компонент
+Draggable оборачивает содержимое в <g>При изменении x, y положение <g>
+вместе с содержимым будет меняться.Для перетаскивания (корректного
+изменения x, y) нужны следующие события:Событие, когда пользователь
+начинает перетаскивание - нажимает мышкой на элемент.Это onmousedown
+на элементе <g>. При этом обратите внимание что <g> это не
+прямоугольник, границы <g> проходят по контурам вложенных объектов.
+Т.е. для Листинг 3 onmousedown будет срабатывать только внутри круга -
+это как раз то, что нужно.События движения курсора с нажатой
+мышкой.Думаете onmousemove на элементе <g>? Нет. При быстрых движениях
+мышка уходит за границы <g> и onmousemove перестает работать. Поэтому
+onmousemove нужно вешать на весь <svg> и пробрасывать событие в
+Draggable.Событие, когда пользователь заканчивает перетаскивание -
+опускает (поднимает) мышку.onmouseup на <g> не подходит по той же
+причине: при быстрых движениях мышка уходит за границы <g> и onmouseup
+не срабатывает. Получается и onmouseup нужно регистрировать на весь
+<svg>.Передача событий от родительского компонента дочернему (Parent
+-> Child)Получается нужен способ подписать Draggable на события
+onmousemove и onmouseup родительского <svg>. Это можно сделать с
+помощью singleton сервиса:// inject IMouseService into subscribers
+public interface IMouseService {     event
+EventHandler<MouseEventArgs>? OnMove;     event
+EventHandler<MouseEventArgs>? OnUp; }  // use MouseService to fire
+events public class MouseService : IMouseService {     public event
+EventHandler<MouseEventArgs>? OnMove;     public event
+EventHandler<MouseEventArgs>? OnUp;      public void FireMove(object
+obj, MouseEventArgs evt) => OnMove?.Invoke(obj, evt);     public void
+FireUp(object obj, MouseEventArgs evt) => OnUp?.Invoke(obj, evt);
+}Листинг 5. IMouseService нужно использовать в компонентах в которых
+требуется обрабатывать события. MouseService использовать там, где
+происходит запуск событийMouseService нужно зарегистрировать как
+singleotn, чтобы все компоненты получили один инстанс
+сервиса:builder.Services         .AddSingleton<MouseService>()
+.AddSingleton<IMouseService>(ff =>
+ff.GetRequiredService<MouseService>());Листинг 6. MouseService
+зарегистрирован как singletonТеперь MouseService можно
+использовать.Подписка на события <svg> и запуск событий
+MouseService:@inject MouseService mouseSrv;  <svg style="width:500px;
+height:300px" xmlns="http://www.w3.org/2000/svg"     @onmousemove=@(e
+=> mouseSrv.FireMove(this, e))      @onmouseup=@(e =>
+mouseSrv.FireUp(this, e))>>      <Draggable>         <circle r="60"
+fill="#ff6600" />         <text text-anchor="middle" alignment-
+baseline="central" style="fill:#fff;">Sun</text>     </Draggable>
+</svg>Листинг 7. Запуск событий onmousemove и onmouseup <svg> элемента
+в глобальный singleton сервисПодписка на события <svg> внутри
+Draggable:@inject IMouseService mouseSrv;   <g
+transform="translate(@x, @y)" @onmousedown=OnDown>     @ChildContent
+</g>  @code {     [Parameter] public RenderFragment? ChildContent {
+get; set; }      double x = 250;     double y = 150;      protected
+override void OnInitialized() {          mouseSrv.OnMove += OnMove;
+mouseSrv.OnUp += OnUp;          base.OnInitialized();     }      void
+OnDown(MouseEventArgs e) {...}     void OnMove(object? _,
+MouseEventArgs e) {... x=... y=...}     void OnUp(object? _,
+MouseEventArgs e) {...}      public void Dispose() {
+mouseSrv.OnMove -= OnMove;         mouseSrv.OnUp -= OnUp;     }
+}Листинг 8. Компонент Draggable. Подписка на события MouseService и
+onmousedown элемента <g>Обратите внимание на метод Dispose: от
+подписок нужно отписываться.Теперь внутри Draggable есть все
+необходимые события:OnDown - событие начала перетаскивания,OnMove -
+изменение позиции мышки,OnUp - событие окончания перетаскивания.Можно
+реализовать алгоритм перетаскивания:На OnDown ставим флаг “мышка
+нажата” и запоминаем положение курсора;На OnMove если “мышка
+нажата”:Рассчитываем дельту между старым и новым положением
+курсора;Запоминаем текущее положение курсора;Изменяем x, y - добавляем
+к текущим значениям дельты. Конкретные координаты курсора не важны,
+важны дельты. На OnUp снимаем флаг “мышка нажата”.Для краткости, код
+алгоритма тут не приводится - смотрите на GitHub.Проблема перезаписи
+входных параметровТеперь Draggable уже работает, но нет возможности
+задать начальное положение - т.е. задать параметры x, y.Если сделать
+внутренние поля x, y входными параметрами (листинг 9), то задать
+начальное положение станет возможным (листинг 10), но перетаскивание
+перестанет работать.... @code {     …     [Parameter]  double x { get;
+set; };     [Parameter]  double y { get; set; };     …     void
+OnMove(object? _, MouseEventArgs e) {... x=... y=...}Листинг 9.
+Компонент Draggable. Приватные x,y сделаны входными параметрами.
+Внутри компонента происходит обновление x,y (в методе OnMove). Не
+рабочий вариант<Draggable x=250 y=150>    ... </Draggable>Листинг 10.
+Установка входных параметров Draggable в родительском
+компонентеПеретаскивание перестает работать из-за Overwritten
+parameters problem, т.е. перезаписывания входных параметров внутри
+компонента. Происходит следующее:Draggable обновляет x,yэто приводит к
+перерисовке компонентаперерисовка приводит к пересетингу входных
+параметров, т.е. x,y опять становятся 250, 150.Отсюда вытекает общее
+правило: обновления входных параметров внутри компонента лучше
+избегать - это может приводить к неожиданному поведению.Решить
+проблему можно следующим образом:оставить внутренние поля x,y как было
+- не делать из них входные параметры,сделать отдельные свойства для
+параметров,начальные значения внутренних полей x,y выставлять на
+OnInitialized... @code {     ...     double x;     double y;
+[Parameter]  double X { get; set; }     [Parameter]  double Y { get;
+set; }      protected override void OnInitialized() {         x = X;
+y = Y;         ...     }     …     void OnMove(object? _,
+MouseEventArgs e) {... x=... y=...}Листинг 11. Компонент Draggable.
+Поля x, y, устанавливаются в начальные значения в
+OnInitializedНедостаток такого решения в том, что обновления входных
+параметров после инициализации ни на что не влияет, нельзя из внешнего
+компонента поменять положение объекта. Далее этот недостаток будет
+устранен.Двухсторонний биндинг между родителем и дочерним
+компонентомБиндинг Child -> Parent: параметр обновляется внутри
+компонента, родитель извещается об измененииБиндинг Child->Parent
+делается добавлением входных параметров  XChanged, YChanged типа
+EventCallback. Названия параметров формируются по правилу: “{название
+параметра }Changed”.... @code {     ...     double x;     double y;
+[Parameter] double X { get; set; }     [Parameter] public
+EventCallback<double> XChanged { get; set; }      [Parameter] double Y
+{ get; set; }     [Parameter] public EventCallback<double> YChanged {
+get; set; }     ...     void OnMove(object? _, MouseEventArgs e)  {
+...         x=... y=...         XChanged.InvokeAsync(x);
+XChanged.InvokeAsync(xy;     }Листинг 12. Компонент Draggable.
+Параметры X, Y с поддержкой биндинга Child -> ParentТеперь в
+родительском компоненте можно отслеживать изменения X, Y:Solar system
+position: @X , @Y <svg>     <Draggable @bind-X=X @bind-Y=Y>     ...
+</Draggable> <.svg>  @code {     double X = 250;     double Y = 150;
+}Листинг 13. Использование Draggable с биндингом X, YРис 2. Дочерний
+компонент изменяет входные параметры, родитель подписан на
+измененияБиндинг Parent -> Child: родительский компонент обновляет
+параметры дочернегоСейчас родитель может отслеживать изменения
+положения Draggable, может задать начальное положение, но не может
+изменить положение после инициализации.Дочерний компонент “из коробки”
+получает изменения входных параметров: set-теры X, Y вызываются каждый
+раз при изменении в родительском компоненте. Весь вопрос в том, как
+обработать эти события и избежать проблемы перезаписи входных
+параметров (см.выше).Хочется чтобы Draggable поддерживал оба
+варианта:задание начального положения без отслеживания изменений
+координат,отслеживание изменений координат и возможность менять
+положение из родительского компонента.задание начального положения без
+отслеживания изменений <Draggable X=250 Y=150> ...  </Draggable>
+отслеживание изменений <Draggable @bind-X=X @bind-Y=Y> ...
+</Draggable>Листинг 14. Два варианта использования Draggable: с
+отслеживанием изменений и безТут код становится некрасивым.... double?
+x; [Parameter] public double X {      get { return x ?? 0; }     set {
+if (!x.HasValue || (!isDown & XChanged.HasDelegate)) { x = value; } }
+} [Parameter] public EventCallback<double> XChanged { get; set; } ...
+protected override void OnInitialized() {     mouseSrv.OnMove +=
+OnMove;     mouseSrv.OnUp += OnUp;     base.OnInitialized(); }  bool
+isDown;  void OnDown(MouseEventArgs e) {... isDown = true; } void
+OnMove(object? _, MouseEventArgs e) {... } void OnUp(object? _,
+MouseEventArgs e) {isDown = false; }Листинг 15. Компонент Draggable.
+Входные параметры X, Y можно изменять из родительского
+компонентаАлгоритм следующий:если инициализация (!x.HasValue) -
+устанавливаем начальное значение x,если компонент сейчас перемещается
+пользователем (isDown) - игнорируем сеттинг входного параметра Xесли
+компонент сейчас не перемещается пользователем и входной параметр
+привязан к свойству родителя (XChanged.HasDelegate) - обновляем x.Для
+Y тоже самое.Рис 3. Двухсторонний биндингDraggable внутри Draggable
+внутри Draggable. stopPropagation на BlazorКонечно нужно попробовать
+положить Draggable в Draggable.<Draggable @bind-X=X @bind-Y=Y>
+<circle r="60" fill="#ff6600" />     <text text-anchor="middle"
+alignment-baseline="central" style="fill:#fff;">Sun</text>
+<Draggable X=173 Y=-15>         <circle r="35" fill="#1aaee5"
+stroke="#fff" />         <Draggable X=-57 Y=-38>
+<text>Earth</text>         </Draggable>          <Draggable X=51
+Y=-25>             <circle r="15" fill="#04dcd2" stroke="#fff" />
+<Draggable X=-5 Y=-20>                 <text>Moon</text>
+</Draggable>         </Draggable>     </Draggable>
+</Draggable>Листинг 16. Draggable внутри DraggableРис 4. Draggable
+внутри Draggable без stopPropagationКрасиво, но пользоваться
+невозможно. Если тянуть вложенный Draggable, тянуться начинает и
+внешний.В HTML события мышки, например, onmousedown, всплывают снизу
+вверх. Т.е. вначале срабатывает onmousedown вложенного объекта, потом
+onmousedown родительского.В Draggable событием начала перетаскивания
+является onmousedown. Если не допустить всплывания события до
+родительского объекта, то перетаскиваться будет только вложенный.<g
+transform="translate(@x, @y)" cursor=@cursor @onmousedown=OnDown
+@onmousedown:stopPropagation="true">     @ChildContent </g>Листинг 17.
+Компонент Draggable. Запрет всплывания события onmousedownТеперь можно
+изобразить солнечную систему:луна движется вокруг земли, значит земля
+перетаскивается вместе с луной,земля движется вокруг солнца, значит
+солнце перетаскивается вместе с землей и луной.Рис 4. Draggable
+поддерживает вложенные Draggable, двухсторонний инициализацию без
+биндинга параметровКак использовать Draggable-компонент в своем
+проектеСкопируйте IMouseService - листинг 5Зарегистрируйте
+IMouseService в Program.cs - листинг 6.Скопируйте Draggable из
+репозитория GitHubПодпишитесь на onmousemove и onmouseup svg - листинг
+1Ссылкиhttps://docs.microsoft.com/en-
+us/aspnet/core/blazor/components/?view=aspnetcore-5.0#overwritten-
+parameters-1https://docs.microsoft.com/en-
+us/aspnet/core/blazor/components/data-
+binding?view=aspnetcore-3.1#parent-to-child-binding-with-component-
+parametershttps://chrissainty.com/3-ways-to-communicate-between-
+components-in-blazor/https://visualstudiomagazine.com/articles/2020/01
+/27/suppressing-events-blazor.aspx

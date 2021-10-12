@@ -1,0 +1,320 @@
+Автор: zaleslaw
+Дата: 2021-10-04T13:56:53.000Z
+Название: KotlinDL 0.3: поддержка ONNX, Object Detection API, 20+ новых моделей
+в ModelHub, и много новых слоев
+Теги: Блог компании JetBrains, Big Data *, Машинное обучение *, Kotlin *,
+TensorFlow *
+Текст:
+Представляем версию 0.3 библиотеки глубокого обучения KotlinDL!Вас
+ждет множество новых фич: новые модели в ModelHub (включая модели для
+обнаружения объектов и распознавания лиц), возможность дообучать
+модели распознавания изображений, экспортированные из Keras и PyTorch
+в ONNX, экспериментальный высокоуровневый API для распознавания
+изображений и множество новых слоев, добавленных контрибьюторами.
+Также KotlinDL теперь доступен в Maven Central.В этой статье мы
+коснемся самых главных изменений релиза 0.3. Полный список изменений
+доступен по ссылке.Интеграция ONNX В течение последнего года
+пользователи библиотеки просили нас добавить возможность работать с
+моделями, сохраненными в формате ONNX.Open Neural Network Exchange
+(ONNX) — это формат для моделей AI с открытым исходным кодом. Он
+задает расширяемую модель графа вычислений, определения встроенных
+операторов и стандартных типов данных. Также этот формат поддерживает
+экспорт большинства моделей фреймворков TensorFlow и PyTorch.Мы
+используем ONNX Runtime Java API для того, чтобы загружать и исполнять
+модели, сохраненные в формате `.onnx`. О том, как использовать это
+низкоуровневое API напрямую, можно прочитать в документации.В KotlinDL
+есть модуль `onnx` — именно он отвечает за поддержку ONNX. Чтобы
+использовать ONNX в вашем проекте, добавьте соответствующую
+зависимость в список зависимостей.Есть два способа делать прогнозы на
+модели ONNX. Если вы, например, хотите использовать LeNet-5 (одну из
+моделей ModelHub), вы можете загрузить ее следующим образом:val
+(train, test) = mnist()  val modelHub = ONNXModelHub(cacheDirectory =
+File("cache/pretrainedModels"))  val modelType = ONNXModels.CV.Lenet
+val model = modelHub.loadModel(modelType)  model.use {    val
+prediction = it.predict(train.getX(0))     println("Predicted Label
+is: $prediction")    println("Correct Label is: " + train.getY(0))
+}Чтобы загрузить модель в формате ONNX, создайте экземпляр
+OnnxInferenceModel: OnnxInferenceModel.load(PATH_TO_MODEL).use {
+val prediction = it.predict(...) }Если у модели сложный выход,
+состоящий, из нескольких тензоров (например YOLOv4 или SSD), вы можете
+вызвать метод predictRaw :val yhat = it.predictRaw(inputData)Таким
+образом вы получите доступ ко всему выходу модели и сможете
+проанализировать его вручную.Найти подходящую модель в ONNXModelHub
+довольно легко: начните поиск с объекта верхнего уровня ONNXModels,
+спускайтесь глубже в CV или ObjectDetection, а затем к конкретным
+моделям. В итоге у вас получится некоторая цепочка вложенных объектов
+— она и будет являться уникальным идентификатором для получения
+конкретной модели или ее препроцессинга. Например, EfficientNet — одна
+из лучших моделей для распознавания изображений по итогам 2020 года —
+имеет вот такой идентификатор:
+ONNXModels.CV.EfficientNet4Lite.Дообучение (fine-tuning) ONNX-
+моделейДелать прогнозы на готовых моделях, конечно же, хорошо. Но как
+насчет того, чтобы настроить их под наши задачи?К сожалению, ONNX Java
+API не дает возможности обучать модели. Но во многих случаях нам нужно
+тренировать не всю модель целиком, а лишь некоторые ее
+параметры.Классический подход к решению задачи Transfer Learning для
+ResNet-подобных архитектур состоит в том, чтобы заморозить все слои,
+кроме нескольких последних, а затем обучить несколько верхних слоев
+(полносвязных слоев, формирующих выход модели) на новом наборе
+данных.Верхние слои можно рассматривать как небольшую нейронную сеть,
+входные данные которой являются выходными данными модели, состоящей из
+замороженных слоев. Замороженные слои можно рассматривать как
+финальную часть препроцессинга для новой модели, состоящей из
+нескольких полносвязных слоев.Мы реализовали этот подход в нашей
+библиотеке, используя модель ONNX в рамках предварительной обработки
+(препроцессинга) и добавляя к ней небольшую нейросеть, созданную при
+помощи Sequential или Functional API.Итак, предположим, что у вас есть
+огромная модель в Keras или PyTorch, которую вы хотите дообучить в
+KotlinDL. Вам необходимо отрезать от нее последние слои,
+экспортировать в формат ONNX, загрузить в KotlinDL в качестве
+дополнительного слоя препроцессинга через ONNXModelPreprocessor,
+описать недостающие слои с помощью API KotlinDL и обучить полученную
+нейросеть.Рисунок 1. Архитектура вычислений при дообучении сети в
+формате ONNX.Ниже показано, как мы загружаем модель ResNet50 из
+ONNXModelHub и дообучаем ее на встроенном наборе данных Dogs-vs-Cats,
+чтобы она могла классифицировать изображения кошек и собак:val
+modelHub = ONNXModelHub(    cacheDirectory =
+File("cache/pretrainedModels") ) val model =
+modelHub.loadModel(ONNXModels.CV.ResNet50noTopCustom)  val
+dogsVsCatsDatasetPath = dogsCatsDatasetPath()  model.use {
+it.reshape(64, 64, 3)     val preprocessing: Preprocessing =
+preprocess {        load {            pathToData =
+File(dogsVsCatsDatasetPath)            imageShape =
+ImageShape(channels = NUM_CHANNELS)            colorMode =
+ColorOrder.BGR            labelGenerator = FromFolders(mapping =
+mapOf("cat" to 0, "dog" to 1))        }        transformImage {
+resize {                outputHeight = IMAGE_SIZE.toInt()
+outputWidth = IMAGE_SIZE.toInt()                interpolation =
+InterpolationType.BILINEAR            }        }
+transformTensor {            sharpen {                modelType =
+TFModels.CV.ResNet50            }            onnx {
+onnxModel = model            }        }    }     val dataset =
+OnFlyImageDataset.create(preprocessing).shuffle()    val (train, test)
+= dataset.split(TRAIN_TEST_SPLIT_RATIO)     topModel.use {
+topModel.compile(            optimizer = Adam(),            loss =
+Losses.SOFT_MAX_CROSS_ENTROPY_WITH_LOGITS,            metric =
+Metrics.ACCURACY        )         topModel.fit(dataset = train, epochs
+= EPOCHS, batchSize = TRAINING_BATCH_SIZE)         val accuracy =
+topModel.evaluate(dataset = test, batchSize =
+TEST_BATCH_SIZE).metrics[Metrics.ACCURACY]         println("Accuracy:
+$accuracy")    } }topModel — простейшая нейронная сеть, которую можно
+быстро обучить, так как у нее всего несколько параметров./** * This is
+a simple model based on Dense layers only. */ private val topModel =
+Sequential.of(    Input(2, 2, 2048),    GlobalAvgPool2D(),    Dense(2,
+Activations.Linear, kernelInitializer = HeNormal(12L), biasInitializer
+= Zeros()) )Полный пример вы можете найти по ссылке.Поскольку API для
+отрезания слоев и выкорчевывания весов из модели, сохраненной в
+формате ONNX, отсутствует, вам необходимо выполнить эти операции
+самостоятельно перед экспортом в формат ONNX. Да, это придется делать
+на Python. Но сильно не переживайте: в следующем релизе мы планируем
+добавить в ModelHub много готовых моделей из PyTorch и Keras с уже
+отрезанными последними слоями.ModelHub: появление моделей из семейств
+DenseNet, Inception и NasNetВ KotlinDL 0.2 появилось хранилище
+моделей, которое позволяет загружать модели и кэшировать их на диске.
+Сначала мы назвали его ModelZoo, а потом переименовали в
+ModelHub.Сейчас ModelHub содержит коллекцию моделей глубокого
+обучения, которые предварительно обучены на больших наборах данных,
+таких как ImageNet и COCOВ настоящее время есть два ModelHub, с
+которых можно скачать модели: базовый TFModelHub, доступный в модуле
+`api`, и дополнительный ONNXModelHub, доступный в модуле`
+onnx`.Рисунок 2. Иерархия классов ModelHub.TFModelHub содержит модели:
+VGG’16VGG’19ResNet18ResNet34ResNet50ResNet101ResNet152ResNet50v2ResNet
+101v2ResNet152v2MobileNetMobileNetv2InceptionXceptionDenseNet121DenseN
+et169DenseNet201NASNetMobileNASNetLargeONNXModelHub содержит модели:CV
+LenetResNet18ResNet34ResNet50ResNet101ResNet152ResNet50v2ResNet101v2Re
+sNet152v2EfficientNet4LiteObjectDetectionSSDFaceAlignmentFan2d106Все
+модели TFModelHub содержат специальный загрузчик конфигураций моделей
+и весов моделей, а также специальную функцию предварительной обработки
+данных (препроцессинга), которая применялась при обучении моделей на
+наборе данных ImageNet. Если забыть ее применить к входным данным
+модели, то выход вас неприятно удивит.К примеру, вы можете применить
+модель ResNet50 для прогнозирования следующим образом:val modelHub =
+TFModelHub(cacheDirectory = File("cache/pretrainedModels")) val model
+= modelHub.loadModel(TFModels.CV.ResNet50)  val imageNetClassLabels =
+modelHub.loadClassLabels()  model.use {     val hdfFile =
+modelHub.loadWeights(TFModels.CV.ResNet50)     it.loadWeights(hdfFile)
+… }Таким образом вы получите модель и веса модели. Далее вы сможете
+использовать их в KotlinDL.не забудьте выполнить препроцессинг новых
+данных. Для каждой модели ModelHub доступна своя функция
+препроцессинга preprocessInput:val inputData =
+modelType.preprocessInput(...) val res = it.predict(inputData)Полный
+пример использования нейросети ResNet’50 для прогнозирования и
+дообучения на новых данных можно найти в этом руководстве.при работе с
+моделями ONNX вам не обязательно отдельно загружать веса (см. раздел
+«Интеграция ONNX» выше).Обнаружение объектов с помощью модели
+SSDПрошлая версия ModelHub включала только модели для распознавания
+изображений (Image Recognition). Мы решили начать постепенно расширять
+возможности библиотеки по работе с изображениями. В этом релизе мы
+добавили модель Single Shot MultiBox Detector (SSD), которая способна
+находить объекты на изображениях (задача Object Detection).Риунок 3.
+Архитектура сверточной нейросети с детектором объектов SSDЗадача
+Object Detection заключается в обнаружении экземпляров объектов
+определенного класса в изображении. Причем мы хотим определять не
+только сам факт наличия таких объектов, но еще и их границы (например
+прямоугольник, в который объект целиком вписан).Модель SSD обучается
+на наборе данных COCO, состоящем из 328 000 изображений. Для каждого
+экземпляра заданы ограничивающие рамки и маски сегментации, а также
+одна из 80 категорий объекта (например «человек», «машина»,
+«светофор», «велосипед»). Такую модель можно использовать для
+обнаружения объектов и их границ при прогнозировании в реальном
+времени.Для решения этой задачи мы разработали простой API, скрывающий
+детали препроцессинга и постпроцессинга изображений от
+пользователя.val modelHub =    ONNXModelHub(cacheDirectory =
+File("cache/pretrainedModels"))     val model =
+ONNXModels.ObjectDetection.SSD.pretrainedModel(modelHub)  model.use {
+detectionModel ->    val detectedObjects =
+detectionModel.detectObjects(imageFile = File (...), topK = 50)
+detectedObjects.forEach {        println("Found ${it.classLabel} with
+probability ${it.probability}")    } }Мы прогнали через наш детектор
+небольшое видео с камеры на уличном перекрестке, выделив красным
+людей, синим — велосипеды, зеленым — автомобили.Рисунок 4. Работа
+ObjectDetection APIМодель YOLOv4 также доступна в ONNXModelHub. Однако
+мы не добавили постобработку вывода YOLOv4, потому что в библиотеке
+Multik (аналог NumPy для Kotlin) нет некоторых операций. Если вам
+интересна эта задача (или другие похожие задачи), вы можете стать
+контрибьютором и участвовать в адаптации новых моделей или создании
+нового удобного API для использования широким кругом разработчиков на
+Kotlin (да и на Java тоже).ПРИМЕЧАНИЕ: вы также можете использовать
+стандартный API для загрузки ONNX-модели и метод predictRaw — для
+последующей ручной обработки результата, но это довольно непросто.
+Если вам это удастся, ваш пулреквест станет большим вкладом в
+KotlinDL.Экспериментальное высокоуровневое API для распознавания
+изображений Чтобы решить задачу обнаружения объектов, мы использовали
+упрощенное API для предсказаний. Для решения задачи распознавания
+изображений мы тоже можем использовать API, который скроет от
+пользователя предварительную обработку изображений, компиляцию и
+инициализацию модели, а значит, значительно упростит процесс
+взаимодействия с моделями, загруженными из ModelHub.Чтобы увидеть, как
+это работает, давайте загрузим и сохраним на диске предварительно
+обученную модель типа ImageRecognitionModel. Модели этого типа не
+дообучаются — они только делают прогнозы. Но плюс в том, что с ними
+очень легко работать.val modelHub =    TFModelHub(cacheDirectory =
+File("cache/pretrainedModels"))  val model =
+modelHub[TFModels.CV.ResNet50]Обратите внимание на этот милый
+синтаксис с квадратными скобочками — он используется для доступа к
+предобученным моделям.model.use {    for (i in 1..8) {        val
+imageFile = getFileFromResource("datasets/vgg/image$i.jpg")
+val recognizedObject = it.predictObject(imageFile = imageFile)
+println(recognizedObject)               val top5 =
+it.predictTopKObjects(imageFile = imageFile, topK = 5)
+println(top5.toString())    } }У класса ImageRecognitionModel есть
+методы, которые принимают файлы изображений в качестве входных данных
+и возвращают метки распознаваемых объектов в строковом формате.Это
+экспериментальный API — он для хардкорных бэкенд-инженеров. По сути,
+модель представляет собой черный ящик с входом и выходом. Обязательно
+попробуйте этот API и напишите нам о своих впечатлениях.Распознавание
+звука при помощи модели на основе архитектуры SoundNet Библиотека
+KotlinDL делает свои первые шаги в области работы со звуком. В этом
+релизе мы добавили несколько слоев, необходимых для построения модели,
+подобной SoundNet:  Conv1D, MaxPooling1D, Cropping1D, UpSampling1D и
+другие слои с суффиксом «1D» в названии.Давайте построим небольшую
+нейронную сеть на основе архитектуры модели SoundNet:val soundNet =
+Sequential.of(    Input(        FSDD_SOUND_DATA_SIZE,
+NUM_CHANNELS    ),    *soundBlock(        filters = 4,
+kernelSize = 8,        poolStride = 2    ),    *soundBlock(
+filters = 4,        kernelSize = 16,        poolStride = 4    ),
+*soundBlock(        filters = 8,        kernelSize = 16,
+poolStride = 4    ),    *soundBlock(        filters = 8,
+kernelSize = 16,        poolStride = 4    ),    Flatten(),    Dense(
+outputSize = 1024,        activation = Activations.Relu,
+kernelInitializer = HeNormal(SEED),        biasInitializer =
+HeNormal(SEED)    ),    Dense(        outputSize = NUMBER_OF_CLASSES,
+activation = Activations.Linear,        kernelInitializer =
+HeNormal(SEED),        biasInitializer = HeNormal(SEED)    ) )По сути,
+это сверточная нейросеть, которая использует одномерные слои для
+сверток и максимального объединения входных звуковых данных. На
+тестовых данных датасета FSDD эта сеть достигла точности ~55% за 10
+эпох и ~85% — за 100 эпох.Ниже приведен код SoundBlock. Это довольно
+простая композиция из двух слоев Conv1D и одного слоя MaxPool1D:fun
+soundBlock(filters: Long, kernelSize: Long, poolStride: Long):
+Array<Layer> =    arrayOf(        Conv1D(            filters =
+filters,            kernelSize = kernelSize,            strides =
+longArrayOf(1, 1, 1),            activation = Activations.Relu,
+kernelInitializer = HeNormal(SEED),            biasInitializer =
+HeNormal(SEED),            padding = ConvPadding.SAME        ),
+Conv1D(            filters = filters,            kernelSize =
+kernelSize,            strides = longArrayOf(1, 1, 1),
+activation = Activations.Relu,            kernelInitializer =
+HeNormal(SEED),            biasInitializer = HeNormal(SEED),
+padding = ConvPadding.SAME        ),        MaxPool1D(
+poolSize = longArrayOf(1, poolStride, 1),            strides =
+longArrayOf(1, poolStride, 1),            padding = ConvPadding.SAME
+)    )Когда модель будет готова для тренировки, мы сможем загрузить
+набор данных Free Spoken Digits Dataset (FSDD) и обучить модель. FSDD
+— это простой набор аудио/речевых данных, состоящий из записей
+произнесенных цифр, в файлах .wav с частотой 8 кГц.Рисунок 5.
+Визуализация одной из записей в формате .wav (случайно выбранная из
+датасета FSDD).После обучения модель сможет понимать цифры по
+аудиозаписям. Можно даже сделать тренажер, который поможет отработать
+произношение цифр на английском языке. Полный пример работы с SoundNet
+можно найти тут.+23 слоя, +6 функций активации и +2
+инициализатораМножество контрибьюторов добавили в KotlinDL новые слои
+с весьма нетривиальной логикой. Эти слои дают больше возможностей для
+построения нейросетей, обрабатывающих фотографии, звук, видео или
+3D-изображения:Softmax activation layer (D. Lowl)LeakyReLU activation
+layer Masoud Kazemi)PReLU activate layer (Masoud Kazemi)ELU activation
+layer (Maciej Procyk)ThresholdedReLU activation layer (Masoud
+Kazemi)Conv1D layer (Maciej Procyk)MaxPooling1D layer (Masoud
+Kazemi)AveragePooling1D layer (Masoud Kazemi)GlobalMaxPooling1D layer
+(Masoud Kazemi)GlobalAveragePooling1D layer (Ansh Tyagi)Conv3D layer
+(Maciej Procyk)MaxPooling3D layer (Ansh Tyagi)AveragePooling3D layer
+(Masoud Kazemi)GlobalAveragePooling3D layer (Ansh
+Tyagi)GlobalMaxPool2D layer (Masoud Kazemi)GlobalMaxPool3D layer
+(Masoud Kazemi)Cropping1D and Cropping3D layers (Masoud Kazemi)Permute
+layer (Ansh Tyagi)RepeatVector layer (Stan van der Bend)UpSampling1D,
+UpSampling2D, and UpSampling3D layers (Masoud Kazemi)Новые
+инициализаторы:Identity initializer (Hauke Brammer)Orthogonal
+initializer (Ansh Tyagi)Новые функции активации:Gelu activation
+function (Ansh Tyagi)HardShrink activation function (Ansh Tyagi)LiSHT
+activation function (Veniamin Viflyantsev)Mish activation function
+(Xa9aX ツ)Snake activation function (cagriyildirimR)TanhShrink
+activation function(Femi Alaka)Эти функции активации не входят в
+основной пакет TensorFlow. Мы решили добавить их в KotlinDL, поскольку
+они часто упоминаются в ряде новых научных статей о распознавании
+изображений.В следующих релизах мы планируем достичь паритета по слоям
+с фреймворком Keras и, возможно, пойти дальше, добавив несколько
+популярных слоев из последних реализаций SOTA-моделей.Мы будем рады
+вашим пулреквестам на добавление новых слоев, функций активации,
+обратных вызовов (callbacks) или инициализаторов из новых/популярных
+научных статей!Как добавить KotlinDL в проектЧтобы начать использовать
+KotlinDL в вашем проекте со всеми его возможностями (включая поддержку
+ONNX и визуализацию), просто добавьте следующие зависимости в файл
+build.gradle:repositories {     mavenCentral() }  dependencies {
+implementation 'org.jetbrains.kotlinx:kotlin-deeplearning-api:0.3.0'
+implementation 'org.jetbrains.kotlinx:kotlin-deeplearning-onnx:0.3.0'
+implementation 'org.jetbrains.kotlinx:kotlin-deeplearning-
+visualization:0.3.0' }Если вам не нужна поддержка ONNX и визуализация,
+достаточно одной зависимости:dependencies {     implementation
+'org.jetbrains.kotlinx:kotlin-deeplearning-api:0.3.0' }KotlinDL можно
+использовать в Java-проектах, даже если в них нет ни капли Kotlin.
+Здесь вы найдете пример построения и тренировки сверточной сети,
+полностью написанной на Java.Если вы хотели бы использовать в проектах
+Java API, напишите нам об этом или создайте PR.Полезные ссылкиМы
+надеемся, что вам понравилась наша статья и новые возможности
+KotlinDL. Хотите узнать больше о проекте? Предлагаем ознакомиться с
+Readme или со страничкой проекта на GitHub. А этот туториал поможет
+вам создать вашу первую нейросеть на Kotlin.Если вам интересно, как
+устроен KotlinDL, как он появился и в каком направлении развивается,
+почему он так похож на Keras, и планируется ли поддержка PyTorch,
+посмотрите свежее видео от Алексея Зиновьева.Также мы ждем вас в
+Slack-канале #kotlindl (инвайт можно получить тут). В нем вы можете
+задавать вопросы, участвовать в дискуссиях и первыми получать
+информацию о превью-релизах и новых моделях в хабе моделей.Ваша
+обратная связь, ваши описания багов и краш-репорты, идеи и комментарии
+— все это очень важно для нас. Мы ждем новых пользователей и
+контрибьюторов, как начинающих, так и опытных исследователей — всех,
+кому интересны Deep Learning и Data Science на Kotlin, Java и Scala!
+Только зарегистрированные пользователи могут участвовать в опросе.
+Войдите, пожалуйста. Какие задачи вам нужно решать при помощи Deep
+Learning              80%            Image Recognition              4
+40%            Object Detection              2
+40%            Pose Estimation              2
+0%            Natural Language Processing              0
+20%            Fraud Detection              1
+20%            Body segmentation              1
+20%            Face Detection              1
+0%            Hand Pose Detection              0
+0%            Text Toxicity Detection              0
+0%            Регрессия на числовых фичах              0
+0%            Классификация на табличных данных              0
+Проголосовали 5 пользователей.          Воздержались 2 пользователя.

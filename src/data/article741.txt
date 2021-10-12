@@ -1,0 +1,302 @@
+Автор: n_bogdanov
+Дата: 2021-09-24T08:50:44.000Z
+Название: Опыт миграции из Gitea в GitLab. Сложно, но успешно
+Теги: Блог компании Флант, Системное администрирование *, Git *, Системы
+управления версиями *, DevOps *
+Текст:
+В мире существует множество различных систем для хранения кода.
+Различаются они как протоколом работы: Git, Mercurial, Bazaar, — так и
+форматом работы (cloud, self-hosted). Но есть и другой важный параметр
+при их выборе: степень интеграции с сопутствующим инструментарием:
+issue tracker, CI/CD, wiki и т.д. Так сложилось, что мы в компании
+предпочитаем GitLab (вариант on-premise) и по умолчанию, если клиент
+не против, предлагаем ему это решение. В статье я расскажу про
+миграцию из Gitea c Jenkins в GitLab и о том, с какими сложностями
+пришлось столкнуться, а заодно поделюсь Python-скриптами, которые
+пригодились для успеха этого мероприятия.Важно! В статье
+рассматривается Gitea 1.13.4 и GitLab 13.8. В новых версиях могут быть
+какие-то улучшения, которые облегчат перенос, но на момент миграции
+эти версии были актуальными.Немного про Gitea и задачуGitea —
+легковесная Open Source-система для управления Git-репозиториями. Это
+форк другой легковесной системы — Gogs. Она интересна возможностью
+сочетать в одном инстансе несколько организаций с довольно широким
+спектром настроек прав доступа и GitHub-подобным API.Проект популярен
+и имеет более 25 тысяч звёзд на GitHub. Среди спонсоров — DigitalOcean
+и Equinix, а также поддержать Gitea можно на Open Collective (и
+проследить, куда пойдут ваши средства). Как вылядит веб-интерфейс
+GiteaИз плюсов хочется отметить, что Gitea очень проста как в
+установке и настройке, так и в бэкапе. Систему можно запустить на
+любом относительно современном компьютере, и она предложит некоторые
+встроенные сервисы: wiki-страницы, задачи и проекты, т.е. todo-
+листы.Но эта простота может иметь и обратную сторону. В приложении нет
+готового CI/CD, и для реализации этих механизмов приходится
+использовать стороннее решение. В нашем случае у клиента эту роль
+играл Jenkins, для которого существует специальный плагин. Однако
+данный выбор был скорее историческим наследием, чем технической
+необходимостью. CI/CD с ним был не очень удобен в работе. Для
+оптимизации процесса деплоя мы сошлись на переходе на GitLab, а это
+означало и замену самой Gitea, функции которой теряли смысл. Также в
+процессе работ были найдены мелкие проблемы, которые мешали
+миграции.Что было на стартеИсходное состояние — Gitea 1.13.4 со 165
+репозиториями и 94 пользователями. Всё это было разложено по 18
+организациями, а некоторые репозитории были личными.Кроме того, клиент
+не хотел терять историю pull requests, а их было достаточно много: в
+некоторых репозиториях — более 5 тысяч.Статистика по инсталляции Gitea
+до переносаНесмотря на то, что самих пользователей, а также
+организаций и групп было не так уж и много, «накликивать» такое (да
+ещё и без ошибок) — это очень долго.  Да и вообще, мы же инженеры!
+Поэтому пошли путем автоматизации и ниже расскажем о проблемах,
+которые пришлось преодолеть. Попутно мы научимся работе с REST API
+обоих решений: и Gitea, и GitLab. Посему этот опыт может оказаться
+полезным не только для непосредственной миграции, но и повседневных
+задач.Реализация: импорт, экспорт, переносИтак, перейдем к самой
+миграции. Оба проекта имеют развитый API. Выберем клиенты для работы с
+API обеих систем:Для Gitea я выбрал Python-вариант giteapy. К
+сожалению, он не так хорош, как аналогичный для GitLab. (В процессе
+повествования ещё встретятся соответствующие ремарки.)Для GitLab —
+python-gitlab.Часть 1. ПользователиДля подключения к GitLab
+используется единый класс:import gitlab  gl =
+gitlab.Gitlab('https://gitlab.example.com', private_token='secret')
+gl_users = gl.users.list(page=1, per_page=1000)В giteapy для каждого
+раздела API есть свой подкласс. Их общее количество — 6, но нам
+потребуются только 4: AdminApi, OrganizationApi, RepositoryApi,
+UserApi. Вот как будет выглядеть код (полные итоговые листинги — см. в
+репозитории flant/examples):import giteapy configuration =
+giteapy.Configuration() configuration.api_key['access_token'] =
+'secret' configuration.host = 'https://git.example.com/api/v1'
+admin_api = giteapy.AdminApi(giteapy.ApiClient(configuration))
+user_api_instance = giteapy.UserApi(giteapy.ApiClient(configuration))
+org_api_instance =
+giteapy.OrganizationApi(giteapy.ApiClient(configuration))
+repo_api_instance =
+giteapy.RepositoryApi(giteapy.ApiClient(configuration))  gt_users =
+admin_api_instance.admin_get_all_users()И уже тут ожидал первый
+сюрприз:{'avatar_url':
+'https://gitea.example.com/user/avatar/user1/-1',  'created':
+datetime.datetime(2018, 10, 11, 19, 0, 0, tzinfo=tzutc()),  'email':
+'user1@example.com',  'full_name': 'User Name',  'id': 2,  'is_admin':
+False,  'language': 'ru-RU',  'last_login': datetime.datetime(2020,
+10, 19, 8, 0, 0, tzinfo=tzutc()),  'login': 'user1'}Вы спросите: что
+же не так? Очень просто: в выводе API не видно, заблокирован
+пользователь или нет. Изучение всех возможных методов привело к
+необходимости запрашивать эту информацию из базы Gitea. Благо, это не
+такая уж и проблема — она решается простым запросом:SELECT is_active
+FROM “user” WHERE id = <user_id>Заблокированных пользователей было
+немного (около 10), и мы перенесли их вручную.SSH-ключиЛогично
+предположить, что если стоит задача миграции, нам требуется перенести
+еще и SSH-ключи пользователей. В библиотеке клиента API Gitea описан
+метод user_current_get_key. Однако он работает странным образом:если у
+пользователя много ключей, он возвращает всего один ключ;если ключей
+нет — он возвращает ошибку 404.При первичном переносе мы это
+обстоятельство не учли и использовали вызов API как есть. В результате
+были получены неверные ключи — их не хватало. Поэтому настоятельно
+советую использовать метод user_list_keys. Однако и с ним нас ждал
+подвох: в базе отсутствует уникальный индекс по fingerprint.Indexes:
+"public_key_pkey" PRIMARY KEY, btree (id)
+"IDX_public_key_fingerprint" btree (fingerprint)
+"IDX_public_key_owner_id" btree (owner_id)Из-за этого в момент
+переноса пришлось решать конфликтные ситуации при импорте ключей в
+GitLab. К счастью, эти ключи были в основном у заблокированных
+пользователей. Поэтому мы приняли простое решение — удалить все ключи
+у заблокированных пользователей, которые были перенесены. В GitLab это
+делается вот так:# clean blocked users keys for block_gl_user in
+gl.users.list(blocked=True, page=1, per_page=10000):
+print("Blocker user", block_gl_user.username)     for
+block_gl_user_key in block_gl_user.keys.list():         print("Found
+key", block_gl_user_key.title)
+block_gl_user_key.delete()ПраваСледующий шаг — выдача верных прав.
+Организации Gitea преобразуются в группы GitLab, а команды
+преобразуются в права доступов.Получив все команды из API, мы
+согласовали с клиентом матрицу сопоставления прав:# map access rules
+map_access = {'Owners': gitlab.OWNER_ACCESS,
+'Developers': gitlab.DEVELOPER_ACCESS,               'QA':
+gitlab.DEVELOPER_ACCESS,
+'Manager':gitlab.REPORTER_ACCESS,               'Managers':
+gitlab.REPORTER_ACCESS,               'Dev': gitlab.DEVELOPER_ACCESS,
+'Services': gitlab.REPORTER_ACCESS,               'services':
+gitlab.REPORTER_ACCESS}  # inspect Gitea orgs and create Gitlab groups
+# get all orgs gt_all_orgs = admin_api_instance.admin_get_all_orgs()
+for gt_org in gt_all_orgs:     # does the group exist?     res = None
+try:         res = gl.groups.get(gt_org.username)     except:
+pass      if res:         # append existing groups to dictionary
+dict_gl_groups[gt_org.username] = res     else:         # create the
+missing group         gl_group = gl.groups.create({'name':
+gt_org.username, 'path': gt_org.username})         if
+len(gt_org.description) > 0:             gl_group.description =
+gt_org.description         if len(gt_org.full_name) > 0:
+gl_group.full_name = gt_org.full_name         gl_group.save()
+dict_gl_groups[org.username] = gl_group     # list teams for the Gitea
+org     gt_org_teams =
+org_api_instance.org_list_teams(gt_org.username)     for team in
+teams:         # get all team members         members =
+org_api_instance.org_list_team_members(team.id)         for user in
+members:             # add members to groups with their access level
+# dict_gl_users was created on user creation step             member =
+dict_gl_groups[gt_org.username].members.create({'user_id':
+dict_gl_users[user.login].id, 'access_level':
+map_access.get(team.name, gitlab.REPORTER_ACCESS)})Почтовые
+уведомленияЧто произойдет после этих манипуляций? Перенос
+пользователей «породит» массу почтовых сообщений: о создании
+пользователя, о предоставлении доступа и т.п. Поэтому стоит заранее
+решить, оставлять эту корреспонденцию или же перенаправить в чёрную
+дыру.Если вы не хотите рассылать почту и делать временные пароли,
+которые потом раздадите клиентам, создание пользователя будет
+выглядеть так:gl_user = gl.users.create({'email': gt_user.email,
+'password': password,                                    'username':
+gt_user.login,                                    'name':
+gt_user.full_name if len(gt_user.full_name) > 0 else gt_user.login,
+'admin': gt_user.is_admin,
+'skip_confirmation': True})Кроме того, понадобится почтовый сервер,
+который будет все письма отправлять в /dev/null. Для этого подойдёт
+следующий конфиг Postfix:relayhost =  relay_transport = relay
+relay_domains = static:ALL smtpd_end_of_data_restrictions =
+check_client_access static:discardВ нашем случае клиент сначала
+попросил сделать вариант с отправкой почты в «черную дыру», а затем
+подтвердить все почтовые адреса. Если не прописать при создании
+пользователя skip_confirmation, то в дальнейшем, если потребуется
+подтвердить пользователей, это надо делать вручную. К сожалению, это
+известный баг GitLab: для подтверждения придется лезть в консоль
+Rails.Промежуточные итогиПроблемы, выявленные в Gitea за время этих
+операций:отсутствие важной информации о свойствах пользователя в
+API;неочевидные методы API для работы с ключами;дублирующиеся ключи.С
+другой стороны, в GitLab есть проблема с подтверждением email.
+Итоговый скрипт миграции пользователей можно найти в нашем репозитории
+с примерами.Часть 2. РепозиторииТеперь, когда готово дерево
+пользователей, можно произвести миграцию репозиториев. GitLab умеет
+импортировать проекты Gitea уже с версии 8.15. Однако всё не так
+просто, как хотелось бы.Начнём с того, что надо добавить нашего
+пользователя, которого мы завели в Gitea для миграции, во все
+репозитории. В этом поможет такой скрипт.all_orgs =
+admin_api_instance.admin_get_all_orgs() for org in all_orgs:     for
+repo in org_api_instance.org_list_repos(org.username):         body =
+giteapy.AddCollaboratorOption()
+repo_api_instance.repo_add_collaborator(repo.owner.login, repo.name,
+'import_user', body=body)      teams =
+org_api_instance.org_list_teams(org.username)     for team in teams:
+members = org_api_instance.org_list_team_members(team.id)         for
+user in members:             for repo in
+user_api_instance.user_list_repos(user.login):
+repo_api_instance.repo_add_collaborator(repo.owner.login, repo.name,
+'import_user', body=body)Здесь опущено подключение к API, так как
+пример был уже выше. Можно заметить еще одну проблему клиента к Gitea:
+в разных местах попеременно используется либо User ID, либо User
+Login. Местами это неудобно, т.к. требует постоянно сверяться с
+документацией.Теперь, когда все репозитории видны в API, можно
+попробовать начать импортировать их в GitLab. Казалось бы, процесс не
+будет сложным: зайти в создание нового проекта, нажать кнопку импорта…
+но так ничего не импортируется. В реальности проблемы будут
+встречаться на каждом шагу.nginx как решение двух недостатков в APIДля
+начала стоит отметить, что GitLab знает, что API Gitea устроен
+аналогично API GitHub, и использует Octokit Gem. Однако имплементация
+API у нас не является полной. Поэтому импорт периодически спотыкается.
+Есть 2 основных момента:Отсутствие rate_limit в API;Путаница с путями,
+когда Octokit пытался добавить мусорный префикс в запросы.К счастью,
+исходный инстанс Gitea был за реверсным прокси на основе nginx, так
+что удалось дописать его конфигурацию, чтобы обойти эти
+проблемы.Первым делом разберемся с rate limit. Это встроенный метод,
+через который Octokit спрашивает, как часто он может отправлять
+запросы в API. При запросе к корневым методам Gitea отдаёт 404, что
+клиентом воспринимается как Unimplemented:[13/Apr/2021:01:08:15 +0000]
+"GET /api/v1/rate_limit HTTP/1.1" 404 152 "-" "Octokit Ruby Gem
+4.15.0"Однако запрос к RepoApi возвращает 401, из-за чего импорт
+останавливается:[13/Apr/2021:01:26:25 +0000] "GET
+/org1/project1.git/api/v1/rate_limit HTTP/1.1" 401 152 "-" "Octokit
+Ruby Gem 4.15.0"Чтобы обойти это, сделаем такой location в
+nginx:location ~* "\/api\/v1\/rate_limit$" {   return 404; }Все
+запросы вернут 404 — миграция пойдёт без проблем.Вторая проблемы была
+интереснее: Octokit делал запросы с мусорным префиксом. Допустим, у
+нас есть org1 с project1 и есть пользователь i.ivanov с project2 в
+личном пространстве имён. В логе nginx появятся странные запросы:/org1
+/project1/api/v1/repos/org1/project1/labels?page=1&per_page=100 /org1/
+project1/api/v1/repos/org1/project1/milestones?page=1&per_page=100&sta
+te=all /org1/project1/api/v1/users/i.ivanov
+/i./api/v1/repos/i.ivanov/project2/labels?page=1&per_page=100
+/i.ivanov/project2/api/v1/rate_limitЛегко заметить, что в случае с
+организацией Octokit добавил префикс /org1/project1, а в случае с
+пользовательским репозиторием были добавлены 2
+префикса:/i./i.ivanov/project2В общем, пришлось написать rewrite,
+который исправлял неверные запросы:rewrite '^\/([^\/]+)\/([^\/]+\.git)
+\/api\/v1\/repos\/([^\/]+)\/([^\/]+)\/([^\/]+)$'
+/api/v1/repos/$3/$4/$5; rewrite
+'^\/([^\/]+)\/([^\/]+\.git)\/api\/v1\/users\/(.+)$'
+/api/v1/users/$3;После этого проблемные запросы были переписаны и,
+наконец-то, импорт прошел успешно!Полный импортОстанется последняя
+проблема: у нас 160 проектов, которые надо импортировать в верные
+namespaces. К сожалению, импорт через API не позволяет сделать полный
+импорт и поддерживает только импорт архива, который не даёт загрузить
+merge requests, issues и другие вспомогательные вещи. Пришлось сделать
+скрипт, который бы работал с GitLab WebUI и отправлял запросы на
+импорт.Я предпочел сделать скрипт для Selenium:from selenium import
+webdriver from selenium.webdriver.common.by import By from
+selenium.webdriver.support.ui import WebDriverWait from
+selenium.webdriver.support import expected_conditions as EC import os
+import time  GITLAB_URL="https://gitlab.example.com/"
+GITLAB_USER="user" GITLAB_PASSWORD="pa$$word"
+GITED_URL="https://gitea.example.com/" GITED_TOKEN="superSecret"
+driver = webdriver.Firefox(os.getcwd()+os.path.sep)
+driver.get(GITLAB_URL)  # Gitlab login user =
+driver.find_element_by_id("user_login") user.send_keys(GITLAB_USER)
+pas = driver.find_element_by_id("user_password")
+pas.send_keys(GITLAB_PASSWORD) login =
+driver.find_element_by_name("commit").click()Затем, используя
+полученную сессию, запросим страницу импорта:# Starting import process
+driver.get(GITLAB_URL+"/import/gitea/new") gitea_host =
+driver.find_element_by_name("gitea_host_url")
+gitea_host.send_keys(GITED_URL) gitea_token =
+driver.find_element_by_name("personal_access_token")
+gitea_token.send_keys(GITED_TOKEN) process =
+driver.find_element_by_name("commit").click()А теперь начнём импорт
+всех репозиториев. Для этого инициализируем подключение к Gitea и
+начнём импортировать репозитории:# iterate over table and import repos
+step by step wait = WebDriverWait(driver, 10) table =
+wait.until(EC.presence_of_element_located((By.XPATH, '//table'))) for
+row in table.find_elements_by_xpath(".//tr"):
+group=row.get_attribute("data-qa-source-project").split("/")[0]   #
+clicking select button to show dropdown menu and activate buttons
+row.find_element_by_class_name("gl-dropdown-toggle").click()
+time.sleep(1)   # Finding project group   for btn in
+row.find_elements_by_class_name("dropdown-item"):     if
+btn.get_attribute("data-qa-group-name") == group:       btn.click()
+time.sleep(1)   # starting import   import_button =
+row.find_element(By.XPATH, "//button[@data-qa-
+selector='import_button']")   import_button.click()   while True:
+time.sleep(10)     # Wait until      status =
+row.find_elements_by_class_name("gl-p-4")[-1].text     if status ==
+"Complete":       breakКазалось бы, вот и всё! Но это, к сожалению, не
+так.Финальный штрихПосле миграции мы временно подключили GitLab к
+Jenkins и получили ошибку:fatal: couldn't find remote ref refs/merge-
+requests/184/headОказалось, что при переносе были потеряны Git
+references. Чтобы это исправить, мы решили во все ветки, которые имеют
+открытые merge requests, сделать пустые коммиты. Это действие
+пересоздаст references.Вот реализация такого
+workaround:shutil.rmtree('code',ignore_errors=True)  all_orgs =
+gl.groups.list() skip_orgs = ['org1','org2'] for org in all_orgs:
+if org.name in skip_orgs:         print("Skip group", org.name)
+continue     projects = org.projects.list(all=True)     for project in
+projects:         id=project.id
+mrs=gl.projects.get(id=id).mergerequests.list(state='opened',
+sort='desc',page=1, per_page=10000)         os.mkdir('code')
+print(subprocess.run(["git", "clone", project.ssh_url_to_repo,
+"code"], capture_output=True))         for mr in mrs:
+print(project.name, id, mr.title, mr.source_branch, '=>',
+mr.target_branch)             print(subprocess.run(["git", "checkout",
+mr.source_branch], cwd='code', capture_output=True))
+print(subprocess.run(["git", "pull"], cwd='code',
+capture_output=True))             print(subprocess.run(["git",
+"commit", "--allow-empty", "-m", "Nothing here"], cwd='code',
+capture_output=True))             print(subprocess.run(["git",
+"push"], cwd='code', capture_output=True))
+shutil.rmtree('code',ignore_errors=True)После выполнения скрипта всё
+заработало корректно.Полные листинги Python-скриптов, приведённых в
+статье, доступны в репозитории flant/examples.Получившаяся инсталляция
+GitLab. В неё были добавлены новые пользователи, а некоторые старые
+проекты удаленыВыводыМиграция из Gitea в GitLab, несмотря на кажущуюся
+простоту, оказалась непростой задачей. Чтобы добиться результата,
+пришлось написать ряд скриптов и пройти через множество неожиданных
+нюансов из-за неполноты в реализации и совместимости разных API. Тем
+не менее, это удалось, и надеюсь, что полученный опыт поможет кому-
+нибудь в миграции и облегчит жизнь.P.S.Читайте также в нашем
+блоге:«GitLab CI: 6 фич из последних релизов, которых мы так
+ждали»;«Динамическая сборка и деплой Docker-образов с werf на примере
+сайта версионированной документации»; «Сборка и деплой однотипных
+микросервисов с werf и GitLab CI».

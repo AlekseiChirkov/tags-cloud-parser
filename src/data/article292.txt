@@ -1,0 +1,127 @@
+Автор: zifter
+Дата: 2021-10-03T18:26:00.000Z
+Название: Автоматизация проверки срока истечения регистрации доменов в
+kubernetes с использованием prometheus-stack
+Теги: DevOps *, Kubernetes *
+Текст:
+Для всех, кто хостит свои сайты, актуальна проблема продления
+доменного имени - если пропустить срок истечения регистрации, то можно
+на ровном месте получить кучу проблем. Для своевременного продления
+регистрации нужно отслеживать срок истечения.Для небольшого количества
+доменов будет достаточно завести напоминание в календаре, но если
+доменов много - следует автоматизировать этот процесс.Prometheus-
+stackПри использовании prometheus для мониторинга вашей инфраструктуры
+нужно проделать 3 шага:собрать метрики о времени истечения
+домена;создать визуализацию собранных метрик в grafana;создать алерты
+о приближении времени истечения домена.В случае использования
+kubernetes и установленного в него prometheus-stack задача значительно
+упрощается, так как он предоставляет следующие
+возможности:ServiceMonitor - механизм для динамического описания целей
+для сбора метрик;автоматическое добавление дашбордов в grafana через
+ConigMap;PrometheusRule - механизм динамического добавления алертов в
+prometheus;Helm chart domain-exporterhelm - это пакетный менеджер для
+kubernetes. Пакет, соответственно, называют chart.Можно
+воспользоваться готовым helm chart'ом domain-exporter, который из
+коробки предоставит всё необходимое. Этот чарт оборачивает приложение
+экспорта prometheus метрик о доменах domain_exporter, простую
+визуализацию и необходимые алерты в единый chart, который легко
+кастомизировать под собственные нужды.МетрикиPrometheus будет
+автоматически собирать данные с экспортера через механизм
+ServiceMonitor. Доступны следующие метрики:domain_expiry_days -
+количество дней до истечения домена;domain_probe_success - успешно или
+нет были собраны данные о домене;# HELP domain_expiry_days time in
+days until the domain expires # TYPE domain_expiry_days gauge
+domain_expiry_days{domain="amazon.com"} 1144
+domain_expiry_days{domain="amazon.de"} -1
+domain_expiry_days{domain="amazon.pl"} 22
+domain_expiry_days{domain="domain-failed.com"} -1
+domain_expiry_days{domain="fabiensanglard.net"} 240
+domain_expiry_days{domain="flibusta.site"} 50
+domain_expiry_days{domain="github.com"} 391
+domain_expiry_days{domain="google.com"} 2558
+domain_expiry_days{domain="habr.ru"} 217
+domain_expiry_days{domain="microsoft.com"} 232
+domain_expiry_days{domain="ok.ru"} 79
+domain_expiry_days{domain="ted.com"} 55
+domain_expiry_days{domain="vaikutis.lt"} 63
+domain_expiry_days{domain="viva64.com"} 57 # HELP domain_probe_success
+wether the probe was successful or not # TYPE domain_probe_success
+gauge domain_probe_success{domain="amazon.com"} 1
+domain_probe_success{domain="amazon.de"} 0
+domain_probe_success{domain="amazon.pl"} 1
+domain_probe_success{domain="domain-failed.com"} 0
+domain_probe_success{domain="fabiensanglard.net"} 1
+domain_probe_success{domain="flibusta.site"} 1
+domain_probe_success{domain="github.com"} 1
+domain_probe_success{domain="google.com"} 1
+domain_probe_success{domain="habr.ru"} 1
+omain_probe_success{domain="microsoft.com"} 1
+domain_probe_success{domain="ok.ru"} 1
+domain_probe_success{domain="ted.com"} 1
+domain_probe_success{domain="vaikutis.lt"} 1
+domain_probe_success{domain="viva64.com"} 1ДашбордВ верхней левой
+половине отображаются домены, время регистрации которых скоро истечет.
+В верхней правой - домены, для которых не удалось получить данные.
+Снизу - вообще все домены, для которых экспортируются метрики.вид
+дашборда в grafanaАлертыПо умолчанию доступны следующие
+алерты:DomainExpiringWarning - осталось меньше 60 дней до окончания
+регистрации. Количество дней может быть
+изменено;DomainExpiringCritical - осталось меньше 5 дней. Имеет самый
+высокий severity. Количество дней может быть
+изменено;DomainProbeFailed - не удалось собрать данные о
+домене;DomainMetricsAbsent - метрики о доменах отсутствуют. По каким-
+то причинам, метрики не могут быть собраны или отсутствуют. Это может
+свидетельствовать о каких-либо проблемах в приложении, конфигурации
+helm chart'а, prometheus или даже kubernetes кластерe.отображение
+алертов в prometheusКастомизацияHelm chart domain-exporter, как и
+любой другой helm chart, легко кастомизировать через values. Можно
+отключить конкретные алерты и задать другие границы:# Prometheus rules
+rules:   enabled: true   # Alert with warning severity if metrics is
+absent   absent:     enabled: true   # Alert with warning severity if
+expiration time is less then provided   warning:     enabled: true
+expiration: 60  # days   # Alert with critical severity alert if
+expiration time is less then provided   critical:     enabled: true
+expiration: 5  # days   # Alert on failure to detect expiration time
+failed:     enabled: true  # Grafana dashboard with representation of
+monitoring domains dashboards:   enabled: true   # Labels to add
+dashboard   labels:     # default grafana dashboard discovery label
+with stub value     # Override this value if you use custom grafana
+label     # https://github.com/grafana/helm-
+charts/blob/grafana-6.16.3/charts/grafana/values.yaml#L629
+grafana_dashboard: '1'   # Folder to put dashboard in grafana   # Will
+be used default if it's empty   targetFolder: ""  # Prometheus service
+monitor metrics:   enabled: true   # Interval between metrics scraping
+interval: 1m  # List of domains to monitor domains:   -
+example.comУстановкаДля начала нужно добавить локально helm
+репозиторий:helm repo add zifter https://zifter.github.io/helm-
+charts/после чего установить чарт с нужными доменами: helm install
+domain-exporter zifter/domain-exporter --namespace monitoring --set
+"domains={aliexpress.ru,amazon.com,amazon.pl,censor.net,domain-is-not-
+found.net}"или же через файл кастомизации values.yaml:helm install
+domain-exporter zifter/domain-exporter --namespace monitoring -f
+values.yamlгде values.yaml:# Prometheus rules rules:   warning:
+expiration: 60  # days   critical:     expiration: 5  # days  # List
+of domains to monitor domains: - google.com - habr.ru - github.com -
+vaikutis.lt - amazon.pl - amazon.com - amazon.de - ok.ru -
+flibusta.site - domain-failed.com - viva64.com - ted.comЧто осталось
+за рамками статьиЕсть несколько моментов, которые будут влиять на
+работу helm chart:должен быть настроен AlertManager, чтобы получать
+информацию об алертах в желаемый канал связи;CRD ServiceMonitor
+относительно новый механизм. Убедитесь, что в вашей версии prometheus-
+stack поддерживается именно он, а не устаревший механизм на базе
+аннотаций. Достаточно проверки через установку helm chart;Prometheus-
+stack смотрит в конкретные namespace'ы для отслеживания
+ServiceMonitor, дашбордов и алертов. Убедитесь, что он настроен
+должным образом и вы ставите helm chart в нужный
+namespace;совместимость дашборда не тестировалась с более новыми или
+же более старыми версиями grafana. Совместимость вероятна, но не
+гарантирована;чарт гарантированно работает в kubernetes 1.19+ и helm
+3. С остальными версиями совместимость не тестировалась, но, скорее
+всего, все работает или требуется немного допилить
+напильником.ЗаключениеОтслеживать время истечения доменов критически
+важно. С prometheus stack в kubernetes, который предоставляет удобные
+механизмы для упрощения оперирования мониторинга, это сделать
+легко.Используя готовый helm chart domain-exporter, который
+предоставит все необходимые метрики, дашборды и алерты из коробки,
+становится очень просто автоматизировать отслеживание времени
+истечения домена.

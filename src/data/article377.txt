@@ -1,0 +1,212 @@
+Автор: FAZIC
+Дата: 2021-09-30T19:21:46.000Z
+Название: CI/CD для UnrealEngine в связке с Gitlab
+Теги: Git *, Разработка игр *, Unreal Engine *
+Текст:
+Попробовав разные Source Control в связке с UE (Gitlab,SVN,Perforce)
+на текущий момент, для инди проекта я выбрал наиболее удобное решение,
+хотя и не самое простое в установке:Gitlab - Для использования на
+своем сервере, нужно иметь машину с линуксом(использую mint),
+некоторое время и терпение на установку сервера и все, мы счастливые
+обладатели бесплатного сервера гитлаб. Дальше настраиваем подключение
+через SourceTree и используем;Еще одной прелестью Gitlab, я бы назвал
+встроенный инструмент для CI/CD, который весьма легко настраивается и
+позволяет по одному нажатию кнопки: Билдить свет, паковать игру,
+заливать ее в стим, отправлять сообщение в дискорд и т.д, всего лишь
+нужен сервер с установленным UE. О настройке CI под Windows, я и
+расскажу.Пропустим момент, когда устанавливать Gitlab/Source tree,
+создавать в нем новый проект и прочие пункты. Предположим что все это
+уже есть и необходимо настроить runner вместе с CI.Установка Gitlab-
+RunnerСоздадим папку под него, к примеру: C:\Gitlab-Runner, скачем
+бинарник: 64-bit или 32-bit, закинем в папку созданную ранее и сменим
+название на: gitlab-runner.exe (подробнее). Главное убедитесь что
+папка имеет доступ к записи и можно запускать из нее файлы. Запускаем
+cmd, для регистрации и установки Gitlab-runner.Первым делом
+устанавливаем и стартуем runner, ниже пример с учетом случаев, когда
+для старта Windows service, нужен логин и пароль.cd C:\Gitlab-Runner
+.\gitlab-runner.exe install --user ENTER-YOUR-USERNAME --password
+ENTER-YOUR-PASSWORD .\gitlab-runner.exe startРегистрация нового
+Gitlab-runner.Заходим через веб-браузер на сервер Gitlab, переходим на
+наш новые проект. Далее Settings → CI/CD → Runners и разворачиваем
+закладку, в которой будут указаны настройки для нового сервера.
+Открываем командную строку на сервере с установленным Gitlab-runner и
+прописываем для регистрации нового runner и заполняем требования по
+пунктам, указав URL сервера, уникальный токен (его можно
+перегенерировать в случае необходимости), имя и теги, как
+идентификаторы сервера. Важной деталью является при помощи какого
+executor будем обрабатывать yml файл (я использую shell) подробнее.cd
+c:\Gitlab-runner .\Gitlab-runner.exe registerВсе, новый Runner
+зарегистрирован, обновив страницу мы сможем увидеть все доступные
+сервера. Важным моментом, для дальнейшей работы является перейти в
+настройки сервера и установить, без этой галочки, CI зависает в режиме
+pending:Так же добавлю, что в "General pipelines" можно сменить
+timeout (по дефолту 2 часа) на большое значение (у меня 16h), по
+истечению этого времени CI процесс отключается.Таким весьма нехитрым
+способом мы подготовили наш сервер к работе, как билд машину для
+CI/CD. Настройка yml и первый запускДля CI/CD, необходимо создать файл
+(.gitlab-ci.yml) в корне проекта и залить его в репозиторий, тем самым
+дав инструкции для работы. Gitlab проверит данный скрипт и если что-то
+пойдет не так, то выдаст ошибку (yaml invalid error) в CI/CD. Для
+того, что бы, не пушить десятки сломанных файлов, прямо на сайте в
+закладке CI/CD → Pipelines есть инструмент: "CI Lint", при помощи
+которого можно проверить скрипт на правильность.Так как, мы ранее
+указали что используем Shell executor, то yml файл создается по
+принципу powershell (для других executor он может отличатся). Ниже я
+привел пример, сборки клиента в двух видах (дев\шип) и сервера, а так
+же заливка на Steam решений. Бонусом отправка в дискорд сообщения об
+успешной сборке.Пример скрипта для .gitlab-ci.yml# last update
+10.04.2019 12:58PM # BUILD_CONFIG - Shipping / Development / DebugGame
+/ Debug  variables:     GIT_STRATEGY: none        # we disable fetch,
+clone or checkout for every job.     GIT_CHECKOUT: "false"     # as we
+only want to checkout and fetch in the preperation stage.
+CI_DEBUG_TRACE: "false"      CLIENT_BUILD_CONFIG: Shipping
+DEV_CLIENT_BUILD_CONFIG: Development     CLIENT_PLATFORM: Win64
+SERVER_BUILD_CONFIG: Development     SERVER_PLATFORM: Win64
+BUILD_DIR: D:\Soulhaim\Builds     CLIENT_DIR:
+D:\Soulhaim\Builds\client\ez-client         CLIENT_STEAM_PATH:
+$CLIENT_DIR\WindowsNoEditor\*     CLIENT_ARCH_NAME:
+$CLIENT_BUILD_CONFIG-$CI_COMMIT_SHA     DEV_CLIENT_DIR:
+$BUILD_DIR\dev_client\ez-client     DEV_CLIENT_STEAM_PATH:
+$BUILD_DIR\dev_client\ez-client\WindowsNoEditor\*
+DEV_CLIENT_ARCH_NAME: $DEV_CLIENT_BUILD_CONFIG-$CI_COMMIT_SHA
+SERVER_DIR: $BUILD_DIR\server\ez-server     SERVER_ARCH_NAME:
+$SERVER_BUILD_CONFIG-$CI_COMMIT_SHA     LOCAL_ARCH_PATH:
+D:\BuildsArchives     STEAM_PATH:
+D:\steamworks_sdk_148a\sdk\tools\ContentBuilder     UE4_ROOT:
+D:\UnrealEngine      stages:     - preperations     - build_path     -
+build_reflection     - build_light     - build_client         -
+load_to_steam     - upload_to_steam     - pack_client     -
+upload_client     - clean_steam_client     - dev_build_client     -
+dev_load_to_steam     - dev_upload_to_steam     - dev_pack_client
+- dev_upload_client         - dev_clean_client     - build_server
+- pack_server     - upload_server        - clean_server     - clean
+job_preperations:     stage: preperations     variables:
+GIT_STRATEGY: fetch         GIT_CHECKOUT: "true"       script:
+- echo "$CLIENT_STEAM_PATH"         - echo
+"$STEAM_PATH\content\Soulhaim"         - (Remove-Item -Path $BUILD_DIR
+-Force -Recurse -ErrorAction Ignore)         - echo "Hello"         -
+echo "$UE4_ROOT"             - echo
+"$UE4_ROOT\Engine\Build\BatchFiles\RunUAT.bat"         - echo
+"$CLIENT_DIR"         - echo "$CLIENT_BUILD_CONFIG"         - echo
+"$CLIENT_ARCH_NAME"         - echo "$DEV_CLIENT_DIR"         - echo
+"$DEV_CLIENT_BUILD_CONFIG"         - echo "$DEV_CLIENT_ARCH_NAME"
+- echo "$SERVER_DIR"         - echo "$SERVER_ARCH_NAME"     only:
+- web          job_build_path:     stage: build_path     script:
+- Start-Process -NoNewWindow -Wait "D:\Soulhaim_build_path.bat"
+only:         - web       job_build_reflection:     stage:
+build_reflection     script:         - Start-Process -NoNewWindow
+-Wait "D:\Soulhaim_build_Reflection.bat"     only:         - web
+job_build_light:     stage: build_light     script:         - Start-
+Process -NoNewWindow -Wait "D:\Soulhaim_build_light.bat"      only:
+- web          job_build_client:     stage: build_client     script:
+#-ForceDebugInfo -CrashReporter - for debug files     - Start-Process
+"$UE4_ROOT\Engine\Build\BatchFiles\RunUAT.bat" -NoNewWindow -Wait
+-ArgumentList "BuildCookRun",
+"-project=$CI_PROJECT_DIR\Soulhaim.uproject", "-nop4", "-build",
+"-cook", "-compressed", "-stage", "-ForceDebugInfo",
+"-allowcommandletrendering", "-platform=$CLIENT_PLATFORM",
+"-clientconfig=$CLIENT_BUILD_CONFIG", "-pak", "-archive",
+"-archivedirectory=$CLIENT_DIR", "-utf8output"     only:         - web
+job_Load_To_Steam:     stage: load_to_steam     script:         cp -r
+"$CLIENT_STEAM_PATH" "$STEAM_PATH\content\Soulhaim"     only:
+- web  job_Upload_To_Steam:     stage: upload_to_steam     script:
+- Start-Process
+"D:\steamworks_sdk_148a\sdk\tools\ContentBuilder\run_build.bat"
+-NoNewWindow -Wait     only:         - web  job1_pack_client:
+stage: pack_client     script:         - Start-Process -NoNewWindow
+-Wait "C:\Program Files\7-Zip\7z.exe" -ArgumentList "a",
+"$CLIENT_DIR.zip", "$CLIENT_DIR"     only:         - web
+job2_copy_to_local_client:     stage: upload_client     script:
+- cp "$CLIENT_DIR.zip" "$LOCAL_ARCH_PATH\client-$CLIENT_ARCH_NAME.zip"
+only:         - web    job3_clean_Steam_Folder:     stage:
+clean_steam_client     script:         (Remove-Item -Path
+"$STEAM_PATH\content\Soulhaim\*" -Force -Recurse -ErrorAction Ignore)
+only:         - web  dev_job_build_client:     stage: dev_build_client
+script:     #-ForceDebugInfo -CrashReporter - for debug files
+- Start-Process "$UE4_ROOT\Engine\Build\BatchFiles\RunUAT.bat"
+-NoNewWindow -Wait -ArgumentList "BuildCookRun",
+"-project=$CI_PROJECT_DIR\Soulhaim.uproject", "-nop4", "-build",
+"-cook", "-compressed", "-stage", "-ForceDebugInfo", "-CrashReporter",
+"-debug", "-allowcommandletrendering", "-platform=$CLIENT_PLATFORM",
+"-clientconfig=$DEV_CLIENT_BUILD_CONFIG", "-pak", "-archive",
+"-archivedirectory=$DEV_CLIENT_DIR", "-utf8output"     only:         -
+web  job_dev_Load_To_Steam:     stage: dev_load_to_steam     script:
+cp -r "$DEV_CLIENT_STEAM_PATH" "$STEAM_PATH\content\Soulhaim"
+only:         - web  job_dev_Upload_To_Steam:     stage:
+dev_upload_to_steam     script:         - Start-Process
+"D:\steamworks_sdk_148a\sdk\tools\ContentBuilder\run_build.bat"
+-NoNewWindow -Wait     only:         - web  job1_dev_pack_client:
+stage: dev_pack_client     script:         - Start-Process
+-NoNewWindow -Wait "C:\Program Files\7-Zip\7z.exe" -ArgumentList "a",
+"$DEV_CLIENT_DIR.zip", "$DEV_CLIENT_DIR"     only:         - web
+job2_dev_copy_to_local_client:     stage: dev_upload_client
+script:         - cp "$DEV_CLIENT_DIR.zip"
+"$LOCAL_ARCH_PATH\client-$DEV_CLIENT_ARCH_NAME.zip"     only:
+- web    job_clean_client:            stage: dev_clean_client
+script:        (Remove-Item -Path $BUILD_DIR -Force -Recurse
+-ErrorAction Ignore)     only:         - web
+job_build_server:     stage: build_server     script:         - Start-
+Process "$UE4_ROOT\Engine\Build\BatchFiles\RunUAT.bat" -NoNewWindow
+-Wait -ArgumentList "BuildCookRun", "-nocompileeditor",
+"-project=$CI_PROJECT_DIR\Soulhaim.uproject", "-nop4", "-build",
+"-cook", "-compressed", "-stage", "-noclient", "-server",
+"-serverplatform=$SERVER_PLATFORM",
+"-serverconfig=$SERVER_BUILD_CONFIG", "-pak", "-archive",
+"-archivedirectory=$SERVER_DIR", "-utf8output"     only:         - web
+job1_pack_server:     stage: pack_server     script:         - Start-
+Process -NoNewWindow -Wait "C:\Program Files\7-Zip\7z.exe"
+-ArgumentList "a", "$SERVER_DIR.zip", "$SERVER_DIR"     only:
+- web          job2_copy_to_local_server:     stage: upload_server
+script:         - cp "$SERVER_DIR.zip"
+"$LOCAL_ARCH_PATH\server-$SERVER_ARCH_NAME.zip"     only:         -
+web       job3_unpack_local_server:     stage: upload_server
+script:         - Start-Process -NoNewWindow -Wait "C:\Program
+Files\7-Zip\7z.exe" -ArgumentList "x",
+"$LOCAL_ARCH_PATH\server-$SERVER_ARCH_NAME.zip", "-oD:\"     only:
+- web          job4_send_notify_server_to_slack:     stage:
+upload_server     script:         - Start-Process
+"D:\Soulhaim_Message_Discord.bat" "New Awesome build is ready"
+-NoNewWindow -Wait     only:         - web      job_clean_server:
+stage: clean_server     script:         (Remove-Item -Path $BUILD_DIR
+-Force -Recurse -ErrorAction Ignore)             only:         - web
+job_clean:     stage: clean     script:         (Remove-Item -Path
+"$STEAM_PATH\content\Soulhaim\*" -Force -Recurse -ErrorAction Ignore)
+only:         - webПервым этапом (preperation), очищаем папку от
+старого билда, а также забираем с репозитория все последние изменения.
+Желательно, первым запуском сделать только этот этап, так как
+следующие шаги связаны с проектом и нам нужен путь к нему.Следующими
+этапами просчитываем navmesh\light\reflection, скрипты которых
+расположены в обычных *.bat файлах. Пример для просчета света на двух
+картах: Через "+" можно указывать список карт. Отдельно необходимо
+добавить, что если вы работаете с бинарной версией, то просчет
+navmesh\light\reflection желательно делать так же на бинарной версии,
+в противном случае на версии из исходников, движок будет требовать
+сделать ребилд решения, и в процесс застрянет (возможно есть решение,
+но я к сожалению его не нашел)."C:\Program Files\Epic
+Games\UE_4.26\Engine\Binaries\Win64\UE4Editor-Cmd.exe" "D:\GitLab-
+Runner\builds\ComtV2y9\0\Soulhaim\Soulhaim\Soulhaim.uproject" -nop4
+-run=resavepackages -buildlighting -quality=Preview
+-allowcommandletrendering -map=LobbyMap+GameMapДалее шаг за шагом,
+произойдет сборка Shipping client → Steam, Development client → Steam,
+Server архививируем все это и помещаем в отдельную папку в виде
+client/server-Dev/ship-hash.zip, если же билдов очень много, то время
+от времени нужно будет чистить папку с архивами, или просто убрать эти
+шаги из CI. Важный момент, так как процесс автоматический, под Steam
+нужно создать отдельного пользователя с правами на заливку билда, и
+без какой либо двухфакторной защиты, иначе процесс будет висеть в
+ожидании кода подтверждения, который некуда будет вбивать.ЗапускЗапуск
+происходит крайне просто, переходим на Ci/CD → Pipelines и жмем
+большую зеленую кнопку RunPipeline, выбираем с какой ветки хотим
+собрать и запускаем процесс. Дальше, если все хорошо, остается
+откинутся в удобном кресле с чаем и ожидать когда процесс дойдет до
+конца (или зафейлится). Любой этап можно открыть и изучить проблемы,
+если такие возникнут.Бонус отправки в дискорд сообщенияСперва заходим
+в настройки канала дискорда → интеграция → Вебхуки, создаете новый и
+копируете его URL, а дальше просто в bat вставляете сообщение и
+ссылку:curl -d "content=Build is ready: Soulhaim" -X POST
+https://вебхук вашего канала в дискордеЗаключениеВот собственно и весь
+процесс настройки CI\CD в Gitlab, подробнее можно почитать на
+официальном сайте в документации, но я постарался подробно описать
+процесс с примерами. Надеюсь статья будет вам полезной, и я ничего
+важного не забыл в ней указать. Всем спасибо за внимание и да прибудет
+с вами сила знаний.

@@ -1,0 +1,72 @@
+Автор: Alexander-Kiryushin
+Дата: 2021-09-20T22:30:24.000Z
+Название: Mongoose + Redis. Автоматизация кэширования за 5 минут
+Теги: JavaScript *, Node.JS *, MongoDB *
+Текст:
+Mongoose представляет специальную ODM-библиотеку (Object Data
+Modelling) для работы с MongoDB, которая позволяет сопоставлять
+объекты классов и документы коллекций из базы данных. Redis
+(Remote Dictionary Server)- это быстрое хранилище данных типа
+«ключ‑значение» в памяти, активно используемое в разработке с целью
+повышения производительности сервисовВ рамках данного гайда мы
+рассмотрим связку Mongoose + Redis и посмотрим, как обеспечить
+максимально удобное взаимодействие между нимиШаг 1. Установка
+пакетовyarn add redis mongooseШаг 2. Конфигурация Redis.const redisUrl
+= process.env.REDIS_CACHE_URL const client =
+redis.createClient(redisUrl) client.get =
+util.promisify(client.get)Шаг 3. Формирование ключаОдна из важных
+задач кэширования - составление ключа, под которым кэшировать данные.
+В контексте mongoose мы можем очень эффективно использовать свойства и
+методы прототипа Query, которые позволяют получить основную структуру
+запроса:mongooseCollection.name  - наименование коллекцииgetQuery -
+возвращает список фильтров запроса ( например, where)op - наименование
+операции (например, find)options - опции запроса ( например, limit
+) const key = JSON.stringify(   {     ...this.getQuery(),    
+collection: this.mongooseCollection.name,     op: this.op,    
+options: this.options   } )Шаг 4. Основная логикаТеперь, определив
+паттерн формирования ключей и установив соединение с Redis, можно
+перейти к имплементации основной логики кэширования:Пытаемся получить
+данные по ключуЕсли удалось, то возвращаем десериализованные
+данныеЕсли же данные еще не были закэшированы, то выполняем запрос в
+базу данныхКэшируем полученные данные Возвращаем результатconst
+cacheValue = await client.get(key) if ( cacheValue ) return
+JSON.parse(cacheValue)  const result = await exec.apply(this,
+arguments) if ( result ) {   client.set(key, JSON.stringify(result)) }
+return resultШаг 5. Собираем все вместе Последним шагом, чтобы собрать
+весь функционал вместе, будет переопределение метода exec, чтобы
+кэширование применялось «из коробки»: module.exports =   {    
+applyMongooseCache() {        const redisUrl =
+process.env.REDIS_CACHE_URL       const client =
+redis.createClient(redisUrl)       client.get =
+util.promisify(client.get)       const exec =
+mongoose.Query.prototype.exec        mongoose.Query.prototype.exec =
+async function () {          const key = JSON.stringify(           { 
+          ...this.getQuery(),             collection:
+this.mongooseCollection.name,             op: this.op,            
+options: this.options           }         )          const cacheValue
+= await client.get(key)         if ( cacheValue ) return
+JSON.parse(cacheValue)          const result = await exec.apply(this,
+arguments)          if ( result ) {           client.set(key,
+JSON.stringify(result))         }          return result       }    
+},   }Теперь остается только вызвать функцию applyMongooseCache  при
+старте Вашего приложения. Шаг 6. Docker-compose для локального запуска
+сервисовДля тестирования данного функционала нам нужны два
+сервиса:MongoDB RedisMongo Express - система администрирования
+MongoDBRedis admin - система администрирования Redisversion: '3'
+services:   mongo:     image: mongo     restart: always    
+environment:       MONGO_INITDB_ROOT_USERNAME: root      
+MONGO_INITDB_ROOT_PASSWORD: root     ports:       - 27017:27017   
+mongo-express:     image: mongo-express:0.54     restart: always    
+ports:       - 8081:8081     environment:      
+ME_CONFIG_MONGODB_ADMINUSERNAME: root      
+ME_CONFIG_MONGODB_ADMINPASSWORD: root     depends_on:       - mongo  
+redis:     image: redis     ports:       - 6379:6379    redis-admin: 
+  image: erikdubbelboer/phpredisadmin     ports:       - 8085:80    
+depends_on:       - redis     environment:       REDIS_1_HOST: redis 
+    REDIS_1_NAME: redis       REDIS_1_PORT: 6379Используя данную
+базовую конфигурацию, Вы сможете получить к сервисам локальный доступ
+на 27017(mongo) и  6379 (Redis) портах.Соответственно, системы
+администрирования будут доступны на 8081 ( mongo-express) и 8085
+(Redis admin) портах. Ссылка на репозиторий:
+https://github.com/IAlexanderI1994/mongoose-redisБлагодарю Вас за
+прочтение. Буду рад Вашим вопросам и комментариям.

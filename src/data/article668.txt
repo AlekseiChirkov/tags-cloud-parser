@@ -1,0 +1,120 @@
+Автор: Braincom
+Дата: 2021-09-26T08:45:58.000Z
+Название: Разделение, объединение и поворот PDF-документов на Python с помощью
+borb
+Теги: Python *, PDF
+Текст:
+ВведениеФормат переносимых документов (PDF) не является форматом
+WYSIWYG (What You See is What You Get (То, Что Вы Видите, это То, Что
+Вы Получаете)). Он был разработан, чтобы быть независимым от
+платформы, независимым от базовой операционной системы и механизмов
+рендеринга.Для достижения этой цели PDF был создан для взаимодействия
+с помощью чего-то более похожего на язык программирования, и для
+достижения результата полагается ряд инструкций и операций.
+Фактически, PDF основан на языке сценариев - PostScript, который был
+первым независимым от устройства языком описания страниц.В этом
+руководстве мы будем использовать borb - библиотеку Python,
+предназначенную для чтения, манипулирования и генерации PDF-
+документов. Он предлагает как низкоуровневую модель (что позволяет
+получить доступ к точным координатам и макету), так и высокоуровневую
+модель (где вы можете делегировать точные расчеты полей, позиций и т.
+д.).В этом руководстве мы рассмотрим, как разделить и объединить PDF-
+документы на Python с помощью borb, а также рассмотрим, как
+поворачивать страницы в PDF-документе.Разделение и объединение PDF-
+документов являются основой для многих сценариев
+использования:Обработка счета-фактуры (вам не нужны условия, чтобы вы
+могли удалить эти страницы)Добавление сопроводительного письма к
+документам (отчет об испытаниях, счет-фактура, рекламные
+материалы)Агрегирование тестовых результатов из гетерогенных
+источниковИ т.д.Установка borbBorb можно загрузить из исходного кода
+на GitHub или установить через pip:$ pip install borbРазделение PDF с
+помощью borbЧтобы продемонстрировать разделение, вам понадобится PDF-
+файл с несколькими страницами.Мы начнем с создания такого PDF-файла с
+помощью borb. Этот шаг не является обязательным, вы, конечно, можете
+просто использовать PDF-файл, который у вас есть вместо этого:from
+borb.pdf.canvas.color.color import HexColor from
+borb.pdf.canvas.layout.page_layout.multi_column_layout import
+SingleColumnLayout from borb.pdf.canvas.layout.page_layout.page_layout
+import PageLayout from borb.pdf.canvas.layout.text.paragraph import
+Paragraph from borb.pdf.document import Document from
+borb.pdf.page.page import Page from borb.pdf.pdf import PDF from
+decimal import Decimal  def create_document(heading_color: HexColor =
+HexColor("0b3954"),                      text_color: HexColor =
+HexColor("de6449"),                     file_name: str =
+"output.pdf"):      d: Document = Document()      N: int = 10     for
+i in range(0, N):              # Создайте новую страницу и добавьте ее
+в документ         p: Page = Page()         d.append_page(p)
+# Установите отображение страницы на новой странице         l:
+PageLayout = SingleColumnLayout(p)                  # Добавьте абзац,
+чтобы идентифицировать страницу         l.add(Paragraph("Page %d of
+%d" % (i+1, N),                         font_color=heading_color,
+font_size=Decimal(24)))                                  # Добавьте
+абзац фиктивного текста
+l.add(Paragraph("""                         Lorem Ipsum is simply
+dummy text of the printing and typesetting industry.
+Lorem Ipsum has been the industry's standard dummy text ever since the
+1500s,                          when an unknown printer took a galley
+of type and scrambled it to make a type specimen book.
+It has survived not only five centuries, but also the leap into
+electronic typesetting, remaining essentially unchanged.
+It was popularised in the 1960s with the release of Letraset sheets
+containing Lorem Ipsum passages,                          and more
+recently with desktop publishing software like Aldus PageMaker
+including versions of Lorem Ipsum.                         """,
+font_color=text_color))          # Сохраните документ на диске
+with open(file_name, "wb") as pdf_out_handle:
+PDF.dumps(pdf_out_handle, d)Этот пример кода генерирует PDF-документ,
+состоящий из 10 страниц:Каждая страница начинается с «Страницы x из
+10». Это облегчит идентификацию страниц позже.Каждая страница содержит
+1 абзац текста.Разделение PDF-документов на PythonТеперь давайте
+разделим данный PDF. Начнем с его разделения на две части: первая
+половина содержит первые 5 страниц, а вторая половина содержит
+оставшиеся:def split_half_half():    # Читать PDF   with
+open("output.pdf", "rb") as pdf_file_handle:     input_pdf =
+PDF.loads(pdf_file_handle)    # Создайте два пустых PDF-файла для
+хранения каждой половины разделения   output_pdf_001 = Document()
+output_pdf_002 = Document()    # Разделение   for i in range(0, 10):
+if i < 5:       output_pdf_001.append_page(input_pdf.get_page(i))
+else:       output_pdf_002.append_page(input_pdf.get_page(i))    #
+Написать PDF   with open("output_001.pdf", "wb") as pdf_out_handle:
+PDF.dumps(pdf_out_handle, output_pdf_001)    # Написать PDF   with
+open("output_002.pdf", "wb") as pdf_out_handle:
+PDF.dumps(pdf_out_handle, output_pdf_002)Мы извлекли первые 5 страниц
+в новый Document, а следующие 5 страниц во второй новый Document,
+фактически разделив оригинальную на две меньшие сущности. Может быть
+упрощен с помощью метода get_page(), так как его возвращаемый тип
+может быть непосредственно использован для withappendappend_page().Вы
+можете проверить полученные PDF-файлы, чтобы убедиться, что код
+работает должным образомОбъединение PDF-документов в PythonДля работы
+со следующими примерами нам понадобятся два PDF-файла. Давайте
+использовать более ранний код для их генерации, если у вас его еще
+нет:create_document(HexColor("247B7B"), HexColor("78CDD7"),
+"output_001.pdf") create_document(file_name="output_002.pdf")Интуиция,
+используемая для разделения, очень похожа на слияние - хотя мы можем
+добавлять целые документы в другие документы, а не только страницы.
+Однако иногда вам может потребоваться разделить документ (отрезать
+последнюю страницу), прежде чем объединять его с другой.Мы можем
+объединить их полностью (объединяя оба PDF-файла), но мы также можем
+просто добавить некоторые страницы первого PDF-файла во второй, если
+предпочтем это таким образом - используя функцию append_page(), как и
+раньше.Давайте начнем с их полного объединения :def
+concatenate_two_documents():    # Прочитайте первый PDF-файл   with
+open("output_001.pdf", "rb") as pdf_file_handle:     input_pdf_001 =
+PDF.loads(pdf_file_handle)      # Прочитайте второй PDF-файл   with
+open("output_002.pdf", "rb") as pdf_file_handle:     input_pdf_002 =
+PDF.loads(pdf_file_handle)      # Создайте новый PDF-файл, объединив
+два входных файла   output_document = Document()
+output_document.append_document(input_pdf_001)
+output_document.append_document(input_pdf_002)      # Написать PDF
+with open("output.pdf", "wb") as pdf_out_handle:
+PDF.dumps(pdf_out_handle, output_document)Поворот страниц в PDF-
+документах на PythonСтраница в PDF-документе может быть повернута на
+90 градусов в любую сторону. Этот вид работы позволяет легко
+переключаться между альбомным и портретным режимами.В следующем
+примере вы сможете повернуть страницу одного из входных PDF-файлов,
+которые мы создали ранее:def rotate_first_page():   # Чтение PDF
+with open("output_001.pdf", "rb") as pdf_file_handle:
+input_pdf_001 = PDF.loads(pdf_file_handle)    # Поворот страницы
+input_pdf_001.get_page(0).rotate_left()        # Запись PDF на диск
+with open("output.pdf", "wb") as pdf_out_handle:
+PDF.dumps(pdf_out_handle, input_pdf_001)

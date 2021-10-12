@@ -1,0 +1,191 @@
+Автор: PatientZero
+Дата: 2021-10-01T13:51:11.000Z
+Название: iOS 15 позволяет находить даже выключенный iPhone: как это сделано и
+есть ли опасность
+Теги: Информационная безопасность *, Разработка под iOS *, Беспроводные
+технологии *
+Текст:
+В iOS 15.0 появилась новая функция: iPhone теперь можно найти при
+помощи Find My, даже когда iPhone «отключен». Как это работает?
+Представляет ли функция проблему для безопасности?   Я заметил эту
+функцию довольно давно на одном из моих iPhone с бетой iOS 15. Вот
+скриншот, который я сделал в июле. С тех пор интерфейс пользователя
+немного изменился.    Пользователи далеко не сразу заметили
+существование этой функции. Нужно обновиться до iOS 15.0, включить в
+iPhone службы геолокации, войти в аккаунт пользователя, участвовать в
+сети Find My, и так далее. А под конец совершить самое странное
+действие, которое сегодня никто не делает: отключить iPhone. Но как
+только об этом узнал Twitter, популярность темы мгновенно выросла. Как
+и количество слухов о том, как реализована эта функция.   В iOS 15
+телефон можно находить, даже когда питание отключено   Я не понимаю,
+что означает «iPhone можно находить после отключения питания». Похоже,
+«отключение питания» больше не означает, что телефон «отключен»,
+устройство продолжает работать и выполняет какой-то обмен данными на
+короткое расстояние с низким энергопотреблением. Пока ещё не понял,
+как к этому относиться.   Always-on Processor (AOP)  Публичной
+документации об AOP очень мало. Во всех чипах и различных встроенных
+устройствах, производимых Apple, работает операционная система
+реального времени под названием RTKitOS. AOP в iPhone тоже не является
+исключением. Однако AOP имеет особую роль. Он соединяет почти все
+остальные чипы iPhone. Для некоторых чипов он выполняет только
+простейшие задачи наподобие управления питанием, а для других он
+используется как прозрачный прокси, при необходимости пробуждающий
+iOS.   Таким образом, постоянно включенный процессор на самом деле
+экономит энергию. iOS может уйти в сон, пока AOP ждёт аппаратных
+событий. Примером такого события может быть информация с датчика
+движения. Экран включается, даже если вы не касаетесь ни одной кнопки
+iPhone.    Поискав в Интернете, можно узнать, что даже Siri
+реализована в AOP. Если вам не особо интересны технические
+подробности, то можете пропустить оставшуюся часть этого раздела. Вам
+достаточно только знать, что AOP также соединяет чипы беспроводной
+связи с их интерфейсами управления питанием.   Большинство драйверов
+ядра iOS имеет простую структуру. Если в чипе работает RTKitOS, то это
+видно на выводе ioreg. Например, в этом списке встречается Rose — чип
+U1 на основе Ultra-wideband.    Хоть это происходит и не в ядре iOS,
+AOP реализует копию этих драйверов. Например, регулирование диапазона
+U1 имеет дублирующую реализацию, работающую без nearbyd и способную
+выполняться изолированно в AOP.    Даже если чип не основан на
+RTKitOS, то AOP всё равно может к нему подключиться. Чип Bluetooth в
+iPhone 11, 12 и 13 изготовлен Broadcom и основан на операционной
+системе ThreadX. Тем не менее, AOP iPhone имеет частичный контроль над
+Bluetooth. Хотя он и не подчиняется той же схеме на основе RTKitOS, но
+может подавать питание на чип Bluetooth при помощи драйвера spmi-
+bluetooth.   Стоит заметить, что это очень отличается от ситуации с
+HomePod mini и Watch. В них используется чип Bluetooth производства
+Apple с кодовым названием Marconi. AOP может управлять Marconi при
+помощи драйверов marconi-bluetooth и aop-marconi-bt-control.  Запуск
+приложения Bluetooth, когда iPhone «выключен»  Всё, что необходимо
+iPhone для включения Find My, пока телефон «выключен» — простейшее
+управление питанием, а также чип Bluetooth, способный отправлять
+advertisements Bluetooth LE. Более того, эти advertisements требуют
+секретного ключа, привязанного к Apple ID в iPhone.   Чипы Broadcom
+очень похожи на чипы Cypress. SDK Cypress поддерживают внешние
+приложения IoT, требующие только чипа Bluetooth без дополнительных
+хостов. Эти приложения выполняются в потоке ThreadX под названием
+mpaf. Давайте проверим, есть ли где-то во встроенном ПО Bluetooth
+поток mpaf. Для этого скачаем IPSW iOS 15.0, смонтируем самый большой
+файл .dmg и перейдём в /usr/share/firmware/bluetooth. Файлы .bin — это
+патчи, загружаемые через драйвер Bluetooth PCIe. Начиная с iPhone 11
+они содержат несколько отладочных строк. Выполнив grep mpaf *, можно
+получить такой список совместимости устройств.   Серия iPhone 11,
+BCM4378B1 (Hei, Moana, Tala) Серия iPhone 12, BCM4387C2 (Almond,
+Cashew, Hazelnut, Pistachio) Серия iPhone 13, BCM4387C2 (Acacia,
+Camellia, Lilac, Mimosa) Серия iPad Air 2020, BCM4387C2 (Pomegranate)
+Некоторые другие серии iPad, BCM4387C2 (Baobab, Boab, Rambutan)
+Любопытно, что iPhone SE 2020 под кодовым именем Fiti, тоже содержащий
+чип BCM4378B1, не имеет патча mpaf. Я обновил iPad Air 2020 до iOS
+15.0, и несмотря на наличие патчей для Pomegranate, диалоговое окно
+Find My не отображается. Кроме того, на другом iPhone, залогиненном в
+тот же аккаунт, нет обновления местоположения iPad. То есть, вероятно,
+есть различия между текущими поддерживаемыми устройствами и чипами,
+теоретически способными поддерживать эту функцию. Возможно, Apple в
+будущем будет добавлять новые устройства.   Патч mpaf реализует
+приложение lpm. Вероятно, его название расшифровывается как «low-power
+mode» («режим низкого энергопотребления») и оно реализует сервис gatt
+Bluetooth LE. Всё это можно найти в строках и до меня это обнаружил
+plonk.  tier2/Olympic/PCIE/Pistachio_CLPC_OS/USI/bld/A_4387C2_ROM/tier
+2/patch/bcs/mpaf_layer_patch.o.patch2.c tier2/Olympic/PCIE/Pistachio_C
+LPC_OS/USI/bld/A_4387C2_ROM/tier2/patch/mpaf/apps/lpm/lpm_app.o.patch2
+.c tier2/Olympic/PCIE/Pistachio_CLPC_OS/USI/bld/A_4387C2_ROM/tier2/pat
+ch/mpaf/apps/lpm/lpm_app_gatt.o.patch2.c tier2/Olympic/PCIE/Pistachio_
+CLPC_OS/USI/bld/A_4387C2_ROM/tier2/patch/mpaf/apps/lpm/lpm_app_fsm.o.p
+atch2.c  Эти патчи были добавлены в iOS 15 и ранее они отсутствовали.
+Их названия соответствуют ожидаемой функциональности. В этом посте я
+не буду приводить инструкции о том, как анализировать эти патчи,
+дампить ПЗУ чипа и т.д. Строк достаточно, чтобы убедиться, что эта
+функция реализована в чипе Bluetooth.  Связано ли содержимое
+секретного ключа с чипом U1?  Одна птичка напела мне, что телефон
+записывает последовательность заранее вычисленных криптографических
+маяков в чипсет UWB, но птичка — плохая замена документации   В AirTag
+содержимое ключа хранится в чипе U1. Apple неспроста назвала nRF в
+AirTag «Durian» («дуриан»). Компания не любит его и не доверяет ему,
+но он дёшев и потребляет мало энергии. Чаще всего U1 находится в
+состоянии сна и время от времени пробуждается.   Но в iPhone система
+другая. В iPhone ключи хранятся в Secure Enclave (SE). В одной из
+ранних сборок U1 даже присутствовали отладочные строки для обмена
+содержимыми ключей между U1 и SE, но в последних сборках их уже нет.
+То есть птичка была права относительно AirTag, но не про iPhone.
+Передача содержимого секретных ключей  После установки отладочного
+профиля Bluetooth на iPhone 12 с iOS 15.1b2 вывод idevicesyslog перед
+завершением работы выглядит так:  Sep 30 22:02:58 BlueTool[126]
+<Notice>: Completed handling of dictionary-xpc event   Sep 30 22:02:58
+bluetoothd[89] <Notice>: BlueTool finished running «hci reset» command
+— output was «0x0e 0x04 0x01 0x03 0x0c 0x00»   …   Sep 30 22:02:58
+BlueTool[126] <Notice>: Completed handling of dictionary-xpc event
+Sep 30 22:02:58 bluetoothd[89] <Notice>: BlueTool finished running
+«hci cmd 0xFE62 0x06 ...» command — output was "<decode: missing
+data>"   Sep 30 22:02:59 bluetoothd[89] <Notice>: BlueTool finished
+running «hci cmd 0xFE62 0x06 ...» command — output was "<decode:
+missing data>"   Sep 30 22:02:59 BlueTool[126] <Notice>: Completed
+handling of dictionary-xpc event   Sep 30 22:02:59 bluetoothd[89]
+<Notice>: BlueTool finished running «hci cmd 0xFE62 0x06 ...» command
+— output was "<decode: missing data>"   Sep 30 22:02:59 BlueTool[126]
+<Notice>: Completed handling of dictionary-xpc event   Sep 30 22:02:59
+bluetoothd[89] <Notice>: BlueTool finished running «hci cmd 0xFE62
+0x06 ...» command — output was "<decode: missing data>"   Sep 30
+22:02:59 BlueTool[126] <Notice>: Completed handling of dictionary-xpc
+event   Sep 30 22:02:59 bluetoothd[89] <Notice>: BlueTool finished
+running «hci cmd 0xFE62 0x06 ...» command — output was "<decode:
+missing data>"   Sep 30 22:02:59 BlueTool[126] <Notice>: Completed
+handling of dictionary-xpc event   Sep 30 22:02:59 bluetoothd[89]
+<Notice>: BlueTool finished running «hci cmd 0xFE62 0x07 0x00 0x01»
+command — output was «0x0e 0x05 ...»   Sep 30 22:02:59 BlueTool[126]
+<Notice>: Completed handling of dictionary-xpc event   Sep 30 22:02:59
+bluetoothd[89] <Notice>: BlueTool finished running «bcm -s
+0x0f,0x00,0x02,0x00,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00» command —
+output was ""   Sep 30 22:02:59 BlueTool[126] <Notice>: Completed
+handling of dictionary-xpc event   Sep 30 22:02:59 bluetoothd[89]
+<Notice>: BlueTool finished running «hci cmd 0xFE62 0x04» command —
+output was «0x0e 0x05 0x01 0x62 0xfe 0x00 0x04»   Sep 30 22:02:59
+backboardd(libEDR)[66] <Notice>: ScheduleSetBrightnessIn_block_invoke:
+enter WaitUntil late 0.126834 millisecond (333 / 333)   Sep 30
+22:02:59 backboardd[66] <Notice>: brightness change:0.67814
+reason:BrightnessSystemDidChange options:<private>   Sep 30 22:02:59
+SpringBoard(FrontBoard)[62] <Notice>: Shutdown task «NotifyBluetooth»
+complete after 1.59s   Sep 30 22:02:59 SpringBoard(CoreUtils)[62]
+<Notice>: Invalidate CID 0x2B760001   Sep 30 22:02:59
+SpringBoard(FrontBoard)[62] <Notice>: Shutdown tasks complete.   Sep
+30 22:02:59 SpringBoard(CoreUtils)[62] <Notice>: Invalidated  Sep 30
+22:02:59 bluetoothd[89] <Notice>: BT_FW_OK flag is set. Entering
+LPM...  Sep 30 22:02:59 bluetoothd(CoreUtils)[89] <Notice>: LPM entry
+took 1578ms   Sep 30 22:02:59 bluetoothd[89] <Notice>: Sending BT
+Stats to CoreAnalytics for com.apple.BTLpmManagerStats   Sep 30
+22:02:59 bluetoothd[89] <Notice>: PowerManager power state is 0   Sep
+30 22:02:59 bluetoothd[89] <Notice>: PowerManager power state is 0
+Sep 30 22:02:59 bluetoothd[89] <Notice>: PowerManager power state is 0
+Sep 30 22:02:59 bluetoothd[89] <Notice>: PowerManager power state is 0
+[disconnected]  Последние этапы повторяются множество раз с выводом
+произвольных чисел. Это маяки, настраиваемые в чипе Bluetooth, поэтому
+я вырезал их из поста. Затем в конце чип Bluetooth сообщает, что
+переходит в режим низкого энергопотребления (LPM). Сразу же после
+этого iPhone «отключается».   Каждое advertisement функции Find My
+начинается с 0x4c 0x00 0x12 0x19 и эта последовательность байтов также
+содержится в выводе BlueTool. Суммарно в чип Bluetooth записывается 80
+advertisements.   На случай, если вы захотите отладить его
+самостоятельно, сброс HCI — это последняя информация, видимая в Apple
+PacketLogger, в то время как idevicesyslog продолжает отображать вывод
+и команды BlueTool.  Влияние на безопасность и конфиденциальность
+Новая функция Find My впервые позволила широкой публике узнать об AOP,
+а также о возможности автономной работы чипа Bluetooth.   Если
+предположить, что кто-то взломал ваш iPhone и шпионит за вами, он
+может и показать экран «отключения питания», но не отключать iPhone.
+Никогда не считайте, что устройство отключено, пока из него не
+извлечена батарея или лучше того — его не засунули в блендер.
+Например, АНБ взломало телевизор Samsung и добавило поддельный режим
+отключения, чтобы шпионить за людьми.   Протокол Find My имеет пару
+интересных механизмов для защиты вашей конфиденциальности. Он был
+подвергнут полному реверс-инжинирингу и существует его реализация в
+open source. Более того, приложение AirGuard позволяет вам
+идентифицировать маяки BLE Find My в Android. Если вы опасаетесь
+утечки своих местоположений через Find My, то можете просто отключить
+функцию в iPhone.   Учтите, что другие чипы беспроводной связи тоже
+обеспечивают утечку информации о местоположении. Сотовое подключение
+позволяет локализовать вас, а поставщик услуг мобильной связи может
+хранить историю местоположений, Wi-Fi тоже обеспечивает утечку
+местоположения (хоть с этим помогает справиться рандомизация MAC-
+адреса), и это ещё не всё. Что бы вы ни делали, смартфон — это
+устройство для слежки за человеком. Защита конфиденциальности в Find
+My устраняет только один возможный аспект слежки из множества.   Самое
+страшное может заключаться в том, что AOP и Bluetooth LPM позволяют
+создать новый вектор зловредного ПО, постоянно хранящегося в
+оборудовании.

@@ -1,0 +1,48 @@
+Автор: LinCat
+Дата: 2021-10-07T11:25:50.000Z
+Название: Загрузка треков со Spotify с помощью питона
+Теги: Python *, Программирование *
+Текст:
+Здравствуйте, дорогие пользователи хабра! Сегодня я расскажу как
+используя python можно скачивать треки со спотифая. Основано это на
+загрузки видео с ютуба. Да-да мы будем искать песни на ютубе и качать
+их оттуда. Ссылка на GitHub с репозиторием и интересным бонусом в
+конце.Пример работыПодготовкаТак как мы будем писать на языке
+программирования python его сначала нужно установить. Сделать это
+можно на официальном сайте. После установки питона нам нужно
+установить необходимые библиотеки. Для этого в консоли пропишем такую
+команду: pip install spotipy youtubesearchpython youtube_dl. Также нам
+нужно установить ffmpeg. Как его установить вы можете найти в
+интернете.Далее идем на эту страницу. Панель spotifyНажимаем на
+кнопочку LOG IN и заходим через свой spotify аккаунт. Зашли? Создаем
+новое приложение нажав на кнопочку CREATE AN APPПанель SpotifyВводим
+любое название и описание. Создаем приложение нажав CREATE. После
+нажатия мы попадаем на страницу с информацией о приложении. Отсюда мы
+копируем Client ID и Client Secret. Записываем их куда-нибудь.Пишем
+кодДля начала нам нужно импортировать библиотеки:from __future__ impor
+t unicode_literalsimport spotipyfrom spotipy.oauth2 import SpotifyOAut
+h, SpotifyClientCredentialsfrom youtubesearchpython import VideosSearc
+himport youtube_dlДобавляем переменные с нужными нам
+данными:url = input("Введи ссылку на трек: ")client_id = "" # Сюда
+вводим полученные данные из панели спотифаяsecret = "" # Сюда вводим
+полученные данные из панели спотифаяНачнем писать код:1. Подключаемся
+к спотифаюauth_manager = SpotifyClientCredentials(client_id=client_id,
+ client_secret=secret)spotify = spotipy.Spotify(auth_manager=auth_mana
+ger)2. Функция для получения информацииdef music(result):  performers
+= ""  music = result['name']  for names in result["artists"]:
+performers = performers + names["name"] + ", "  performers =
+performers.rstrip(", ")  video = search(music, performers)  name =
+f"{performers} - {music}"  print(name)  ydl_opts = {'format':
+'bestaudio/best', 'postprocessors': [{'key': 'FFmpegExtractAudio',
+'preferredcodec': 'mp3', 'preferredquality': '192',}], 'outtmpl':
+f'./{name}.webm'}  download(video, ydl_opts)  print("Готово!")3.
+Функция для поиска трекаdef search(music, performers):  videosSearch =
+VideosSearch(f'{performers} - {music}', limit = 1)  videoresult =
+videosSearch.result()["result"][0]["link"]  return videoresult4.
+Функция для загрузки трекаdef download(videoresult, ydl_opts):  with
+youtube_dl.YoutubeDL(ydl_opts) as ydl:
+ydl.download([videoresult])5. Передаем ссылку и запускаем поиск.result
+= spotify.track(url)music(result)Вот пример работы кода:Пример
+работыТрек появится в папке из которой вы запускали код.КонецВот и
+подошла моя первая статейка к концу. Не забывайте что код и бонус есть
+в этом репозитории на гитхабе. Удачного использования!

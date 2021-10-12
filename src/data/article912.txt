@@ -1,0 +1,305 @@
+Автор: blagochinnoved
+Дата: 2021-09-21T12:04:16.000Z
+Название: Правильная валидация в Android
+Теги: Разработка под Android *, Kotlin *
+Текст:
+О чём это?Эта статья - обзор моей Android-библиотеки валидации,
+которая позволяет организовать сложную валидацию данных. В первую
+очередь библиотека рассчитана на проверку пользовательского
+ввода.Часто в мобильных приложениях приходится делать различные экраны
+для ввода пользователем информации. Но так как пользователи не
+отличаются умом и сообразительностью - приходится проверять, что они
+там написали: запрещенные символы, максимальная длина, соответствие
+RegExp и так далее.Первое, что приходит в голову для решения проблемы
+- прицепить регулярку прямо на EditText Например, вот так:val pattern
+= "[a-z]+".toRegex()  editText.addTextChangedListener {    
+val text = it?.toString() ?: return@addTextChangedListener  
+if (text.matches(pattern)) {               hideError(editText) 
+} else {               showError(editText, "Only a-z symbols allowed")
+        } }Но а если теперь я хочу проверять поле по двум разным
+RegExp и выводить разные ошибки?Ну тогда можно добавить второй
+слушатель:editText.addTextChangedListener {     val text =
+it?.toString() ?: return@addTextChangedListener     if (text.length <=
+10) {         hideError(editText)     } else {
+showError(editText, "Only 10 symbols allowed")     } }Однако, теперь
+если в поле ввести строку "12345" то ошибки не будет: первый слушатель
+выставит ошибку на поле, потому что поле содержит цифры, а вот второй
+слушатель скроет ошибку, потому что по его мнению - поле правильное,
+не более 10 символов.И это только одна проблема. Дальше - веселее:Как
+повесить на поле множество правил валидации, чтобы они правильно
+работали вместе?Как добавлять или удалять правила?Где хранить эту кучу
+валидаторов?Как проверять любые типы данных, а не только строковые?и
+многое другое...РешениеВся валидация должна происходить во ViewModel
+или Presenter, но не в UI слое. Задача UI - должным образом
+реагировать на результат проверки.Не должно быть никаких специальных
+view-классов с поддержкой валидации. Валидацию можно привязать к любой
+viewВалидаторы должны поддерживать множество различных правил
+проверки, чтобы, например, каждое правило выдавало собственную
+ошибку.Схематично всё выглядит примерно вот так:Всё это я реализовал в
+отдельной библиотеке.Теперь рассмотрим её подробнее.Condition - основа
+всегоВ основе всей валидации лежит условие (Condition) - простейший
+интерфейс с одним методом validate.interface ConditionКак это
+работает?На изи! У Condition есть метод validate(data), который
+проверит данные и вернёт результат ValidationResult. Внутри
+ValidationResult будет булевый результат проверки isValid и сообщение
+об ошибке, которое должно появляться если isValid == falseСложений и
+умножение Condition можно складывать и умножать. Сложение работает как
+аналог булевого ИЛИ, а умножение как аналог булевого ИСложение (ИЛИ)ИЛ
+ИConditon(true)Conditon(false)Conditon(true)Conditon(true)Conditon(tru
+e)Conditon(false)Conditon(true)Conditon(false)Умножение (И)ИConditon(t
+rue)Conditon(false)Conditon(true)Conditon(true)Conditon(false)Conditon
+(false)Conditon(false)Conditon(false)Точно так же склыдываются или
+умножаются ValidationResultValidator - проверка по множеству условийА
+что если надо проверять значение по множеству условий?Как это
+работает?Validator по-сути является Condition, только более
+прокаченный.Внутри Validator  находится множуство условий
+Set<Condition>. В момент проверки значение проверяется по каждому из
+условий, формируется набор результатов валидации
+Set<ValidationResult>. Затем, этот набор с результатами передается на
+вход оператору (Operator), который и решает, какой будет финальный
+результат валидации. Вот, Всё.ValidatorУ валидатора есть свои
+приколы:ОператорOperator - это просто
+Condition<Collection<ValidationResult>>, то есть тупа проверяет
+коллекцию результатов валидации. Получается такой аналог логического
+оператора из начального курса булевой алгебры. По-умолчанию
+используется оператор-конъюнкция.Но можно написать свой оператор,
+который, например, будет выдавать ValidationResult(true) если
+количество валидных условий достигло порогового значения.class
+ThresholdOperator(val validThreshold: Int) : Validator.Operator {
+override fun validate(value: Collection<ValidationResult>?):
+ValidationResult {         val validCount = value?.count { it.isValid
+} ?: 0          return if (validCount >= validThreshold) {
+ValidationResult.valid()         } else {
+ValidationResult.invalid("Less than $validThreshold valid conditions")
+}     } }Установка оператораvalidator.setOperator(ThresholdOperator(va
+lidator.getConditionsSet().size / 2))Удаление оператораНельзя удалять
+оператор! Validator не может работать без оператораНаблюдение за
+изменением оператораМожет быть такое, что необходимо отслеживать
+изменения оператора. Например, чтобы обновить
+view.validator.addOperatorChangedListener {     // on operator changed
+}  //Или удаляем слушателя
+validator.removeOperatorChangedListener(operatorListener)Набор
+условийДобавление условияvalidator.addCondition(Condition { string ->
+ValidationResult.obtain(string?.contains("target") == true, "String
+must contains target") })Удаление
+условияvalidator.removeCondition(condition)Наблюдение за изменением
+условийЧтобы следить за списком условий - добавьте слушателя
+OnConditionsChangedListener, который будет вызываться при любом
+изменении условийvalidator.addConditionsChangedListener {
+newConditions ->     //on new conditions }Изменение условийЕсли нужно
+сделать много преобразований можно использовать changeConditionsSet,
+чтобы слушатель OnConditionsChangedListener сработал только один раз -
+после всех преобразований набора условий.validator.changeConditionsSet
+{     this.add(Conditions.RequiredField())     this.remove(condition2)
+this.add(Conditions.NotNull()) }LiveDataValidator - реактивная
+валидацияБыло бы удобно, если бы валидатор самостоятельно проверял
+данные при каждом их изменении. Так и сделаем! Сейчас модно молодежно
+использовать LiveData. Так пусть валидатор подпишется на неё и будет
+проверять каждое значение. LiveDataValidatorLiveDataValidator работает
+так же как и обычный Vlidator, однако у него есть свои
+особенности:Состояние (state)Состояние это результат последней
+проверки.  Представляет собой LiveData<ValidationResult>, поэтому за
+состоянием валидатора можно удобно следить. LiveDataValidator всегда в
+актуальном состоянии пока он подписан на источник (Validator.observe;
+Validator.observeForever)liveDataValidator.stateАктивация
+LiveDataValidatorLiveDataValidator начинает работать только тогда,
+когда хоть кто-нибудь подписан на
+негоliveDataValidator.state.observe(viewLifecycleOwner) {
+validationResult ->     //apply validation result }  //Или можно вот
+так, разницы нет liveDataValidator.observe(viewLifecycleOwner) {
+validationResult ->     //apply validation result }Реакция на другие
+LiveDataLiveDataValidator умеет следить за другими LiveData и
+реагировать на их измененияДля этого есть метод
+watchOnliveDataValidator.watchOn(textMaxLength) { newTextMaxLength ->
+liveDataValidator.validate() }В примере выше liveDataValidator следит
+за полем textMaxLength и как только значение  textMaxLength меняется
+liveDataValidator принудительно валидируетсяДля подобных случаев есть
+метод triggerOn, который запускает валидацию всякий раз когда
+изменяется дополнительный
+источникliveDataValidator.triggerOn(textMaxLength)ПримерЕсть 2
+текстовых поля: на одном пики точены, на другом х** д*ы вовсе не пики
+Задача, чтобы второе поле не содержало в себе текст первого поляval
+first: MutableLiveData<String?> = MutableLiveData<String?>() //Первое
+поле (с пиками) val second: MutableLiveData<String?> =
+MutableLiveData<String?>() //Второе поле (с другими пиками)  val
+secondValidator: LiveDataValidator<String?> =
+LiveDataValidator(second).apply {
+addCondition(Conditions.RequiredField())
+addCondition(Conditions.RegEx("[a-z]+".toRegex(), "only a-z symbols
+allowed"))     addCondition(Conditions.TextMaxLength(10))
+addCondition {         // Внимание сюда: для проверки используется
+внешнее мутабельное поле first!         if (it?.contains(first.value
+?: "") == true) {             ValidationResult.invalid("textField2
+should not contains textField1")         } else {
+ValidationResult.valid()         }     }      triggerOn(first)
+//Теперь при каждом изменении first будет вызываться метод validate()
+}Как видно, secondValidator проверяет поле second, но при этом
+использует исползует first для проверки. Но что если first изменился?
+Тогда валидатор будет висеть в неактуальном состоянии до следующего
+изменения second. Поэтому валидатору нужно следить за first и при
+каждом его изменении принудительно выполнять проверку Делается это
+методом triggerOn(LiveData<*>), который будет запускать валидатор при
+каждом изменении firstВместо triggerOn можно так же использовать
+watchOn и самостоятельно прописать нужное действиеwatchOn(textField1)
+{     validate() }MuxLiveDataValidator - объединяем валидаторыА
+теперь, когда у нас есть куча полей с LiveDataValidator'ами надо
+каким-то образом опредилить общий результат валидации. Самый
+распространённый пример: если все поля на форме заполнены правильно -
+включаем кнопку "Далее".Для этого есть MuxLiveDataValidator.  Он
+подписывается на множество LiveDataValidator'ов и как только один из
+них изменяется - MuxLiveDataValidator собирает состояния
+(ValidationResult) всех LiveDataValidator'ов и отдаёт их на проверку
+оператору (Operator). Operator выдаёт окончательный результат.Короче,
+MuxLiveDataValidator работает типа как мультиплексор. Отсюда и
+название.MuxLiveDataValidatorСостояние (state)Аналогично
+LiveDataValidator у MuxLiveDataValidator  есть
+состояниеmuxValidator.stateСостояние это LiveData<ValidationResult> в
+котором находится последний результат проверки.Активация
+MuxLiveDataValidatorТут как у LiveDataValidator - доступ только по
+подпискеviewModel.muxValidator.observe(viewLifecycleOwner) {
+validationResult ->     // apply validatioin result }ПримечаниеКогда
+вы подписываетесь на MuxLiveDataValidator, то все его
+LiveDataValidator активируются, то есть подписка распространяется и на
+них (такой вот аналог семейной подписки у MediatorLiveData ). То есть
+если вы подписались на MuxLiveDataValidator, то не можно не
+подписываться на те LiveDataValidator, за которыми он
+следит.Добавление валидатораДобавить LiveDataValidator можно при
+создании MuxLiveDataValidatorval muxValidator = MuxLiveDataValidator(
+textField1Validator,     textField2Validator )Можно и после
+созданияmuxValidator.addValidator(textField3Validator)  //Можешь
+докинуть сразу несколько muxValidator.addValidators(   listOf(
+textField4Validator,      textField5Validator   ) )Удаление
+валидатораНу тут типа ваще всё
+изянmuxValidator.removeValidator(textField3Validator)Установка
+оператораПо-умолчанию MuxLiveDataValidator использует оператор-
+конъюнкцию. Чтобы поменять логику выдачи финального ValidationResult
+нужно установить другой
+операторmuxValidator.setOperator(Validator.Operator.Disjunction())Есть
+возможность следить за сменой оператора чтобы, например, очистить
+ошибку на view.muxValidator.addOperatorChangedListener {     // on
+operator changed }  //Удалить слушателя можно примерно вот так
+muxValidator.removeOperatorChangedListener(listener)Подключение
+валидаторов к viewConditionViewBinderConditionViewBinder базовый
+связыватель view и ConditionРаботает так:В момент вызова
+ConditionViewBinder.validate() достает из view данные для проверки
+абстрактным методом getValidationData(). Эти данные улетают в
+Condition, который проверит их и вернет ValidationResult. Затем этот
+ValidationResult передаётся абстрактному методу onValidationResult() в
+котором и происходит изменения view.ConditionViewBinderПримерval
+editText1 = requireView().findViewById<EditText>(R.id.edit_text1) val
+condition = Conditions.TextMaxLength<String?>(10)  val conditionBinder
+= object : ConditionViewBinder<TextView,
+String?>(WeakReference(editText1), condition) {     override fun
+getValidationData(view: TextView?): String? {         return
+view?.text?.toString()     }      override fun
+onValidationResult(view: TextView?, result: ValidationResult?) {
+if (result?.isValid == true) {             view?.error = null
+} else {             view?.error = result?.errorMessage         }
+} }  conditionBinder.check()Таким образом можно привязать любой
+валидатор к любой viewValidatorViewBinderПредназначен для более
+удобной работы с Validator: следит за изменениями оператора и условий
+валидатора.LiveDataValidatorViewBinderLiveDataValidator - особый
+пациент. Для него свой binder, который:сам подписывается/отписывается
+на LiveDataValidator ( чтобы активировать его)getValidationData()
+берется не из view, а прямо из валидатора (из его
+source)АктивацияLiveDataValidatorViewBinder нужно активировать. Тут 2
+способа:Через конструктор. В конструктор передать LifeycleOwnerobject
+: LiveDataValidatorViewBinder<TextView, String?>(
+viewLifecycleOwner,          WeakReference(binding.editText1),
+viewModel.textField1Validator) {         override fun
+onValidationResult(view: TextView?, result: ValidationResult?) {
+}          override fun onConditionsChanged(conditions:
+Set<Condition<String?>>) {          }          override fun
+onOperatorChanged() {          } }Просто вызвать
+attachliveDataValidatorViewBinder.attach(viewLifecycleOwner)Готовые
+реализацииTextConditionViewBinderСвязывает простые Condition с
+TextView. Проверяет поле при каждом изменении текста в нёмИспользовать
+так:val editText1 =
+requireView().findViewById<EditText>(R.id.edit_text1) val condition =
+Conditions.TextMaxLength<CharSequence?>(10)
+editText.validateBy(condition)TextViewLiveDataValidatorBinderТут то же
+самое, что и TextConditionViewBinder, но тут работаем с
+LiveDataValidator.Использовать так:val editText =
+requireView().findViewById<EditText>(R.id.edit_text1) val
+liveDataValidator = LiveDataValidator(viewModel.textField1,
+Conditions.RequiredField())  editText.validateBy(viewLifecycleOwner,
+liveDataValidator)ПримерыПростая валидацияВо ViewModel делаем
+простейший Conditionval textFieldCondition =
+Conditions.RegEx<CharSequence?>(     "[a-z]+".toRegex(),      "only
+a-z symbols allowed" )Во фрагменте (или активити) применяем условие к
+текстовому полюval editText =
+requireView().findViewById<EditText>(R.id.edit_text1)
+editText.validateBy(viewModel.textFieldCondition)ГотовоСложная
+валидацияДопустим у нас есть 3 поля: поле для ввода цифр, поле для
+ввода букв и поле, которое указывает максимальную длину поля ввода
+цифр. О как! А ещё нужно выводить общее состояние валидации всей формы
+в отдельное текстовое поле!Пример доступен тут:
+https://github.com/Egor-Blagochinnov/ValidationSampleДля начала
+объявим сами поля и валидаторы к ним во ViewModel]//Поле, которое
+определяет максимальную длину поля для ввода цифр val textMaxLength:
+MutableLiveData<String?> = MutableLiveData<String?>()  //Цифровое поле
+val textField1: MutableLiveData<String?> = MutableLiveData<String?>()
+//Про этот валидатор - чуть ниже val textField1Validator =
+ExampleValidators.DigitsFieldValidator(textField1).apply {
+watchOn(textMaxLength) {         val maxLength = kotlin.runCatching {
+it?.toInt() }.getOrNull()         this.setMaxLength(maxLength)     } }
+//Буквенное поле val textField2: MutableLiveData<String?> =
+MutableLiveData<String?>() val textField2Validator:
+LiveDataValidator<String?> = LiveDataValidator(textField2).apply {
+addCondition(Conditions.RequiredField())
+addCondition(Conditions.RegEx("[a-z]+".toRegex(), "only a-z symbols
+allowed"))     addCondition(Conditions.TextMaxLength(10)) }
+//Обобщенный валидатор val muxValidator = MuxLiveDataValidator(
+textField1Validator,     textField2Validator )Чтобы динамически менять
+условия валидации - лучше всего написать свой валидатор. Потому что
+для смены условий нужно хранить ссылки на эти самые условия, а это
+лучше сделать в отдельном классеclass ExampleValidators {     class
+DigitsFieldValidator<S : CharSequence?>(         source: LiveData<S>,
+initialCondition: Condition<S?>? = null,         operator: Operator =
+Operator.Conjunction()     ) : LiveDataValidator<S>(         source,
+initialCondition,         operator     ) {         val
+onlyDigitsCondition = Conditions.RegEx<S>("[0-9]+".toRegex(), "only
+digits allowed")         private var maxLengthCondition =
+Conditions.TextMaxLength<S?>(5) //по-умолчанию пусть будет 5
+init {             addCondition(onlyDigitsCondition)
+addCondition(maxLengthCondition)         }          fun
+setMaxLength(maxLength: Int?) {             if (maxLength == null ||
+maxLength < 0) {                 removeCondition(maxLengthCondition)
+return             }              val newCondition =
+Conditions.TextMaxLength<S?>(maxLength)
+changeConditionsSet {                 remove(maxLengthCondition)
+maxLengthCondition = newCondition
+add(maxLengthCondition)             }         }     } }Теперь идём во
+фрагмент и подключаем всё это делоoverride fun onViewCreated(view:
+View, savedInstanceState: Bundle?) {         super.onViewCreated(view,
+savedInstanceState)          viewModel =
+ViewModelProvider(this).get(ExampleViewModel1::class.java)
+binding.viewModel = viewModel                                  //
+Подключаем валидатор к цифровому полю
+binding.editText1.validateBy(             viewLifecycleOwner,
+viewModel.textField1Validator         )
+// Подключаем валидатор к буквенному полю
+binding.editText2.validateBy(             viewLifecycleOwner,
+viewModel.textField2Validator         )
+//Следим за обобщенным (mux) валидатором
+viewModel.muxValidator.observe(viewLifecycleOwner) {
+setGeneralValidationResult(it)         }     }
+//Отображем результат общей валидации в отдельном текстовом поле
+"state"     private fun setGeneralValidationResult(validationResult:
+ValidationResult) {         if (validationResult.isValid) {
+binding.state.text = "Correct!"
+binding.state.setTextColor(ContextCompat.getColor(requireContext(),
+R.color.state_success))         } else {
+binding.state.text = validationResult.errorMessage ?: "Error message
+is null"
+binding.state.setTextColor(ContextCompat.getColor(requireContext(),
+R.color.design_default_color_error))         }     }Готово!Общие
+рекомендации по использованиюВсе валидаторы должны находиться во
+ViewModel (ну или в Presenter) Не надо выносить логику валидирования
+во фрагменты, активности и вообще на view уровень. По-возможности
+используйте LiveDataValidator. Он самый прокаченный. И вообще вся
+библиотека ради него написана былаАккуратнее с множеством условий.  Вы
+можете добавить на поле противоречащие друг другу условия и будет
+непонятно что!Делайте свои реализации. Создавайте свои
+ConditionViewBinderы, чтобы работать с кастомными view Создавайте свои
+валидаторы если вам нужна более сложная валидация

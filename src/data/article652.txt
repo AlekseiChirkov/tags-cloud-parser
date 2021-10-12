@@ -1,0 +1,313 @@
+Автор: Winged90
+Дата: 2021-09-26T16:14:56.000Z
+Название: Сервис отложенных запросов для Retrofit на Android
+Теги: Разработка под Android *, Kotlin *
+Текст:
+Как Вы обрабатываете отсутствие доступа в интернет в своем приложении?
+Показываете сообщение "Нет интернета, попробуйте позже"? Допустим
+случай, когда  мы хотим гарантировать выполнение сетевого запроса
+пользователя, а не заставлять его искать интернет и снова повторять не
+удавшиеся запросы. Давайте создадим такую ситуацию и научимся ее
+обрабатывать. Реализованный пример, как обычно можно скачать по <a hre
+f="https://github.com/AndroidLab/DeferredRequests_Example">ссылке</a><
+a href=""></a> на GitHub в конце статьи! Что будем делатьСоздадим
+инструмент, который будет сохранять неудачные сетевые запросы при
+отсутствии сети, интерфейс для управления сохраненными запросами,
+автоматическое выполнение запросов при появлении сети.Что для этого
+понадобитсяКласс сервис, который будет ждать появление интернета и
+запускать классы исполнителей для отправки сохраненного запроса.Класс
+сервис, представляющий кэш для хранения и управления отложенными
+запросами.Интерфейс для классов исполнителей, которые будут выполнять
+запрос.Интерфейс для дата классов, которые будут содержать данные
+запроса.Карту, где ключом будет класс данных запроса, а значением
+исполнитель для выполнения запроса с этими данными.Графический
+интерфейс, для просмотра и управления отложенными запросами. Создаем
+проект и подключаем зависимостиСоздаем новый проект на основе Empty
+Activity, я назову его DeferredRequests_ExampleСоздание нового
+проектаДобавляем необходимые зависимости в build.gradle
+проектаimplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-
+core:1.5.0' implementation 'com.squareup.retrofit2:retrofit:2.9.0'
+implementation 'com.squareup.retrofit2:converter-gson:2.9.0'Создаем
+необходимые классыКласс DeferredRequestsService и соответствующий ему
+интерфейс IDeferredRequestsServiceОн будет пытаться выполнить запрос и
+в случае, если запрос выполнить не получается, ложить его в кэш.Класс
+DeferredRequestsService/**  * Представляет сервис выполнения
+отложженых запросов к серверу.  * @param context Контекст приложения.
+* @param deferredRequestStorage Кэш для хранения отложенных запросов.
+* @param deferredRequestsMap Карта с отложенными запросами.  */ class
+DeferredRequestsService(     private val context: Context,     private
+val deferredRequestStorage: IDeferredRequestStorage,     private val
+deferredRequestsMap: IDeferredRequestsMap ) : IDeferredRequestsService
+{     private val _repeatJob = CoroutineScope(Dispatchers.IO).launch {
+while (true) {             repeatRequest()             delay(5000)
+}     }      private suspend fun repeatRequest(): Boolean {         if
+(deferredRequestStorage.countElements > 0) {             val
+requestModel = deferredRequestStorage.getRequestModel(0)
+if (requestModel != null && handleRequest(requestModel)) {
+deferredRequestStorage.removeRequestModel(requestModel)
+repeatRequest()             } else {                 return false
+}         } else {             return true         }         return
+true     }      override suspend fun handleRequest(
+requestModel: IDeferredRequestModel     ): Boolean {         //Если не
+был указан id пользователя         if (requestModel.userId == null) {
+requestModel.userId =
+UUID.fromString("12eb6997-6c60-4828-84e1-d4e211ba00a6")         }
+//Если не было указано имя пользователя         if
+(requestModel.userName == null) {             requestModel.userName =
+"Иванов Иван Иванович"         }         //Если не был указан id
+запроса         if (requestModel.requestId == null) {
+requestModel.requestId = UUID.randomUUID()         }         //Если не
+было указано время запроса         if (requestModel.date == null) {
+requestModel.date = SimpleDateFormat("dd.MM.yyyy HH:mm",
+Locale.getDefault()).format(Date())         }          var isSuccess =
+true         try {             deferredRequestsMap.getRequestExecutor(
+requestModel).execute(requestModel)         } catch (e: Exception) {
+when (e) {                 //По эти ошибкам определяем, что запрос не
+был выполнен                 is SocketTimeoutException, is
+ConnectException, is UnknownHostException -> {
+isSuccess = false                 }                 else -> throw e
+}         }          return if (isSuccess) {             true
+} else {             if
+(deferredRequestStorage.addRequestModel(requestModel)) {
+Toast.makeText(context, "Запрос был добавлен в кэш",
+Toast.LENGTH_LONG).show()             }             false         }
+}      override suspend fun retryHandleRequests():Boolean {
+_repeatJob.cancel()         val success = repeatRequest()
+_repeatJob.start()         return success     }      override fun
+registerDeferredExecutorMap(deferredRequestExecutorMap: Map<Class<out
+IDeferredRequestModel>,
+IDeferredRequestExecutor<IDeferredRequestModel>>) {
+deferredRequestsMap.addRequestExecutor(deferredRequestExecutorMap)
+} }Интерфейс IDeferredRequestsService/**  * Описывает методы
+выполнения отложенных запросов к серверу.  */ interface
+IDeferredRequestsService {     /**      * Выполняет запрос на сервер.
+* @param deferredRequestModel Данные для запроса к серверу.      */
+suspend fun handleRequest(         deferredRequestModel:
+IDeferredRequestModel     ): Boolean      /**      * Пытается
+выполнить все запросы.      */     suspend fun retryHandleRequests():
+Boolean      /**      * Запускает сервис.      */     fun
+startService()      /**      * Останавливает сервис.      */     fun
+stopService()      /*      * Регистрирует карту для отложенного
+запроса.      */     fun
+registerDeferredExecutorMap(deferredRequestExecutorMap: Map<Class<out
+IDeferredRequestModel>,
+IDeferredRequestExecutor<IDeferredRequestModel>>) }Класс
+DeferredRequestStorage и соответствующий ему интерфейс
+IDeferredRequestStorageОн будет хранить в себе модели запросов,
+предоставлять возможность добавлять, удалять и тдКласс
+DeferredRequestStorage/**  * Представляет хранилище для отложенных
+запросов.  */ class DeferredRequestStorage : IDeferredRequestStorage {
+private val _requests = mutableListOf<IDeferredRequestModel>()
+private val _requestsFlow =
+MutableSharedFlow<List<IDeferredRequestModel>>(extraBufferCapacity =
+1, replay = 1)      override val requestsFlow:
+SharedFlow<List<IDeferredRequestModel>> = _requestsFlow.asSharedFlow()
+override val countElements: Int         get() = _requests.size
+override fun getRequestModel(position: Int) =         if(position > -1
+&& position < countElements) {             _requests[position]
+} else {             null         }      override fun
+addRequestModel(requestModel: IDeferredRequestModel): Boolean {
+return if (_requests.contains(requestModel)) {             false
+} else {             _requests.add(requestModel)
+_requestsFlow.tryEmit(_requests)             true         }     }
+override fun removeRequestModel(requestModel: IDeferredRequestModel) {
+_requests.remove(requestModel)
+_requestsFlow.tryEmit(_requests)     }      override fun
+removeAllRequestsModel() {         _requests.clear()
+_requestsFlow.tryEmit(_requests)     } }Интерфейс
+IDeferredRequestStorage/**  * Описывает методы кэширования запросов.
+*/ interface IDeferredRequestStorage {     /**      * Возвращает
+список не отправленных запросов.      */     val requestsFlow:
+SharedFlow<List<IDeferredRequestModel>>      /**      * Возвращает
+количество элементов в кэше.      */     val countElements: Int
+/**      * Возвращает модель запроса из кэша.      * @param position
+Позиция запроса в кэше.      */     fun getRequestModel(position:
+Int): IDeferredRequestModel?      /**      * Добавляет модель запроса
+в кэш.      * @param deferredRequestModel Данные запроса.      *
+@return Возвращает результат добавления запроса в кэш.      */     fun
+addRequestModel(deferredRequestModel: IDeferredRequestModel): Boolean
+/**      * Удаляет модель запроса из кэша.      * @param
+deferredRequestModel Данные запроса.      */     fun
+removeRequestModel(deferredRequestModel: IDeferredRequestModel)
+/**      * Удаляет все модели запросов из кэша.      */     fun
+removeAllRequestsModel() }Интерфейс IDeferredRequestModelОн будет
+описывать обязательные поля для дата классов с данными для
+запросаИнтерфейс IDeferredRequestModel/**  * Описывает модель
+отложенного запроса.  */ interface IDeferredRequestModel {     /**
+* Возвращает заголовок запроса.      */     val title: String      /**
+* Возвращает описание запроса.      */     val description: String
+/**      * Возвращает идентификатор пользователя.      */     var
+userId: UUID?      /**      * Возвращает имя пользователя.      */
+var userName: String?      /**      * Возвращает id запроса.      */
+var requestId: UUID?      /**      * Возвращает время запроса.      */
+var date: String? }Интерфейс IDeferredRequestExecutorОн будет
+описывать всего один метод принимающий в себя дата класс с данными
+запроса и выполнение запроса с этими данными.Интерфейс
+IDeferredRequestExecutor/**  * Описывает метод исполнителя на отправку
+запроса.  */ interface IDeferredRequestExecutor<T> {     /**      *
+Выполняет запрос.      * @param deferredRequestModel Данные для
+запроса.      */     suspend fun execute(deferredRequestModel: T):
+Response<ResponseBody> }Класс DeferredExecutorsMap и соответствующий
+ему интерфейс IDeferredExecutorsMapОн будет представлять собой карту,
+где ключом будет класс с данными для запроса, а значением класс
+исполнитель для этих данных.Класс DeferredExecutorsMap/**  *
+Представляет карту с исполнителями для отложенных запросов.  */ class
+DeferredExecutorsMap: IDeferredExecutorsMap {     private val
+commandsMap = mutableMapOf<Class<out IDeferredRequestModel>,
+IDeferredRequestExecutor<IDeferredRequestModel>>()      override fun
+getRequestExecutor(         requestModel: IDeferredRequestModel     ):
+IDeferredRequestExecutor<IDeferredRequestModel> =
+commandsMap[requestModel::class.java] ?: throw RuntimeException("Не
+найден исполнитель для класса модели")      override fun
+addRequestExecutor(assuranceCommandMap: Map<Class<out
+IDeferredRequestModel>,
+IDeferredRequestExecutor<IDeferredRequestModel>>) {
+commandsMap.putAll(assuranceCommandMap)     } }Интерфейс
+IDeferredExecutorsMap/**  * Описывает методы для карты с отложенными
+запросами.  */ interface IDeferredExecutorsMap {     /**      *
+Возвращает класс исполнителя.      * @param deferredRequestDataClass
+Класс модели с данными для запроса.      */     fun
+getRequestExecutor(         deferredRequestDataClass:
+IDeferredRequestModel     ):
+IDeferredRequestExecutor<IDeferredRequestModel>      /**      *
+Добавляет карту для гарантированного запроса.      * @param
+assuranceCommandMap Карта для гарантированного запроса.      */
+fun addRequestExecutor(assuranceCommandMap: Map<Class<out
+IDeferredRequestModel>,
+IDeferredRequestExecutor<IDeferredRequestModel>>) }Интерфейс
+IVKApiServiceОн будет реализовываться ретрофитом и описывать один
+метод возвращающий список записей со стены ВКонтакте  по указанному
+id. Нам будет возвращаться ошибка "User authorization failed: no
+access_token passed.", но это не важно, важен сам факт отправки
+запроса.Интерфейс IVKApiService/**  * Описывает методы запросов к
+Vkontakte.  */ interface IVKApiService {      /**      * Возвращает
+список записей со стены пользователя или сообщества по указанному id.
+*/     @GET("wall.get")     suspend fun getWall(
+@Query("owner_id") owner_id: String     ): Response<ResponseBody>
+}Класс VKontakteRequestModel с данными для запроса и соответствующий
+ему класс исполнителя VKontakteRequestExecutorКласс
+VKontakteRequestModel будет содержать данные для запроса, а
+VKontakteRequestExecutor с помощью ретрофита будет выполнять этот
+запросКласс VKontakteRequestModel/**  * Представляет данные для
+запроса к ВКонтакте.  * @param ownerId Возвращает id группы для
+запроса.  */ data class VKontakteRequestModel(     val ownerId:
+String,     override val title: String = "Запрос к ВКонтакте",
+override val description: String = "Запрос на получение записей со
+стены группы ВК",     override var userId: UUID? = null,     override
+var userName: String? = null,     override var requestId: UUID? =
+null,     override var date: String? = null ) :
+IDeferredRequestModelКласс VKontakteRequestExecutor/**  * Представляет
+исполнителя для запроса к ВКонтакте.  * @param vkApiService Сервис
+запросов к ВКонтакте.  */ class VKontakteRequestExecutor (     private
+val vkApiService: IVKApiService ) :
+IDeferredRequestExecutor<VKontakteRequestModel> {     override suspend
+fun execute(deferredRequestModel: VKontakteRequestModel):
+Response<ResponseBody> {         return
+vkApiService.getWall(deferredRequestModel.ownerId)     } }Класс
+DeferredRequestApplicationОн представляет класс нашего приложения и
+будет хранить синглтоны IDeferredRequestsService,
+IDeferredRequestStorage и IDeferredExecutorsMap. По хорошему следует
+использовать какой ни будь DI инструмент, но для упрощения примера
+сделаем так.  Не забываем добавлять его в манифест.Класс
+DeferredRequestApplication/**  * Представляет приложение.  */ class
+DeferredRequestApplication : Application() {      var retrofit = Retro
+fit.Builder().baseUrl("https://api.vk.com/method/").addConverterFactor
+y(GsonConverterFactory.create()).build()  // Retrofit.     lateinit
+var deferredRequestsService: IDeferredRequestsService   // Сервис
+выполнения отложженых запросов к серверу.     lateinit var
+deferredRequestStorage: IDeferredRequestStorage   // Хранилище для
+отложенных запросов.     lateinit var deferredExecutorsMap:
+IDeferredExecutorsMap   // Хранилище для отложенных запросов.
+companion object {         lateinit var application:
+DeferredRequestApplication     }      override fun onCreate() {
+super.onCreate()         application = this
+deferredRequestStorage = DeferredRequestStorage()
+deferredExecutorsMap = DeferredExecutorsMap()
+deferredRequestsService = DeferredRequestsService(this,
+deferredRequestStorage, deferredExecutorsMap)     }  }Класс
+MainActivity и соответствующий ему xml activity_mainОн будет
+представлять наш основной экран, здесь будет всего 2 кнопки. Первая
+кнопка будет отсылать тестовый запрос, а вторая кнопка откроет нам
+экран для управления отложенными запросами. Не забывайте добавить
+разрешение на доступ в интернет в манифест файле <uses-permission
+android:name="android.permission.INTERNET" />Класс MainActivity/**  *
+Представляет главный экран приложения.  */ class MainActivity :
+AppCompatActivity() {      private val deferredRequestsService =
+DeferredRequestApplication.application.deferredRequestsService
+override fun onCreate(savedInstanceState: Bundle?) {
+super.onCreate(savedInstanceState)
+setContentView(R.layout.activity_main)          val testRequest = Defe
+rredRequestApplication.application.retrofit.create(IVKApiService::clas
+s.java)          //Создаем карту, где ключ это класс нашей моли
+запроса, а значение это исполнитель для этого запроса         deferred
+RequestsService.registerDeferredExecutorMap(mapOf(VKontakteRequestMode
+l::class.java to VKontakteRequestExecutor(testRequest) as
+IDeferredRequestExecutor<IDeferredRequestModel>))
+findViewById<Button>(R.id.deferredRequestsBtn).setOnClickListener {
+// TODO Переход на экран управления отложенными запросами реализован в
+примере, который можно скачать по ссылке:
+https://github.com/AndroidLab/DeferredRequests_Example         }
+findViewById<Button>(R.id.sendRequestBtn).setOnClickListener {
+lifecycleScope.launch {                 //Создаем модель нашего
+запроса                 val vkontakteRequestModel =
+VKontakteRequestModel(                     ownerId = "-1"   //-1 это
+id главной группы вк, https://vk.com/club1                 )
+//Пытаемся выполнить запрос через наш сервис, если интернет есть,
+запрос успешно выполнится, если нет, будет отложен к кэш
+deferredRequestsService.handleRequest(vkontakteRequestModel)
+}         }     } }xml activity_main<?xml version="1.0"
+encoding="utf-8"?> <FrameLayout
+xmlns:android="http://schemas.android.com/apk/res/android"
+xmlns:app="http://schemas.android.com/apk/res-auto"
+xmlns:tools="http://schemas.android.com/tools"
+android:layout_width="match_parent"
+android:layout_height="match_parent"
+tools:context=".MainActivity">      <Button
+android:id="@+id/sendRequestBtn"
+android:layout_width="match_parent"
+android:layout_height="wrap_content"         android:text="Отправить
+запрос"         android:layout_margin="16dp"
+app:layout_constraintBottom_toBottomOf="@id/deferredRequestsBtn"
+app:layout_constraintLeft_toLeftOf="parent"
+app:layout_constraintRight_toRightOf="parent"
+app:layout_constraintTop_toTopOf="parent"/>      <Button
+android:id="@+id/deferredRequestsBtn"
+android:layout_width="match_parent"
+android:layout_height="wrap_content"
+android:layout_marginTop="72dp"
+android:layout_marginHorizontal="16dp"
+android:text="Отложенные запросы"
+app:layout_constraintBottom_toBottomOf="parent"
+app:layout_constraintHorizontal_bias="0.0"
+app:layout_constraintLeft_toLeftOf="parent"
+app:layout_constraintRight_toRightOf="parent"
+app:layout_constraintTop_toTopOf="@id/sendRequestBtn" />
+</FrameLayout>Статья получилась достаточно объемной, поэтому я не буду
+здесь описывать создание экрана для управления отложенными запросами,
+его реализацию можно будет посмотреть в примере, который можно скачать
+<a href="https://github.com/AndroidLab/DeferredRequests_Example">Здесь
+</a>Пробуем, как это все работаетЗапускаем получившийся проект (Если
+не получилось, скачайте по ссылки внизу статьи), увидим экран с 2
+кнопкамиГлавный экранНажмем кнопку "Отправить запрос", если интернет
+включен, увидим такое сообщение "Response{protocol=h2, code=200,
+message=, url=https://api.vk.com/method/wall.get?owner_id=-1}"Все
+отлично, видим код 200, запрос успешно был отправлен.Теперь отключаем
+интернет и снова нажимаем "Отправить запрос", видим сообщение "Запрос
+был добавлен в кэш". Запрос был сохранен и будет отправлен, как только
+появится интернет. Включаем доступ в интернет, и через несколько
+секунд видим сообщение "Response{protocol=h2, code=200, message=,
+url=https://api.vk.com/method/wall.get?owner_id=-1}", запрос был
+успешно отправлен.Экран для просмотра и управления запросамиЯ не буду
+описывать реализацию, ее можно посмотреть <a href="скачав пример">http
+s://github.com/AndroidLab/DeferredRequests_Example</a>.Запускаем
+приложение, отключаем интернет, нажмем 2 раза "Отправить запрос", они
+не смогут выполниться и будут отправлены к кэш. Нажмем кнопку
+"Отложенные запросы".Экран с отложенными запросамиЗдесь видим 2 наших
+не отправленных запроса. Пока мы находимся на этом экране, сервис
+останавливается и запросы не будут отправлены автоматически. Обращаясь
+к кэшу, мы можем удалять запросы. Включаем доступ в интернет и
+нажимаем кнопку "Отправить", все запросы отправятся, а мы снова увидим
+сообщение с кодом 200"Response{protocol=h2, code=200, message=,
+url=https://api.vk.com/method/wall.get?owner_id=-1}" <a
+href="https://github.com/AndroidLab/DeferredRequests_Example">Скачать
+пример проекта можно здесь</a>

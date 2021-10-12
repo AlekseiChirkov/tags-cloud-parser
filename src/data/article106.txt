@@ -1,0 +1,208 @@
+Автор: V-ampre
+Дата: 2021-10-06T19:09:10.000Z
+Название: Тестируем собственную батарейку для Django с pytest и tox
+Теги: Python *, Django *
+Текст:
+Итак, у нас есть идея потрясающей и всем необходимой батарейки для
+Django. После того, как мы написали весь код мы готовы релизнуть нашу
+батарейку в PyPI. Однако перед этим мы должны разобраться с
+несколькими моментами:‌Наша батарейка основана на каком-то коде
+Django, но он может измениться и тогда возникнет несовместимость.Нам
+необходимо убедится что наша батарейка работает с предыдущими версиями
+Django.Таким образом нам необходимо протестировать нашу батарейку в
+нескольких окружениях с разными версиями Django и Python.В качестве
+примера я взял свою библиотеку django-factory-boy-generator .Исходная
+позицияПосле того, как мы написали наш функционал, мы должны получить
+примерно следующую файловую структуру.── our_django_third_party │
+├── __init__.py │   ├── requirements.txt │   ├── __version__.py ├──
+LICENSE ├── README.md ├── setup.pyТеперь нам нужно, конечно же,
+покрыть наш код тестами, используя, например, стандартную Python
+библиотеку unittest. Однако тут сразу возникает вопрос, а как быть,
+если мы хотим тестировать такие чисто джанговские вещи как модели,
+админку, приложения и т.д.? Таким образом, нам нужно использовать
+тестовый Django-проект внутри наших тестов.Настройка тестового Django-
+проектаСтруктура файловДля начала добавим директорию с тестами в нашу
+библиотеку.── our_django_third_party │   ├── __init__.py │   ├──
+requirements.txt │   ├── __version__.py │   ├── tests │   │   ├──
+__init__.py │   │   ├── some_unit_tests.py │   │   ├──
+model_integration_tests.py ├── LICENSE ├── README.md ├── setup.pyВ тех
+тестах, где мы используем модели и базу данных, нам нужно чтобы наши
+тестовые классы наследовались от django.test.TestCase.Далее нам
+необходимо сделать следующее:‌Создать Django-проектСоздать Django-
+приложение внутри проекта.Добавить файл models.py с моделями.Добавить
+файл settings.py в котором мы зарегистрируем наши установленные
+приложения и позволим Django запускать миграции при запуске
+тестов.Таким образом. структура файлов окажется такой:──
+our_django_third_party │   ├── __init__.py │   ├── requirements.txt │
+├── __version__.py │   ├── tests │   │   ├── __init__.py │   │   ├──
+some_unit_tests.py │   │   ├── model_integration_tests.py │   │   ├──
+settings.py │   │   ├── testapp │   │   │   ├── apps.py │   │   │
+├── models.py ├── LICENSE ├── README.md ├── setup.pyВ файле apps.py
+находится объект конфига Django-приложения:from django.apps import
+AppConfig   class TestAppConfig(AppConfig):     name =
+'our_django_third_party.tests.testapp'     verbose_name = 'TestApp'В
+settings.py добавим настройки для базы данных, а также список
+дефолтных приложений, в который включим наше тестовое
+приложение:DATABASES = {     "default": {         "ENGINE":
+"django.db.backends.sqlite3",         "NAME": "mem_db"     } }
+INSTALLED_APPS = [     "django.contrib.admin",
+"django.contrib.auth",     "django.contrib.contenttypes",
+"django.contrib.sessions",     "django.contrib.sites",
+"our_django_third_party.tests.testapp.apps.TestAppConfig" ]Теперь мы
+можем добавить в models.py модели, которые мы будем использовать в
+тестах.Замена тест-раннераТак как мы больше не используем
+unittest.TestCase, нам нужна более разносторонняя библиотека для
+запуска тестов, это может быть pytest , nose, или даже встроенный
+джанговский раннер, который можно запускать через python manage.py
+test . В нашем примере мы будем использовать pytest. Для этого
+необходимо установить, собственно сам pytest, а также его расширение
+для Django pytest-django. После установки создадим файл конфигурации
+pytest.ini.── our_django_third_party │   ├── __init__.py │   ├──
+requirements.txt │   ├── __version__.py │   ├── tests │   │   ├──
+__init__.py │   │   ├── some_unit_tests.py │   │   ├──
+model_integration_tests.py │   │   ├── settings.py │   │   ├── testapp
+│   │   │   ├── apps.py │   │   │   ├── models.py ├── LICENSE ├──
+README.md ├── setup.py ├── pytest.iniСодержимое pytest.ini :[pytest]
+DJANGO_SETTINGS_MODULE = our_django_third_party.tests.settings
+django_find_project = falseЗдесь DJANGO_SETTINGS_MODULE указывает для
+pytest-django модуль с настройками, которые нужно использовать при
+выполнении тестов.‌По умолчанию pytest-django ожидает найти файл
+manage.py , которого у нас нет, поэтому мы устанавливаем настройку
+django_find_project=false, которая говорит pytest-django не искать
+manage.py. Теперь мы можем запустить наши тесты.Подключение toxДля
+чего нужен tox?Вначале мы сказали, что хотим протестировать нашу
+батарейку на совместимость с разными версиями Django и Python. Если бы
+мы стали делать это вручную, нам пришлось бы создавать виртуальные
+окружения с разными версиями зависимостей и запускать в каждом из
+окружений наши тесты. Вместо этого мы используем библиотеку tox ,
+которая представляет возможность запускать наши тесты в разных
+окружениях, создаваемых автоматически.Общие сведенияКонфигурация tox
+состоит из двух главных блоков:‌[tox] - здесь мы определяем окружения
+для наших тестов. Мы будем использовать следующие:Django 1.11 + Python
+3.6, 3.7, 3.8Django 2.2 + Python 3.6, 3.7, 3.8Django 3.0 + Python 3.6,
+3.7, 3.8Django 3.1 + Python 3.6, 3.7, 3.8Django 3.2 + Python 3.6, 3.7,
+3.8Окружение для линтинга нашего кода (Мы будем использовать локальные
+дев зависимости)[testenv] - здесь перечисляются зависимости и команды,
+которые будут запускаться в окружениях.deps - список зависимостей,
+которые нужны в наших окруженияхcommads - команды которые будут
+выполнены в окруженииКофигурационный файлПрежде всего создадим файл
+tox.ini в корне нашего проекта.Для начала определим секцию [tox] и,
+пока, пустую секцию [testenv]:[tox] envlist =
+django32-py{38,37,36}     django31-py{38,37,36}
+django30-py{38,37,36}     django22-py{38,37,36}
+django111-py{38,37,36}  [testenv]В envlist мы перечислили наши
+окружения. Определение окружений состоит из двух частей. Внутри
+фигурных скобок мы определяем версии питона, с которыми мы хотим
+тестировать наш проект в перечисленных окружениях, например 37
+обозначает Python 3.7. Вне фигурных скобок находится префикс, для
+перечисленных окружений. Таким образом django22-py{37,36,35} означает
+что окружение django22 будет создано с тремя разными версиями питона.
+‌Теперь нам нужно добавить наши окружения и команды.‌Прежде всего, мы
+определим 2 новые секции. Первая будет содержать все зависимости,
+которые нам нужны во всех наших окружениях (здесь и далее для примера
+я указываю зависимости для пакета django-factory-boy-generator ). Во
+второй определим переменные с зависимостями для разных версий
+Django.[base] deps =     factory_boy     pytest     pytest-django
+pytest-pythonpath     Pillow      [django] 3.2 =
+Django>=3.2.0,<3.3.0 3.1 =     Django>=3.1.0,<3.2.0 3.0 =
+Django>=3.0.0,<3.1.0 2.2 =     Django>=2.2.0,<2.3.0 1.11 =
+Django>=1.11.0,<2.0.0Теперь мы можем определить зависимости в секции
+[testenv], используя две определенных ранее секции:[tox] envlist =
+django32-py{38,37,36}     django31-py{38,37,36}
+django30-py{38,37,36}     django22-py{38,37,36}
+django111-py{38,37,36}  [testenv] deps =     {[base]deps}
+django32: {[django]3.2}     django31: {[django]3.1}     django30:
+{[django]3.0}     django22: {[django]2.2}     django111:
+{[django]1.11} commands = pytest  [base] deps =
+factory_boy     pytest     pytest-django     pytest-pythonpath
+Pillow      [django] 3.2 =     Django>=3.2.0,<3.3.0 3.1 =
+Django>=3.1.0,<3.2.0 3.0 =     Django>=3.0.0,<3.1.0 2.2 =
+Django>=2.2.0,<2.3.0 1.11 =     Django>=1.11.0,<2.0.0Кроме того, мы
+добавили в секцию [testenv] переменную commands ,  которая указывает
+tox, что мы хотим запускать команду pytest во всех наших окружениях. В
+переменной deps мы говорим tox установить все зависимости,
+перечисленные в секции [base] для каждой созданной комбинации. После
+этого устанавливаются зависимости из секции [django] в соответствии с
+указанными окружениями.‌Последнее что мы добавим в конфиг tox -
+команды и зависимости для окружения lint. Нам не нужен Django для
+линтинга нашей батарейки, поэтому мы создадим отдельную ветку в секции
+[testenv] и добавим зависимости и команды для линтинга.В итоге наш
+файл tox.ini будет выглядеть как-то так:[tox] envlist =
+django32-py{38,37,36}     django31-py{38,37,36}
+django30-py{38,37,36}     django22-py{38,37,36}
+django111-py{38,37,36}  [testenv] deps =     {[base]deps}
+django32: {[django]3.2}     django31: {[django]3.1}     django30:
+{[django]3.0}     django22: {[django]2.2}     django111:
+{[django]1.11} commands = pytest  [testenv:lint-py38] deps =
+flake8 commands = flake8 factory_generator  [base] deps =
+factory_boy     pytest     pytest-django     pytest-pythonpath
+Pillow      [django] 3.2 =     Django>=3.2.0,<3.3.0 3.1 =
+Django>=3.1.0,<3.2.0 3.0 =     Django>=3.0.0,<3.1.0 2.2 =
+Django>=2.2.0,<2.3.0 1.11 =     Django>=1.11.0,<2.0.0Теперь мы можем
+запустить тесты в разных окружениях командой tox .Тестирование с
+разными базами данныхЕсли ваша батарейка выполняет что-либо с
+моделями, вам нужно убедится, что она будет работать с разными базами
+данных.Добавляем настройки базы данныхНа этом этапе нам нужно добавить
+новую конфигурацию DATABASE в файлsettings.py. В нашем примере нам
+нужно протестировать работу с PostgreSQL.import environ  env =
+environ.Env()  DATABASES = {     "default": {         "ENGINE":
+"django.db.backends.sqlite3",         "NAME": "mem_db"     },
+'postgresql': env.db('DATABASE_URL',
+default='postgres:///our_test_database') }  DATABASE_ROUTERS = ['our_d
+jango_third_party.tests.testapp.database_routers.DataBaseRouter']Кроме
+того, как вы могли заметить мы добавили настройку DATABASE_ROUTERS.
+Рассмотрим этот момент подробнее.Роутер баз данныхПосле того, как мы
+добавили в Django проект две базы данных, нам нужно каким-то образом
+указать Django какую из них в каком случае использовать. Для этого нам
+нужен роутер баз данных. В нашем случае, мы хотим использовать
+PostgresQL только в тех случаях, когда действия с базой (миграции,
+чтение, запись и т.п.) происходят с моделями, содержащих специфичные
+поля для PostgresQL. Роутер выглядит примерно так:from django.apps
+import apps from django.db import models from django.contrib.postgres
+import fields as pg_fields   POSTGRES = 'postgresql' DEFAULT =
+'default'   class DataBaseRouter:     def
+_get_postgresql_fields(self):         return [             var for var
+in vars(pg_fields).values()             if isinstance(var, type) and
+issubclass(var, models.Field)         ]      def
+_get_field_classes(self, db_obj):         return [
+type(field) for field in db_obj._meta.get_fields()         ]      def
+has_postgres_field(self, db_obj):         field_classes =
+self._get_field_classes(db_obj)          return len([
+field_cls for field_cls in field_classes             if field_cls in
+self._get_postgresql_fields()         ]) > 0      def
+db_for_read(self, model, **hints):         if
+self.has_postgres_field(model):             return POSTGRES
+return DEFAULT      def db_for_write(self, model, **hints):         if
+self.has_postgres_field(model):             return POSTGRES
+return DEFAULT      def allow_relation(self, obj1, obj2, **hints):
+if not self.has_postgres_field(obj1) and not
+self.has_postgres_field(obj2):             return True      def
+allow_migrate(self, db, app_label, model_name=None, **hints):
+if model_name is not None and \            db == DEFAULT and \
+self.has_postgres_field(apps.get_model(app_label, model_name)):
+return False          return TrueЗдесь важны методы роутера, которые
+определяют следует ли выполнять операцию и какую базу данных следует
+использовать:‌db_for_read - Использует PostgresQL только в случае если
+в модели содержаться поля специфичные для PostgresQL, иначе
+используется база defaultdb_for_write - работает идентично, только для
+операции записиallow_relation - Использует PostgresQL только если оба
+объекта между которыми содержится связь имеют поля специфичные для
+PostgresQLallow_migrate - Этот метод вызывается каждые раз в наших
+тестах при создании базы данных. Первый раз вызывается с базой default
+второй с PostgresQL. Здесь мы не разрешаем миграции для базы данных по
+умолчанию, если эти миграции относятся к моделям с полями PostgreSQL.
+В противном случае мы им разрешаем.Если вы используете больше баз
+данных в своем проекте, тогда вам скорее всего придется немного
+изменить роутер для вашего случая.Осталось только написать наши тесты
+для моделей, которым нужна другая база данных.from django.test import
+TestCase   class ModelIntegrationTests(TestCase):     databases =
+['default', 'postgresql']      def test_model_without_pg_fields(self):
+self.assertIsNotNone(NormalModel.objects.create())      def
+test_model_with_pg_fields(self):
+self.assertIsNotNone(ModelWithPgFields.objects.create())Нам нужно явно
+определить базы данных, которые будут использоваться в этом тестовом
+примере, иначе мы получим ошибку, сообщающую нам: AssertionError:
+Database queries to 'postgresql' are not allowed in this test.
+(Запросы базы данных к 'postgresql' не разрешены в этом тесте.)Вот и
+все! Далее вам нужно убедится, что ваши тесты проходят во всех
+окружениях, и батарейка готова к релизу в PyPI.

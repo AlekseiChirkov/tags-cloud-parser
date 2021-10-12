@@ -1,0 +1,166 @@
+Автор: kota1921
+Дата: 2021-09-21T08:30:23.000Z
+Название: Jetpack Microbenchmark — тестируем производительность кода
+Теги: Блог компании FUNCORP, Разработка мобильных приложений *, Разработка
+под Android *, Тестирование мобильных приложений *, Kotlin *
+Текст:
+В мобильной разработке периодически возникают ситуации, когда нужно
+оценить время выполнения кода. Помимо теоретических подходов
+(например, Big O), которые позволяют отсеять очевидно неудачные
+решения, существуют бенчмарки для тестирования кода и поиска более
+мелких отличий. В этой статье расскажу, как устроена и работает
+библиотека Microbenchmark от Google, а также покажу примеры
+использования. С ней можно не только оценить производительность, но и
+решить спорные ситуации на код-ревью.Когда нужно оценить время
+выполнения кода, первое, что приходит в голову, выглядит примерно
+так:val startTime = System.currentTimeMillis() //выполняем код который
+хотим оценить val totalTime = System.currentTimeMillis() -
+startTimeТакой подход прост, но имеет несколько недостатков:не
+учитывает «прогрев» исследуемого кода;не учитывает состояние
+устройства, например, Thermal Throttling;даёт только один результат,
+без представления о дисперсии времени выполнения;может усложнить
+изоляцию тестируемого кода.Именно по этим причинам оценка времени
+выполнения не такая тривиальная задача, как может показаться на первый
+взгляд. Существует решение в виде, например, Firebase Performance
+Monitoring, но оно больше подходит для мониторинга производительности
+в продакшене и не очень подходит для изолированных частей кода. С
+решением этой задачи лучше справится библиотека от Google. Что такое
+MicrobenchmarkMicrobenchmark — это библиотека из состава Jetpack,
+которая позволяет быстро оценивать время выполнения Kotlin и Java
+кода. Она до некоторой степени может исключать влияние прогрева,
+троттлинга и других факторов на конечный результат, а ещё —
+генерировать отчеты в консоль или JSON-файл. Также инструмент можно
+использовать с CI, что позволит замечать проблемы с
+производительностью на начальных этапах.Подробную информацию о
+подключении и настройке можно найти в документации. Или в репозитории
+GitHub.Наилучшие результаты библиотека даёт при профилировании кода,
+который используется неоднократно. Хорошими примерами будет скроллинг
+RecyclerView, преобразование данных и так далее. Также желательно
+исключить влияние кеша, если он есть — сделать это можно с помощью
+генерации уникальных данных перед каждым прогоном. А ещё тесты на
+производительность требуют специфичных настроек (например,
+выключенного debuggable), поэтому правильным решением будет вынести их
+в отдельный модуль.Как работает MicrobenchmarkПосмотрим, как устроена
+библиотека.Запуски всех benchmark происходят внутри IsolationActivity
+(за первый запуск отвечает класс AndroidBenchmarkRunner), здесь и
+происходит начальная настройка. Она состоит из следующих шагов:Наличие
+других Activity с тестом. В случае дублирования тест упадёт с
+исключением — «Only one IsolationActivity should exist».Проверка
+поддержки Sustained Mode. Это такой режим, в котором устройство может
+поддерживать постоянный уровень производительности, что хорошо
+сказывается на консистентности результатов.Запуск параллельного с
+тестом процесса BenchSpinThread с THREAD_PRIORITY_LOWEST. Это сделано,
+чтобы как минимум одно ядро было постоянно загруженным, работает
+только в комбинации с Sustained Mode.Если в общих чертах: работа
+бенчмарка состоит в том, чтобы запустить код из теста некоторое число
+раз и измерить среднее время его выполнения. Но есть тонкости.
+Например, при таком подходе первые запуски будут занимать в несколько
+раз больше времени. Причина в том, что в тестируемом коде может быть
+зависимость, которая тратит много времени на инициализацию. В чём-то
+это похоже на двигатель автомобиля, которому необходимо некоторое
+время на прогрев.Перед контрольными запусками нужно убедиться, что всё
+работает в штатном режиме и прогрев завершён. В коде библиотеки его
+окончанием считается состояние, когда очередной запуск теста даёт
+результат, укладываемый в границы некой погрешности. Вся основная
+логика содержится в классе WarmupManager, именно здесь и происходит
+вся магия. В методе onNextIteration находится логика определения,
+является ли benchmark стабильным. В переменных fastMovingAvg и
+slowMovingAvg хранятся средние показатели по времени выполнения
+benchmark, которые сходятся к среднему значению с некоторой
+погрешностью (погрешность хранится внутри константы TRESHOLD).    fun
+onNextIteration(durationNs: Long): Boolean {         iteration++
+totalDuration += durationNs          if (iteration == 1) {
+fastMovingAvg = durationNs.toFloat()             slowMovingAvg =
+durationNs.toFloat()             return false         }
+fastMovingAvg = FAST_RATIO * durationNs + (1 - FAST_RATIO) *
+fastMovingAvg         slowMovingAvg = SLOW_RATIO * durationNs + (1 -
+SLOW_RATIO) * slowMovingAvg          // If fast moving avg is close to
+slow, the benchmark is stabilizing         val ratio = fastMovingAvg /
+slowMovingAvg         if (ratio < 1 + THRESHOLD && ratio > 1 -
+THRESHOLD) {             similarIterationCount++         } else {
+similarIterationCount = 0         }          if (iteration >=
+MIN_ITERATIONS && totalDuration >= MIN_DURATION_NS) {             if
+(similarIterationCount > MIN_SIMILAR_ITERATIONS ||
+totalDuration >= MAX_DURATION_NS) {                 // benchmark has
+stabilized, or we're out of time                 return true
+}         }         return false     }Помимо прогрева кода внутри
+библиотеки реализовано обнаружение Thermal Throttling. Допускать
+влияние такого состояния на тесты не стоит, потому что из-за
+дросселирования тактов увеличивается среднее время
+выполнения. Обнаружение перегрева работает намного проще, чем
+WarmupManager. В методе isDeviceThermalThrottled проверяется время
+выполнения небольшой тестовой функции внутри этого класса. А именно —
+замеряется время копирования небольшого ByteArray.private fun
+measureWorkNs(): Long {         // Access a non-trivial amount of data
+to try and 'reset' any cache state.         // Have observed this to
+give more consistent performance when clocks are unlocked.
+copySomeData()          val state = BenchmarkState()
+state.performThrottleChecks = false         val input = FloatArray(16)
+{ System.nanoTime().toFloat() }         val output = FloatArray(16)
+while (state.keepRunningInline()) {             // Benchmark a simple
+thermal             Matrix.translateM(output, 0, input, 0, 1F, 2F, 3F)
+}          return state.stats.min     }      /**      * Called to
+calculate throttling baseline, will be ignored after first call.
+*/     fun computeThrottleBaseline() {         if (initNs == 0L) {
+initNs = measureWorkNs()         }     }      /**      * Makes a guess
+as to whether the device is currently thermal throttled based on
+performance      * of single-threaded CPU work.      */     fun
+isDeviceThermalThrottled(): Boolean {         if (initNs == 0L) {
+// not initialized, so assume not throttled.             return false
+}          val workNs = measureWorkNs()         return workNs > initNs
+* 1.10     }Полученные выше данные используются при запуске основных
+тестов. Они помогают исключать прогоны для прогрева и те, на которые
+влияет троттлинг (если он есть). По умолчанию выполняется 50 значимых
+прогонов, при желании это число и другие константы легко меняются на
+необходимые. Но нужно быть осторожными — это может сильно повлиять на
+работу библиотеки.@Before         fun init() {                 val
+field = androidx.benchmark.BenchmarkState::class.java.getDeclaredField
+("REPEAT_COUNT")                 field.isAccessible = true
+field.set(benchmarkRule, GLOBAL_REPEAT_COUNT)         }Немного
+практикиПопробуем поработать с библиотекой как обычные пользователи.
+Протестируем скорость чтения и записи JSON для GSON и Kotlin
+Serialization. @RunWith(AndroidJUnit4::class) class
+KotlinSerializationBenchmark {                  private val context =
+ApplicationProvider.getApplicationContext<Context>()         private
+val simpleJsonString = Utils.readJsonAsStringFromDisk(context,
+R.raw.simple)                  @get:Rule val benchmarkRule =
+BenchmarkRule()                  @Before         fun init() {
+val field = androidx.benchmark.BenchmarkState::class.java.getDeclaredF
+ield("REPEAT_COUNT")                 field.isAccessible = true
+field.set(benchmarkRule, Utils.GLOBAL_REPEAT_COUNT)         }
+@Test         fun testRead() {
+benchmarkRule.measureRepeated {
+Json.decodeFromString<List<SmallObject>>(simpleJsonString ?: "")
+}         }                  @Test         fun testWrite() {
+val testObjects =
+Json.decodeFromString<List<SmallObject>>(simpleJsonString ?: "")
+benchmarkRule.measureRepeated {
+Json.encodeToString(testObjects)                 }         } }Для
+оценки результатов тестирования можно воспользоваться консолью в
+Android Studio или сформировать отчёт в JSON-файле. Причём детализация
+отчёта в консоли и файле очень сильно отличается: в первом случае
+получится узнать только среднее время выполнения, а во втором — полный
+отчёт со временем каждого прогона (полезно для построения графиков) и
+другой информацией.Настройка отчётов находится в окне Edit Run
+Configuration > Instrumentation Extra Params. Параметр, который
+отвечает за сохранение отчётов, называется
+androidx.benchmark.output.enable. Дополнительно здесь можно настроить
+импорт значений из Gradle, что будет полезно при запуске на
+CI.Настройки запуска тестов производительности с включенными
+отчетамиТеперь при выполнении тестов, отчёты будут сохраняться в
+директорию приложения, а имя файлов соответствовать имени класса.
+Пример структуры отчёта можно посмотреть здесь.ЗаключениеНа нашем
+проекте данный инструмент применялся для поиска лучшего решения среди
+парсеров JSON. В итоге победил Kotlin Serialization. При этом очень не
+хватало профилирования по потреблению CPU и памяти во время
+тестирования — их приходилось снимать отдельно.Может показаться, что
+инструмент обладает малым функционалом, его возможности ограничены, а
+область применения весьма специфична. В целом, так и есть, но в
+некоторых случаях он может оказаться очень полезным. Вот несколько
+кейсов:Оценка производительности новой библиотеки в проекте.Решение
+спорных ситуаций на код-ревью, когда необходимо обосновать выбор в
+пользу того или иного решения.Сбор статистики и оценка качества кода в
+течение долгого периода времени при интеграции с CI.Ещё у
+Microbenchmark есть старший брат — Macrobenchmark, который
+предназначен для оценки UI-операций, например, запуска приложения,
+скроллинга и анимации. Но это уже тема для отдельной статьи.

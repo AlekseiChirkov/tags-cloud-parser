@@ -1,0 +1,46 @@
+Автор: scorpka
+Дата: 2021-09-23T17:59:46.000Z
+Название: Уроки по SDL 2: Урок 9 — Отрисовка части изображений
+Теги: C++ *, Разработка игр *, C *
+Текст:
+Иногда нам нужно отрисовывать только часть текстуры, или иметь
+несколько изображений. В большинстве случаев подгружать одну картинку
+со множеством спрайтов экономически целесообразнее, чем подгружать
+множество изображений.в предыдущих уроках мы использовали
+SDL_RenderCopy(gRenderer,gTexture,NULL,NULL) пришло время разобраться
+что делают два последних параметра:#include<SDL2/SDL.h>  int
+main(void) {   SDL_Init(SDL_INIT_VIDEO);   SDL_Window* window=
+SDL_CreateWindow("Part of Image",0,0,640,480, 0);      SDL_Renderer
+*gRenderer = SDL_CreateRenderer(window,-1,SDL_RENDERER_ACCELERATED);
+SDL_Surface* bgSurface = SDL_LoadBMP("hw.bmp");   SDL_Surface*
+CircleSurface = SDL_LoadBMP("sprites.bmp");создаем окно(window) к нему
+подключаем отображение(gRenderer) и подгружаем два
+изображения(bgSurface, CircleSurface). SDL_SetColorKey(CircleSurface,S
+DL_TRUE,SDL_MapRGB(CircleSurface->format,0,0xFF,0xFF));
+SDL_Texture* bgTexture =
+SDL_CreateTextureFromSurface(gRenderer,bgSurface);    SDL_Texture*
+circleTexture = SDL_CreateTextureFromSurface(gRenderer,CircleSurface);
+SDL_RenderCopy(gRenderer,bgTexture,NULL,NULL);
+SDL_RenderPresent(gRenderer);         SDL_Delay(1000);
+//необязательная пауза на секунду у изображения(CircleSurface) делаем
+прозрачный фон, создаем два слоя(bgTexture, circleTexture),
+отрисовываем слой(bgTexture),  SDL_Rect dstrect;  dstrect.x = 0;
+dstrect.y = 0;  dstrect.h = 100; dstrect.w = 100;    SDL_Rect clip =
+{0,0,100,100}; //тут показаны два варианта задания Rect
+SDL_RenderCopy(gRenderer,circleTexture,&clip ,&dstrect);
+SDL_RenderPresent(gRenderer); создаем два прямоугольника(dstrect,
+clip); dstrect будет отвечать за позицию на экране, clip за нужный нам
+спрайт из изображения. отображаем спрайт захваченный координатами clip
+из изображения cirlceTexture, в координаты dstrect clip.y=100;
+dstrect.x = 540; dstrect.y = 0;  dstrect.h = 100; dstrect.w = 100;
+SDL_RenderCopy(gRenderer,circleTexture,&clip,&dstrect);    clip.y=0;
+clip.x=100;  dstrect.x = 0; dstrect.y = 380;
+SDL_RenderCopy(gRenderer,circleTexture,&clip ,&dstrect);    clip.y
+=100;  dstrect.x=540;  SDL_RenderCopy(gRenderer,circleTexture,&clip
+,&dstrect);   SDL_RenderPresent(gRenderer);  SDL_Delay(1000); меняем
+координаты clip для изменения цвета круга, и dstrect для изменения
+координат на экране. проделываем это три раза, и отрисовываем в окно.
+//TODO дописать код, чтобы круги меняли цвет.
+SDL_DestroyWindow(window);   SDL_Quit;  } домашнее задание: дописать
+программу, чтобы круги меняли цвет.Ссылка на изображения<< предыдущий
+урок

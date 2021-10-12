@@ -1,0 +1,54 @@
+Автор: scorpka
+Дата: 2021-09-28T08:18:16.000Z
+Название: Уроки по SDL 2: Урок 11 Текст и Вращение
+Теги: C++ *, Разработка игр *, C *
+Текст:
+в этом уроке мы научимся крутить текстуры, и отображать
+надписи.код:#include<SDL2/SDL.h> #include<SDL2/SDL_image.h>
+#include<SDL2/SDL_ttf.h>  int main(void) {   SDL_Init(SDL_INIT_VIDEO);
+TTF_Init();   SDL_Window* window = SDL_CreateWindow("flip", SDL_WINDOW
+POS_UNDEFINED,SDL_WINDOWPOS_UNDEFINED,640,490,SDL_WINDOW_SHOWN);
+SDL_Renderer* gRenderer =
+SDL_CreateRenderer(window,-1,SDL_RENDERER_ACCELERATED);   SDL_Surface*
+image = SDL_LoadBMP("hw.bmp");      SDL_Texture* groundTexture =
+SDL_CreateTextureFromSurface(gRenderer,image);
+SDL_RenderCopy(gRenderer,groundTexture,NULL,NULL);добавляем новую
+библиотеку SDL2_ttf, для поддержки шрифтов. Стандартно инициализируем
+видео, подгружаем окно, переменную отображения, а так же подгружаем
+фон SDL_Rect flowerPosition = {260,370,130,130};  SDL_Surface* flowers
+=IMG_Load("flower2.png");    SDL_Texture* flowerTexture =
+SDL_CreateTextureFromSurface(gRenderer,flowers);  SDL_RendererFlip
+flip = SDL_FLIP_HORIZONTAL; //начальная позиция  Задаем позицию цветка
+на фоне(flowerPosition), подгружаем изображение цветка(flowers),
+задаем начальную позицию(flip) кручения  for(int a = 0; a<360;a++)   {
+SDL_RenderCopy(gRenderer,groundTexture,NULL,NULL);
+SDL_RenderCopyEx(
+gRenderer,flowerTexture,NULL,&flowerPosition,a,NULL,flip);
+SDL_RenderPresent(gRenderer);   SDL_Delay(25);   } создаем цикл,
+который будет разворачивать изображение цветка на 360 градусов. в
+цикле сначала задаем фон, потом Важно: SDL_RenderCopyEx(gRenderer,
+Изображение,     прямоугольник внутри изображения,  позиция
+изображения на фоне, угол разворота, точка разворота изображения(по
+умолчанию центр), flip); , после этого отображаем наше повернутое
+изображение с фоном.  SDL_Color textColor = {255,0,0};      char *
+newText = "finish him";   TTF_Font* rFont =
+TTF_OpenFont("v_CCPrimalScream_v2.01.ttf",52);      SDL_Surface*
+textSurface = TTF_RenderText_Solid(rFont, newText, textColor);
+SDL_Rect abcPosition = {210,0,textSurface->w,textSurface->h};
+SDL_Texture* mTexture =
+SDL_CreateTextureFromSurface(gRenderer,textSurface);
+SDL_RenderCopy(gRenderer,mTexture,NULL,&abcPosition);      TTF_Font*
+bFont = TTF_OpenFont("v_CCPrimalScream_v2.01.ttf",50);   textSurface =
+TTF_RenderText_Solid(bFont, newText, textColor);       textColor.r = 0
+; //изменяем цвет на черный.    abcPosition.w = textSurface->w;
+abcPosition.h = textSurface->h;     textSurface =
+TTF_RenderText_Solid(bFont, newText, textColor);    mTexture =
+SDL_CreateTextureFromSurface(gRenderer,textSurface);
+SDL_RenderCopy(gRenderer,mTexture,NULL,&abcPosition);
+SDL_RenderPresent(gRenderer);   SDL_Delay(4000); устанавливаем
+цвет(textColor) красный,  создаем надпись(newText), подключаем
+шрифт(rFont), задаем позицию шрифта(abcPosition), и отображаем, делаем
+тоже самое для черного текста(bFont) и выводим на
+экран(RenderPresent);  //TODO заставить изображение крутиться
+SDL_DestroyWindow(window);   TTF_Quit();   IMG_Quit();   SDL_Quit();
+}Ссылка на файлы

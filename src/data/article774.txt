@@ -1,0 +1,198 @@
+Автор: NikolayCherkashin
+Дата: 2021-09-23T16:16:55.000Z
+Название: Photon Plugin: защищаем игровой процесс от читеров
+Теги: Блог компании Lightmap, Разработка игр *, Серверная оптимизация *,
+Unity *, Дизайн игр *
+Текст:
+По мере роста популярности нашего онлайн-шутера читеры все активнее
+его атаковали. Мы решили строить комплексную оборону по всем фронтам,
+где одним из шагов стала защита игрового процесса. Тогда взлому
+подвергались параметры здоровья, урона и скорострельности, кулдауны,
+количество патронов и многое другое — то, от чего в первую очередь
+страдали честные игроки.Мы используем Photon Cloud для сетевого
+взаимодействия игроков, поэтому сразу стали искать удобное решение на
+его основе. И нашли Photon Plugin, который закрыл все потребности.
+Изначально его вводили только для защиты, но потом стали использовать
+и при разработке новых фичей, где требуется серверная логика. Как мы
+его внедряли — рассказал под катом.Для синхронизации серверного
+взаимодействия мы используем Photon Cloud, который изначально не
+предполагает наличия серверной логики, а отвечает только за пересылку
+пакетов между пользователями. В идеале нужно использовать собственный
+игровой сервер, но мы запускали фактически прототип игры и тогда не
+тратили на это время. Но он внезапно стал хитом, и нам пришлось
+сосредоточиться на контенте для пользователей.Когда всерьез задумались
+о защите, то в игре уже было множество различных режимов, игровых
+механик, тонны контента, который активно развивался и ежемесячно
+получал апдейты — в общем, переписывать проект и переходить на
+собственный сервер было поздно и казалось крайне неподъемной задачей.
+С тех пор, конечно, наш подход к разработке новых проектов сильно
+изменился.Тогда мы начали искать альтернативные варианты. Пообщались с
+разработчиками Photon, они предложили попробовать Photon Plugin. Он
+позволяет мониторить пересылаемый между пользователями трафик и
+обрабатывать его своей кастомной логикой. Образно говоря, с его
+помощью можно получить своего надежного клиента в каждой игровой
+комнате, которого точно не взломают. Решили, что для реализации
+большинства защит его будет достаточно, и разработка не займет много
+времени.Что умеет плагинПлагин пишется на C#, размещается на серверах
+Photon, там же и запускается. Его жизненный цикл совпадает с жизненным
+циклом комнаты — при ее создании автоматически генерируется свой
+экземпляр плагина, который существует, пока комната не удалится.
+Причем обновленная версия плагина не влияет на уже созданные комнаты,
+с ней начинают работать только новые. Какие возможности дает
+плагин:прослушивать и, если нужно, исправлять или отменять любые
+PhotonNetwork.RPC, PhotonNetwork.Instantiate, PhotonNetwork.Destroy,
+PhotonStream, изменения свойства комнаты или игроков, которые
+происходят в комнатах;отправлять собственные сетевые сообщения — как
+от имени сервера, так и от имени любого пользователя в комнате;кикать
+пользователей из комнаты;взаимодействовать при помощи http-запросов со
+сторонними серверами.Сразу скажу о плюсах и минусах плагина, а потом
+перейду к внедрению.Плюсы:Способ получить серверную логику в
+отсутствии выделенного сервера;Относительно легкая и быстрая
+реализация.Минусы:Отсутствует возможность просчета 3D-мира, что
+накладывает ограничения при реализации некоторых функционалов
+(например, нельзя управлять ботами или валидировать пути игроков и так
+далее);Доступен только на тарифе Enterprise.Как внедрялиДля реализации
+защиты от читеров нужно было отслеживать как аномальные параметры
+(повышенное здоровье, урон, использование запрещенных предметов и
+другие), так и читерское поведения пользователей, которое, как
+правило, возможно при изменении кода (бессмертие или использование
+запрещенного гаджета). С проверкой большинства параметров на
+допустимые значения особых проблем не было. А для отслеживания
+изменения кода пришлось немного изменить схемы сетевого взаимодействия
+— чтобы при прослушивании трафика мы могли достоверно вычислять
+невалидное поведение.Гайдов по внедрению Photon Plugin в сети не очень
+много. Мы ориентировались на официальный, иногда обращались за помощью
+напрямую к разработчикам Photon, некоторые вещи проверяли
+самостоятельно. Сначала составили структуру проекта в плагине. Ее
+сделали аналогично клиентской, то есть завели те же классы: user
+(игрок, который зашел в комнату), player (игрок, который уже
+заспавнился), weapon, gadget и так далее. При этом оставили только те
+части, которые нужны для хранения данных.Далее начали подключать все
+это к сетевым сообщениям. Для этого реализовали разбор событий в
+плагине — посмотрели, как формируются пакеты в клиентском коде PUN и
+сделали по аналогии.Приведу код разбора сетевых событий на примере
+RaiseEvent. Внутри него есть ParseRaiseEventRPC, где отражено, как
+игрока кикает из комнаты, если тот не проходит проверку на доступность
+оружия.public override void OnRaiseEvent(IRaiseEventCallInfo info) {
+bool isCallBase = true;         switch (info.Request.EvCode)         {
+case 200:                         ParseRaiseEventRPC(info);
+break;                  case 201:
+ParseRaiseEventSendSerialize(info);                         break;
+case 202:                         ParseRaiseEventInstantiation(info);
+break;                  case 204:
+ParseRaiseEventDestroy(info);                         break;
+} }  private void ParseRaiseEventRPC(IRaiseEventCallInfo info) {
+object data = info.Request.Data;         if (data is Hashtable
+dictionary && dictionary.ContainsKey((byte) 5)) // под ключем 5 лежит
+номер  RPC         {                 byte rpcCode =
+Convert.ToByte(dictionary[(byte) 5]);                 RPC.List rpcName
+= (RPC.List) rpcCode;                 if (rpcName ==
+RPC.List.SetWeapon)                 {                         object[]
+parametersRPC =                                 dictionary[(byte) 4]
+as object[]; // под ключом 5 лежат параметры отправляемые в RPC
+int weapon;
+Int32.TryParse(Convert.ToString(parametersRPC[(byte) 0]),
+out weapon); // Получаем параметр с индексом 0
+User user = GetUser(info.ActorNr);                         if (user !=
+null  _user.player == null || !_user.player.CheckSetWeapon(weapon)
+{                                 PluginHost.RemoveActor(info.ActorNr,
+"Not check SetWeapon");  // Кикаем из комнаты если не прошла проверка
+на валидность установки пушки
+info.Cancel();                         }                 }         } }
+private void ParseRaiseEventSendSerialize(IRaiseEventCallInfo info) {
+object data = info.Request.Data;         if (data is Hashtable
+dictionary && dictionary.ContainsKey((byte)10))         {
+object[] _stream = dictionary[(byte)10] as object[];
+User user = GetUser(info.ActorNr);                 if (user != null &&
+user.player != null )                 {
+user.player.ParseSerializeView(info);                 }
+else                 {                         info.Cancel();
+}         } }  private void
+ParseRaiseEventInstantiation(IRaiseEventCallInfo info) {
+object data = info.Request.Data;         if (data is Hashtable
+dictionary && dictionary.ContainsKey((byte) 0))         {
+string prefabName = dictionary[(byte) 0].ToString();
+User user = GetUserByID(info.UserId);                 if (user ==
+null)                 {                         info.Cancel();
+return;                 }                  if (prefabName == "Player")
+{                         Player player = new Player();
+user.player = player;                         var idsList =
+dictionary[(byte)4] as int[];                         foreach (var id
+in idsList)                         {
+user.player.photonViewIDs.Add(Convert.ToInt32(_id));
+}                 }         } }  private void
+ParseRaiseEventDestroy(IRaiseEventCallInfo info) {         object data
+= info.Request.Data;         if (data is Hashtable dictionary)
+{                 string dataString =
+JsonConvert.SerializeObject(dictionary);                 User user =
+GetUserByID(info.UserId);                 if (user == null)
+{                         return;                 }
+int photonViewId = Convert.ToInt32(dictionary[(byte)0]);
+if (user.player != null &&
+user.player.photonViewIDs.Contains(photonViewId))                 {
+user.curPlayer = null;                 }         } }Получив доступ к
+пересылаемой информации между пользователями, стали валидировать их
+поведение в комнате и кикать в случае подозрительных действий. Для
+выполнения всех намеченных проверок нужно было получать данные с
+серверов как о пользователях, так и о настройках игры, которые нами
+регулярно меняются удаленно. Для этого при подключении пользователя в
+комнату о нем запрашивается вся информация, необходимая для дальнейших
+валидаций. Делается это с помощью http-запроса, вот пример:private
+void GetUserInfo(string id) {   var url =
+$"{serverURL}?room_id={PluginHost.GameId}&&id={id}";   HttpRequest
+request = new HttpRequest()   {      Callback = GetUserInfoCallback,
+Url = url,      UserState = id,      Async = true   };
+PluginHost.HttpRequest(request); }   public void
+GetUserInfoCallback(IHttpResponse response, object id) {   if
+(response.Status == HttpRequestQueueResult.Success)   {
+Dictionary<string, object> data =
+JsonConvert.DeserializeObject<Dictionary<string,
+object>>(response.ResponseText);      SaveUserInfo(data);   }   else
+{      PluginHost.CreateOneTimeTimer(() => GetUserInfo(id.ToString()),
+1000);   } }Также при помощи http-запроса с сервера запрашивается
+конфиг с текущими балансными параметрами, которые нужны для проверок.
+Например, урон, скорострельность или кулдауны на допустимые значения.
+Чтобы сокращать трафик, регулярно посылаем хеш имеющегося конфига в
+плагине к нам на сервер, а он отправляет конфиг назад, только если
+баланс изменился.Альтернативное использование плагинаСейчас Photon
+Plugin у нас работает не только как защита от взломов. При написании
+новых фичей, режимов и игровых механик пользуемся тем, что можем
+добавлять логику на серверной стороне. Например, для переключения
+состояний режимов, генерации бонусов, синхронизации данных с нашим
+сервером при матчмейкинге и так далее.Как правило, для этого
+необходимо отправлять какие-нибудь RPC или менять свойства комнаты с
+плагина. Ниже парочка примеров.Пример кода отправки RPC с
+плагина:internal void SendRPC(int targetViewID, RPC.List rpcName, byte
+cachingOption, params object[] rpcParameters) {   Hashtable eventData
+= new Hashtable();   eventData.Add((byte)5, (byte)rpcName);   if
+(rpcParameters != null && rpcParameters.Length > 0)   {
+eventData.Add((byte)4, rpcParameters);   }   SendRPC(targetViewID,
+eventData, cachingOption:cachingOption); }  internal void SendRPC(int
+targetViewID, Hashtable eventData,      byte receiverGroup =
+ReciverGroup.All,      int senderActorNumber = 0,      byte
+cachingOption = CacheOperations.DoNotCache,      byte interestGroup =
+0,      SendParameters sendParams = default(SendParameters)) {
+Dictionary<byte, object> parameters = new Dictionary<byte, object>();
+eventData.Add((byte)0, targetViewID);   parameters.Add(245,
+eventData);   parameters.Add(254, senderActorNumber);
+PluginHost.BroadcastEvent(receiverGroup, senderActorNumber,
+interestGroup, 200, parameters, cachingOption, sendParams); }Пример
+изменения свойства комнаты:Hashtable properties = new Hashtable();
+properties[matchEndKey] = endMatchTime; PluginHost.SetProperties(0,
+properties, null, true);Вместо заключенияС помощью Photon Plugin мы
+получили, по сути, интеграцию серверной логики без выделенного
+сервера. Новая система встала на рельсы фактически без даунтаймов, а
+игроки даже не заметили произошедших изменений.Внедрение Photon Plugin
+для защиты игрового процесса — только часть комплексного решения по
+борьбе с читерами из десятка шагов. Про другие наши инструменты и
+методы мы рассказывали в этих материалах:Как мы «вырастили» и победили
+читеров в своем онлайн-шутере — обзорная статья о нашей истории
+взаимоотношений с читерами, кратко обо всех шагах.Первые пять шагов
+для перелома ситуации с читерами в PvP-шутере — про обфускацию,
+хранение данных, миграцию прогресса, систему бана и подсчет хеша всех
+библиотек.Еще пять инструментов против читеров на мобильном проекте с
+DAU 1 млн пользователей — про защиту от измененных версий, Photon
+Plugin, серверную валидацию инаппов, защиту от взлома оперативной
+памяти и собственную аналитику.Интеграция и серверная валидация
+инаппов для стора Google Play — как защититься от читеров — отдельно и
+с деталями углубились в валидацию внутренних покупок.

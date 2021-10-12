@@ -1,0 +1,258 @@
+Автор: alx_mnzr
+Дата: 2021-09-28T19:54:31.000Z
+Название: Упрощаем создание мелодий C# Console.Beep. Нотная запись по-
+человечески, PC Speaker синтезатор
+Теги: .NET *, Кодобред, C# *, GitHub, Звук
+Текст:
+Зачем?Just for funПопрактиковаться в самом начале пути знакомства с
+языкомДля упрощения решения задач где музыка Console.Beep может быть
+полезнаУчиться программированию - программировать. Обьяснять в чём
+польза любой практики не вижу смысла. С фановостью также всё
+достаточно просто. Разве в работе с консольными приложениями (например
+в процессе изучения С#) у Вас никогда не возникало желание добавить в
+код сладенькую засушенную изюминку в виде олдскульных бип-мелодий? Или
+играть музыку щёлкая клавиши на своём ПК с этим самым "ламповым"
+звучанием PC Speaker? Вот и у меня возникло. Есть решение:
+Console.Beep воспроизводит звуки через PC Speaker (в связи с
+отсутствием системного драйвера начиная с Win 7 кзвук перенаправляется
+на звуковое устройство по умолчанию, по собственным наблюдениям на
+семёрке работает отвратно, зато на десятке вполне приемлемо, но
+возможно дело не только в операционной системе). Стоит уточнить что
+поддержка перегрузки Console.Beep(Int32, Int32) заявлена только для
+систем семейства MS Windows.Для пауз нет ничего проще чем
+Thread.Sleep.Всё что нам нужно - это using System и using
+System.Threading.И на первой же мелодии я понял как это неудобно -
+записывать ноты в виде частоты и колличества миллисекунд. Вот
+собственно как это работает обычно:Console.Beep (Int32, Int32),
+Thread.Sleep (Int32)Console.Beep(frequency, duration)Где frequency -
+частота звука от 37 до 32767 Гц,duration - продолжительность звучания
+в миллисекундах.Thread.Sleep (duration)Где duration -
+продолжительность паузы (на самом деле ожидания) в миллисекундах.
+Thread.Sleep(2000);             Console.Beep(264, 125);
+Thread.Sleep(250);             Console.Beep(264, 125);
+Thread.Sleep(125);             Console.Beep(297, 500);
+Thread.Sleep(125);             Console.Beep(264, 500);
+Thread.Sleep(125);             Console.Beep(352, 500);
+Thread.Sleep(125);             Console.Beep(330, 1000);
+Thread.Sleep(250);             Console.Beep(264, 125);
+Thread.Sleep(250);             Console.Beep(264, 125);
+Thread.Sleep(125);             Console.Beep(297, 500);
+Thread.Sleep(125);             Console.Beep(264, 500);
+Thread.Sleep(125);             Console.Beep(396, 500);
+Thread.Sleep(125);             Console.Beep(352, 1000);
+Thread.Sleep(250);             Console.Beep(264, 125);
+Thread.Sleep(250);             Console.Beep(264, 125);
+Thread.Sleep(125);             Console.Beep(2642, 500);
+Thread.Sleep(125);             Console.Beep(440, 500);
+Thread.Sleep(125);             Console.Beep(352, 250);
+Thread.Sleep(125);             Console.Beep(352, 125);
+Thread.Sleep(125);             Console.Beep(330, 500);
+Thread.Sleep(125);             Console.Beep(297, 1000);
+Thread.Sleep(250);             Console.Beep(466, 125);
+Thread.Sleep(250);             Console.Beep(466, 125);
+Thread.Sleep(125);             Console.Beep(440, 500);
+Thread.Sleep(125);             Console.Beep(352, 500);
+Thread.Sleep(125);             Console.Beep(396, 500);
+Thread.Sleep(125);             Console.Beep(352, 1000);Согласитесь,
+для одного звука вполне юзабельно. А вот набирать так целую песню не
+хотелось бы.Но вернёмся пока к третьему кейсу. В поисках информации на
+просторах интернета к своему удивлению я обнаружил сообщения на
+форумах от людей, использующих Beep звуки и мелодии в реальных
+проектах. Например, на компьютерах работающих на кассах. Зачем там
+Beep-музыка? Да не знаю я. Просто надеюсь, что кому-то кроме фана моя
+статья (и код) принёсут ещё и какую-то пользу.УпрощаемДаже сами
+мелгомягкие не поленились предложить вариант более вразумительной
+записи нот в качестве примера. И довели запись до такого вида:Note[]
+Mary =         {         new Note(Tone.B, Duration.QUARTER),
+new Note(Tone.A, Duration.QUARTER),         new Note(Tone.GbelowC,
+Duration.QUARTER),         new Note(Tone.A, Duration.QUARTER),
+new Note(Tone.B, Duration.QUARTER),         new Note(Tone.B,
+Duration.QUARTER),         new Note(Tone.B, Duration.HALF),
+new Note(Tone.A, Duration.QUARTER),         new Note(Tone.A,
+Duration.QUARTER),         new Note(Tone.A, Duration.HALF),
+new Note(Tone.B, Duration.QUARTER),         new Note(Tone.D,
+Duration.QUARTER),         new Note(Tone.D, Duration.HALF)
+};Уже немного лучше. Как этого добиться? Microsoft предлагает
+назначить нотам константы частот, а длительностям - константы
+миллисекунд.// Define the frequencies of notes in an octave, as well
+as // silence (rest).     protected enum Tone     {     REST   = 0,
+GbelowC = 196,     A      = 220,     Asharp = 233,     B      = 247,
+C      = 262,     Csharp = 277,     D      = 294,     Dsharp = 311,
+E      = 330,     F      = 349,     Fsharp = 370,     G      = 392,
+Gsharp = 415,     }  // Define the duration of a note in units of
+milliseconds.     protected enum Duration     {     WHOLE     = 1600,
+HALF      = WHOLE/2,     QUARTER   = HALF/2,     EIGHTH    =
+QUARTER/2,     SIXTEENTH = EIGHTH/2,     }Мне не совсем понравилась
+такая запись нот. Да да, это вкусовщина, и для себя я также выбрал
+американскую систему нотации (но Вам никто не мешает адаптировать и
+под итальянскую). Но вот эти все QUARTER,  Csharp (немного иронично,
+не правда ли?) - ну что это такое? Я бы лучше писал длительности как
+1, 1/2, 1/4, 1/8, 1/16. Плюс ещё есть точка. И привязывать каждую
+длительность к константе не айс.Ноты же куда удобнее (и гитаристы меня
+поймут) писать так: C, C#, D, D# и так далее. А лучше ещё добавить
+несколько октав и записывать номер октавы по стандарту миди-записи
+(или первый символ названия октавы по классическому стандарту, если
+хотите).Например так:E5 1/4., E5 1/8, E5 1/8, D5 1/8, E5 1/8, F5 1/8,
+G5 1/4., F5 1/8, E5 1/4, D5 1/4, C5 1/4, E5 1/4, B4 1/4, E5 1/4, A4
+1/8, G#4 1/8, A4 1/8, B4 1/8, C5 1/2, D5 1/2., E5 1/4., E5 1/8, E5
+1/8, D5 1/8, E5 1/8, F5 1/8, G5 1/4., F5 1/8, E5 1/4, D5 1/4, C5 1/4,
+A4 1/4, E5 1/4., G#4 1/8, A4 1/2, A4 1/4, pause 1/4., B4 1/4., B4 1/8,
+E5 1/8, D5 1/8, C5 1/8, B4 1/8, A4 1/8, B4 1/8, C5 1/8, A4 1/8, B4
+1/4, B4 1/4, C5 1/4., C5 1/8, D5 1/4, D5 1/4., E5 1/2, E5 1/4, pause
+1/4., B4 1/4., B4 1/8, E5 1/8, D5 1/8, C5 1/8, B4 1/8, A4 1/8, B4 1/8,
+C5 1/8, A4 1/8, B4 1/4, B4 1/4, C5 1/4, E5 1/4, B4 1/4, E5 1/4., A4
+1/8, B4 1/8, C5 1/8, D5 1/8, E5 1/2, F5 1/2., G5 1/4., F#5 1/8, G5
+1/4, E5 1/4, D5 1/4, D5 1/4, G5 1/8, F5 1/8, E5 1/8, D5 1/8, C5 1/4,
+C5 1/4, D5 1/4, D5 1/4, E5 1/4., D5 1/8, C5 1/8, D5 1/8, E5 1/8, F5
+1/8., G5 1/4., F#5 1/8, G5 1/4, E5 1/4, D5 1/4, D5 1/4, G5 1/8, F5
+1/8, E5 1/8, D5 1/8, C5 1/4, A4 1/4, E5 1/4., G#4 1/8, A4 1/2, A4 1/4,
+pause 1/4., G5 1/4., F#5 1/8, G5 1/4, E5 1/4, D5 1/4, D5 1/4, G5 1/8,
+F5 1/8, E5 1/8, D5 1/8, C5 1/4, C5 1/4, D5 1/4, D5 1/4, E5 1/4., D5
+1/8, C5 1/8, D5 1/8, E5 1/8, F5 1/8., G5 1/4., F#5 1/8, G5 1/4, E5
+1/4, D5 1/4, D5 1/4, G5 1/8, F5 1/8, E5 1/8, D5 1/8, C5 1/4, A4 1/4,
+E5 1/2, G#4 1/4, A5 1, A5 1.Вносить константы нот нескольких октав -
+как то не очень вдохновляет. А если я захочу применить питч шифт
+(сдвиг тональности вверх или вниз)? Да и длительности могут
+соответствовать очень разным значениям в зависимости от темпа. Честно
+говоря я сам сразу решил привязать нотам нескольких октав их частоты.
+Записать в массив, а для питч шифт просто менять индекс. И глупая была
+затея.Ведь есть же замечательная формула нахождения любой ноты зная её
+удалённость от эталонной! Как правило за эталон берут А, извините, Ля
+440 Гц. Вот как это выглядит:double power = toneIndex / 12; double
+dobleFreg = 440 * Math.Pow(2, power);Как Вы увидели тут фигурирует
+эталонная частота умноженная на 2 в степени индекс ноты (колличество
+полутонов удаления от эталонной ноты) поделить на 12.440 Гц -
+эталонная частота. 12 - колличество полутонов в октаве. Осталось
+только вычислить расстояние ноты до эталона. Не буду томить, а просто
+покажу готовый метод из моего решения.public static int
+GetFrequency(string toneName) {     double toneIndex = 0;     if
+(toneName.First() == 'C')     { toneIndex -= 9; }     else if
+(toneName.First() == 'D')     { toneIndex -= 7; }     else if
+(toneName.First() == 'E')     { toneIndex -= 5; }     else if
+(toneName.First() == 'F')     { toneIndex -= 4; }     else if
+(toneName.First() == 'G')     { toneIndex -= 2; }     else if
+(toneName.First() == 'B')     { toneIndex += 2; }     if
+(toneName.Substring(1, 1) == "#")     { toneIndex++; }     else if
+(toneName.Substring(1, 1) == "b")     { toneIndex--; }      toneIndex
+= toneIndex + (int.Parse(toneName.Last().ToString()) - 4) * 12 +
+Pitch;     double power = toneIndex / 12;     double dobleFreg = 440 *
+Math.Pow(2, power);     return (int)Math.Round(dobleFreg); }Метод
+принимает ноты вида A5, C#4, Bb3 и так далее. Разбивает стрингу на
+составляющие чтобы вычленить ноту, знак (если есть) и октаву.Тут ещё
+фигурирует Pitch - это я реализовал питч-сдвиг. И всё, можно получать
+любую ноту! Ах, да, весь свой код я оставлю внизу ссылкой на ГитХаб
+(если модераторы его пропустят, конечно).И если вам хочется вместо A3
+писать LaM (Ля малой октавы) - то немного модифицировать это решение
+как раз плюнуть (ну ладно, несколько раз плюнуть).А что я сделал с
+длительностями?Также принимаю стрингу. Узнаю её длину. Например если
+символ длительности один - однозначно это будут целые. Если два
+символа - это целая с точкой. Ну а если три и больше - это могут быть
+дробные длительности. Так что можно разделить строку по разделитею
+"/", ну а точку определить проще простого, ведь она в конце записи
+длительности.public static int GetDuration(string durationName) {
+int duration;     if (durationName.Length == 1)     { duration = 60000
+* int.Parse(durationName) / Tempo; }     else if (durationName.Length
+== 2)     { duration = 60000 *
+int.Parse(durationName.First().ToString()) * 15 / (10 * Tempo); }
+else     {     string[] durationUnit = durationName.Split('/');     if
+(durationUnit[1].Last() == '.')     {     durationUnit[1] =
+durationUnit[1].Remove(durationUnit[1].Length - 1);     duration =
+milliseconds * int.Parse(durationUnit[0]) * 15 /
+(int.Parse(durationUnit[1]) * 10 * Tempo);     }     else     {
+duration = milliseconds * int.Parse(durationUnit[0]) /
+(int.Parse(durationUnit[1]) * Tempo); }     }     return duration;
+}Осталось только сделать метод, который будет принимать строку в
+которой прописана вся песня, разделять на построки, находить частоту и
+продолжительность ноты. И воспроизводить что получилось.public static
+void PlayBeeps(string song) {    string[] notes = song.Split(", ");
+for (int i = 0; i < notes.Length; i++)    {         string[]
+toneAndDuration = notes[i].Split(' ');         string toneName =
+toneAndDuration[0];         string durationName = toneAndDuration[1];
+int duration = GetDuration(durationName);         if (toneName ==
+"pause")     { Thread.Sleep(duration); }     else     {         int
+freq = GetFrequency(toneName);         Console.Beep(freq, duration);
+}    } }Там ещё присутсвуют Pitch (о котором писал выше) и Tempo
+(темп). То есть через эти переменные можно менять высоту и
+продолжительность тона не меняя нотную запись!Неплохо, правда?Можно
+набрать мелодию как переменную. А что, если записывать не названия
+нот, а просто играть музыку, записывать в файл и воспроизводить? И так
+меня понесло реализовать целый Beeper Piano синтезатор! Задача ни чуть
+не сложнее:Ждём нажатия клавишь через Console.ReadKey. Забираем
+значение ConsoleKey key = Console.ReadKey(true).Key;Проверяем какая
+клавиша нажатаИграем нотуВозращаемся к ожиданию нажатия клавиши (не
+забудьте про возможность выхода или нажатия неназначенных клавишь)
+public static void Actions()         {             ConsoleKey key =
+Console.ReadKey(true).Key;             if (key == ConsoleKey.Escape) {
+Environment.Exit(0); }             else if (key == ConsoleKey.A) {
+PlayKeys("C4"); Actions(); }             else if (key == ConsoleKey.W)
+{ PlayKeys("C#4"); Actions(); }             else if (key ==
+ConsoleKey.S) { PlayKeys("D4"); Actions(); }             else if (key
+== ConsoleKey.E) { PlayKeys("D#4"); Actions(); }             else if
+(key == ConsoleKey.D) { PlayKeys("E4"); Actions(); }             else
+if (key == ConsoleKey.F) { PlayKeys("F4"); Actions(); }
+else if (key == ConsoleKey.T) { PlayKeys("F#4"); Actions(); }
+else if (key == ConsoleKey.G) { PlayKeys("G4"); Actions(); }
+else if (key == ConsoleKey.Y) { PlayKeys("G#4"); Actions(); }
+else if (key == ConsoleKey.H) { PlayKeys("A4"); Actions(); }
+else if (key == ConsoleKey.U) { PlayKeys("A#4"); Actions(); }
+else if (key == ConsoleKey.J) { PlayKeys("B4"); Actions(); }
+else if (key == ConsoleKey.K) { PlayKeys("C5"); Actions(); }
+else if (key == ConsoleKey.O) { PlayKeys("C#5"); Actions(); }
+else if (key == ConsoleKey.L) { PlayKeys("D5"); Actions(); }
+else if (key == ConsoleKey.P) { PlayKeys("D#5"); Actions(); }
+else if (key == ConsoleKey.D0 || key == ConsoleKey.D4) { Pitch = 0;
+Actions(); }             else if (key == ConsoleKey.D1) { Pitch = -36;
+Actions(); }             else if (key == ConsoleKey.D2) { Pitch = -24;
+Actions(); }             else if (key == ConsoleKey.D3) { Pitch = -12;
+Actions(); }             else if (key == ConsoleKey.D5) { Pitch = 12;
+Actions(); }             else if (key == ConsoleKey.D6) { Pitch = 24;
+Actions(); }             else if (key == ConsoleKey.D7) { Pitch = 36;
+Actions(); }             else if (key == ConsoleKey.D8) { Pitch = 48;
+Actions(); }             else if (key == ConsoleKey.D9) { Pitch = 60;
+Actions(); }             else if (key == ConsoleKey.NumPad0) {
+Duration = 5; Actions(); }             else if (key ==
+ConsoleKey.NumPad1) { Duration = 10; Actions(); }             else if
+(key == ConsoleKey.NumPad2) { Duration = 100; Actions(); }
+else if (key == ConsoleKey.NumPad3) { Duration = 200; Actions(); }
+else if (key == ConsoleKey.NumPad4) { Duration = 300; Actions(); }
+else if (key == ConsoleKey.NumPad5) { Duration = 400; Actions(); }
+else if (key == ConsoleKey.NumPad6) { Duration = 500; Actions(); }
+else if (key == ConsoleKey.NumPad7) { Duration = 600; Actions(); }
+else if (key == ConsoleKey.NumPad8) { Duration = 700; Actions(); }
+else if (key == ConsoleKey.NumPad9) { Duration = 800; Actions(); }
+else { Actions(); }         }А вот сам метод проигрования нот:
+public static void PlayKeys(string note)         {             int
+freq = GetFrequency(note);             Console.Beep(freq, Duration);
+}А частоту мы находили в методе GetFrequency() описаном выше.И вот
+теперь мы можем превратить клавиатуру компьютера в винтажный бип-
+синтезатор!Дальше было реализовано запись мелодий с клавиатуры в файл,
+который содержит уже готовые полноценные бип-комманды. Ведь зачем в
+свою программу вставлять все эти лишние классы? Зачем вообще набирать
+ноты, если их можно сыграть, записать и взять готовый код на основе
+Console.Beep и Thread.Sleep?Можно переключаться между режимом
+"легатто" (когда длительность ноты будет считаться с времени нажатия
+одной ноты до нажатия следующей) и "стакатто" (когда будет
+записываться текущая продолжительность нот, а между ними будет
+вставляться пауза). Во время игры разницы не будет, а вот при
+воспроизведении записанного - разница очень ощутима. Тем более можно
+играясь с продолжительностью нот получить звуки, напоминающие,
+например, 8-битный аналог "хлопанья дверью" и так далее.Если нужно
+расписать подробнее как я реализовал такой синтезатор с функцией
+записи в файл (и открытия из фалов) - пишите, изложу в отдельной
+статье. Или открывайте сырцы и изучайте сами.ЗЫ: моя первая попытка в
+статью на Хабре. Критикуйте.ЗЫ ЗЫ: мой первый проект на С#, я только
+учусь и мне интересно было сделать что-то фановое самостоятельно .
+Критикуйте.ЗЫ  ЗЫ ЗЫ: а можете просто собрать мой синтезатор и играть
+бип-бип музыку на своём ПК. О своих успехах (не успехах) пишите в
+комментариях!Спасибо!А вот и сырцыДобавлено: уже после написания
+статьи добавил "ударные" - просто реализовав бипы с Duration в 10
+миллисекунд и привязал их к нижнему ряду клавиатуры и клавишам Пробел
+и Ввод. А также реализовал переключение в микротональные режимы
+(четвертьтональность, третьтональность и так далее) с помощью задания
+произвольного числа ступеней в октаве и переключение с обычной
+клавиатуры белые/черные на сплошную раскладку из 24 клавишь (ряды Q и
+A) что особенно удобно для четвертьтональности. По ссылке выше уже
+обновлённая версия. Если тема микротональной музыки интересна -
+возможно в будущем реализую уже не такой консольный фан-олдфаг
+сентезатор на Console.Beep, а нормальную оконную клавиатуру с
+полифонией. Но это будет уже совсем другая история))

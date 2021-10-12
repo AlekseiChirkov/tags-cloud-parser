@@ -1,0 +1,40 @@
+Автор: scorpka
+Дата: 2021-09-23T08:51:33.000Z
+Название: Уроки по SDL 2: Урок 8 — прозрачный фон
+Теги: C++ *, Разработка игр *, C *
+Текст:
+Дисклеймер: почему собрался это делать - потому что нет нигде
+нормального обучения, для С\С++, поэтому все бросают это дело, так как
+невозможно разобраться, просто ужас.Смысл прозрачного фона для
+изображения кратко: SDL дает возможность через SDL_SetColorKey убрать
+фон у картинки, оставив только нужное нам изображение.Код,
+поехали:#include<SDL2/SDL.h>  int main(void)  {      SDL_Window*
+window; //объявление переменной окно   SDL_Renderer* gRenderer;
+//объявление рендерной переменной.      SDL_Surface *backgroundImage;
+//объявление слоев   SDL_Surface *humanImage;      SDL_Texture
+*backGroundTex;  //объявление текстуры   SDL_Texture *humanTex;
+SDL_Init(SDL_INIT_VIDEO); //яобъявление видео      window =
+SDL_CreateWindow( "transparentImage", 0,0,640,480,SDL_WINDOW_OPENGL);
+//создание окна   gRenderer = SDL_CreateRenderer(window, -1, 0);
+//привязка рендера к окну      SDL_SetRenderDrawColor(gRenderer, 0, 0,
+50, 255); //установка цвета red green blue bright
+SDL_RenderClear(gRenderer);//очистка экрана
+SDL_RenderPresent(gRenderer);//обновление экрана      SDL_Delay(1000);
+//передышка 1 секунду      backgroundImage =
+SDL_LoadBMP("hw.bmp");//подгрузка изображения   humanImage =
+SDL_LoadBMP("foo.bmp");   SDL_SetColorKey( humanImage, SDL_TRUE,
+SDL_MapRGB( humanImage->format, 0, 0xFF, 0xFF ) ); //создание
+прозрачного изображения   backGroundTex =
+SDL_CreateTextureFromSurface(gRenderer,backgroundImage); //создание
+текстуры      SDL_RenderCopy(gRenderer,backGroundTex,NULL,NULL);
+//копирование     текстуры в рендер   SDL_RenderPresent(gRenderer);
+SDL_Delay(1000);   humanTex =
+SDL_CreateTextureFromSurface(gRenderer,humanImage);    /*уменьшение
+изображения*/   SDL_Rect topLeftViewport;   topLeftViewport.x = 220;
+topLeftViewport.y = 220;   topLeftViewport.h = 300;
+topLeftViewport.w = 250;   SDL_RenderSetViewport(
+gRenderer,&topLeftViewport);    SDL_RenderCopy(gRenderer,
+humanTex,NULL,NULL);   SDL_RenderPresent(gRenderer);
+SDL_Delay(3000);   SDL_DestroyWindow(window); //уничтожение окна
+SDL_Quit(); //выход  return 0; }  Ссылка на изображения← Предыдущий
+урок

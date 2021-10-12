@@ -1,0 +1,88 @@
+Автор: lubaznatel
+Дата: 2021-09-28T09:37:37.000Z
+Название: telebot быстро и понятно. Телеграмм-бот
+Теги: Python *, Программирование *, Учебный процесс в IT
+Текст:
+telebot (pyTelegramBotAPI) хорошая и лёгкая библиотека для создания
+бота на python для телеграмма.УстановкаЕсли у вас windows, тогда вам
+надо найти cmd на своём пк, а если у вас macOS, тогда вам надо открыть
+терминал. Для установки telebot (pyTelegramBotAPI) на windows вам надо
+написать в cmdpip install pyTelegramBotAPIДля установки на macOS нам
+надо написать в терминалеpip3 install pyTelegramBotAPIНаписание
+кодаСначала надо получить токен. Для этого зайдём к боту
+botfather,чтобы получить токен (botfather)Теперь можно начать писать
+код.Сначала мы импортируем библиотеку.import telebot token="наш
+токен"Теперь создаём переменную под названием token, в ней мы будем
+хранить наш токен.Теперь мы можем создать приветствие бота:import
+telebot token='наш токен' bot=telebot.Telebot(token)
+@bot.message_handler(commands=['start']) def start_message(message):
+bot.send_message(message.chat.id,"Привет ✌️ ")
+bot.infinity_poling()Нам надо создать переменную bot, в ней мы пишем
+telebot.Telebot (наша переменная с токеном).Пишем
+@bot.message_handler(commands=['start'])Создаём функцию под названием
+"start_message"В скобках указываем "message".Пишем внутри функции
+bot.send_message(message.chat.id,"Привет")и вне функции пишем
+bot.infinity_poling()и запускаем программу.Теперь наш бот может
+приветствоватьвот пример:Приветствие мы сделали, теперь давайте
+сделаем кнопку.Надо написать from telebot import types там же, где мы
+импортировали библиотеку telebotimport telebot from telebot import
+types token='наш токен' bot=telebot.TeleBot(token)
+@bot.message_handler(commands=['start']) def start_message(message):
+bot.send_message(message.chat.id,'Привет')
+@bot.message_handler(commands=['button']) def button_message(message):
+markup=types.ReplyKeyboardMarkup(resize_keyboard=True)
+item1=types.KeyboardButton("Кнопка")   markup.add(item1)
+bot.send_message(message.chat.id,'Выберите что вам
+надо',reply_markup=markup) bot.infinity_polling()Теперь пишем
+@bot.message_handler(commands=['button']). Дальше мы создаём функцию
+под названием button_message, в скобках указываем message.Дальше надо
+создать клавиатуру в переменной под названием markup, в переменной
+пишем types.ReplyKeyboardMarkup(resize_keyboard=True).Потом создаём
+переменную item1, в ней будет хранится сама кнопка и пишем что
+item1=types.KeyboardButton("текст на кнопке").Дальше к клавиатуре
+добавим нашу кнопкуmarkup.add(item1)Далее надо отправить сообщение
+"Выберите что вам надо" и после текста написать reply_markup=markup и
+закрываем скобки.Теперь у нас есть кнопка. Вот пример:Но если мы на
+неё нажмём, то ничего не произойдёт. Сейчас мы сделаем так, чтобы при
+нажатии на кнопку выдавало ссылку на мою страницу в Хабре.import
+telebot from telebot import types token='наш токен'
+bot=telebot.TeleBot(token) @bot.message_handler(commands=['start'])
+def start_message(message):
+bot.send_message(message.chat.id,'Привет')
+@bot.message_handler(commands=['button']) def button_message(message):
+markup=types.ReplyKeyboardMarkup(resize_keyboard=True)
+item1=types.KeyboardButton("Кнопка")     markup.add(item1)
+bot.send_message(message.chat.id,'Выберите что вам
+надо',reply_markup=markup) @bot.message_handler(content_types='text')
+def message_reply(message):     if message.text=="Кнопка":         bot
+.send_message(message.chat.id,"https://habr.com/ru/users/lubaznatel/")
+bot.infinity_polling()Для начала мы напишем
+@bot.message_handler(content_types='text')Дальше нам надо создать
+функцию по названием message_reply, а в скобках указать message.Внутри
+функции надо указать условие "if message.text=="Кнопка:", а внутри
+условия отправить нам нужное сообщение.Вот пример:Смена кнопокЭто
+последняя часть статьи.В следующей статье мы разберём с вами
+добавление в группу или канал.Это можно считать самая лёгкая часть
+статьи.Мы разберём сейчас с вами замену кнопок.import telebot from
+telebot import types token='наш токен' bot=telebot.TeleBot(token)
+@bot.message_handler(commands=['start']) def start_message(message):
+bot.send_message(message.chat.id,'Привет')
+@bot.message_handler(commands=['button']) def button_message(message):
+markup=types.ReplyKeyboardMarkup(resize_keyboard=True)
+item1=types.KeyboardButton("Кнопка")     markup.add(item1)
+bot.send_message(message.chat.id,'Выберите что вам
+надо',reply_markup=markup) @bot.message_handler(content_types='text')
+def message_reply(message):     if message.text=="Кнопка":
+markup=types.ReplyKeyboardMarkup(resize_keyboard=True)
+item1=types.KeyboardButton("Кнопка 2")         markup.add(item1)
+bot.send_message(message.chat.id,'Выберите что вам
+надо',reply_markup=markup)     elif message.text=="Кнопка 2":
+bot.send_message(message.chat.id,'Спасибо за прочтение статьи!')
+bot.infinity_polling()Теперь нам просто надо создать клавиатуру с
+кнопками и добавить к клавиатуре кнопку как в прошлой части в тоже
+самое условие.Дальше в той же функции написать:elif
+message.text=="Кнопка 2":
+bot.send_message(message.chat.id,'Спасибо за прочтение статьи!')Теперь
+при нажатии на Кнопку 1 она у нас сменяется на кнопку 2 и при нажатии
+на кнопку 2 у нас присылает сообщение "Спасибо за прочтение
+статьи!".Вот пример:

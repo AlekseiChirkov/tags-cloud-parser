@@ -1,0 +1,121 @@
+Автор: easycode
+Дата: 2021-09-23T19:47:15.000Z
+Название: Собираем CSV-файл для импорта custom-постов в товары WooCoommerc’а
+Теги: WordPress *, PHP *
+Текст:
+Переделываем тут один старый WordPress-сайт в новый Интернет-магазин
+на WooCommerce. На старом сайте много товаров в виде custom’ных постов
+с заказом через простую форму Contact Form 7. А надо сделать всё
+красиво с WooCommerce. Писать граббер прямо с сайта нет желания,
+импортировать прямо из БД тоже возня лишняя, решили собрать все товары
+со старого сайта в формате CSV, чтобы потом его загрузить в родной
+импорт товаров WooCommerce.<?php  if ($_GET['product_export']) {
+add_action('init', function() {                   // товары на старом
+сайте - это посты с типом: tovary                 $_products =
+get_posts(array(                         'numberposts' => -1,
+'post_type' => 'tovary',                 ));                  if
+(is_array($_products) and count($_products)) {
+foreach ($_products as $_product) {
+$line['ID'] = $_product->ID;
+$line['Имя'] = $_product->post_title;
+$line['Изображение'] = get_the_post_thumbnail_url($_product->ID,
+'full');                                 $line['Описание'] =
+$_product->post_content;                                  $_meta =
+get_metadata('post', $_product->ID);
+if (is_array($_meta['mwpf_technical']) and
+count($_meta['mwpf_technical']) and
+count($_meta['mwpf_technical'][0])) {
+//$line['meta'] = var_export(   $_meta, true ); // раскоментить если
+нужно будет посмотреть что там =)
+$_price = (int) str_replace(' ', '', $_meta['mwpf_action_one'][0]);
+$line['Базовая цена'] = $_price ? $_price : ''; // чтобы цена не была
+0 в WooCommerce для товаров без цены на старом сайте
+// там мы собираем нужные нам мета-поля ( произвольные поля WordPress
+для записей )                                         $line['Мета:
+mwpf_file'] = $_meta['mwpf_file'][0];
+$line['Мета: mwpf_file_name'] = $_meta['mwpf_file_name'][0];
+// а так пришлось собирать атрибуты из HTML-таблицы записанной в мета-
+поле товара
+preg_match_all('|<td>(.*?)</td><td>(.*?)</td></tr>|is',
+$_meta['mwpf_technical'][0], $buff);
+//$line['dfsd'] = '<pre>'. strip_tags(var_export( $buff, true)) .
+'</pre>'; // проверка                                          // этот
+код вам не понадобится, но вдруг у вас будет похожая ситуация
+if ( is_array($buff[1]) and count($buff[1]) ) {
+foreach ($buff[1] as $key => $_value) {
+$_name = trim(strip_tags($_value));
+if ($_name == '') continue;
+if (is_numeric($_name)) continue;
+$__value = trim(strip_tags($buff[2][$key]));
+if ( $__value == '+')
+$__value = 'да';
+$atts[$line['ID']][$_name] = $__value;
+$atts_names[$_name] = $_name;
+}                                         }
+if ( is_array($atts_names) and count($atts_names) ) {
+foreach($atts_names as $_name) {
+if (isset($atts[$line['ID']][$_name])) {
+$line[$_name] = $atts[$line['ID']][$_name];
+} else {
+$line[$_name] = '';
+}                                                 }
+}                                          //$line['Атрибуты'] =
+var_export($buff, true); // проверка                                 }
+$headers = array_merge( (array) $headers,
+array_combine(array_keys($line), array_keys($line)) );
+$lines[] = $line;                         }                 }
+if (is_array($lines) and count($lines)) {                          //
+собираем таблицу для просмотра на странице, чтобы понимать правильно
+ли мы всё сделали:                          echo '<table border="1">';
+echo '<tr>';                         foreach ( $headers as $_name ) {
+echo '<th>' . $_name . '</th>';                         }
+echo '</tr>';                          foreach ($lines as $_line) {
+echo '<tr>';                                 foreach ($headers as
+$_name) {                                         echo '<td>' .
+$_line[$_name] . '</td>';                                 }
+echo '</tr>';                         }                          echo
+'</table>';                            // а теперь начинаем собирать
+данные для CSV-файла:                         $line = array();
+foreach ( $headers as $_name ) {                                 if
+(isset($atts_names[$_name])) {
+$i++;                                         $line[] = "Имя атрибута
+$i";                                         $line[] = "Значение(-я)
+аттрибута(-ов) $i";                                         $line[] =
+"Видимость атрибута $i";
+$line[] = "Глобальный атрибут $i";                                 }
+else {                                         $line[] = $_name;
+}                         }                         $data[] = $line;
+foreach ($lines as $_line) {                                 $line =
+array();                                 foreach ($headers as $_name)
+{                                         if
+(isset($atts_names[$_name])) {
+$line[] = $_name;
+$line[] = $_line[$_name];
+$line[] = 1;                                                 $line[] =
+1;                                         } else {
+$line[] = $_line[$_name];                                         }
+}                                 $data[] = $line;
+}                          // записываем все наши данные в CSV-файл
+@unlink(__DIR__.'/export.csv');                         $fp =
+fopen(__DIR__.'/export.csv', 'w');                         foreach
+($data as $_fields) {                             fputcsv($fp,
+$_fields);                         }
+fclose($fp);                          // выводим ссылку на CSV-файл
+echo '<hr><a href="' . get_template_directory_uri() .
+'/export.csv">Скачать CSV</a>';                  }
+exit();         }); }Не торопитесь охать и ахать от безумного кода.
+Задача была быстро и просто перенести товары со старого сайт на новый
+в WooCommerce.Там много лишнего кода, который может вам не пригодится.
+С другой стороны возможно у вас такая ситуация и Вам нужно быстрое
+решение.Код был написан прямо в functions.php активной темы и вызван
+через ваш_сайт/product_export?=1. В итоге перед вами будет таблица
+данных и ссылка на корректный CSV-файл, готовый для импорта в
+WooCommerce. Кстати WooCommerce фотографии прямо грузит по ссылкам со
+старого сайта, что удобно, а если здесь:$line['Изображение'] =
+get_the_post_thumbnail_url($_product->ID, 'full'); можно указать
+несколько ссылок ко всем изображениям товара, тогда WooCommerce в
+процессе импорта загрузит их все: по первой ссылке будет главное фото
+товара, остальные пойдут в галерею.К примеру если вы собрали URL-
+адреса к изображениям товара в массив $imagesif (is_array($images) and
+count($images)) {         $line['Изображение'] = implode(',',
+$images); }

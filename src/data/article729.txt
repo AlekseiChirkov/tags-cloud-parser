@@ -1,0 +1,408 @@
+Автор: serafim78
+Дата: 2021-09-24T11:52:51.000Z
+Название: Spill-файлы в Greenplum
+Теги: Блог компании TINKOFF, SQL *
+Текст:
+Если вы читаете эту статью, скорее всего, с некоторой периодичностью
+сталкиваетесь со spill-файлами, а может, и генерируете их. В сети мало
+статей и постов на эту тему, поэтому я решил написать здесь всё, что
+знаю о спиллах, о том, как понять, что они есть в запросе, и как их
+избежать.Меня зовут Николай, я BI-аналитик. Одна из моих рабочих задач
+— написание запросов к GreenPlum, причем таких, которые не уронят базу
+и не навлекут админский гнев.Мне нравится создавать хорошие процессы и
+совершенствовать существующие.Не буду подробно останавливаться на
+каких-то базовых понятиях работы с GreenPlum, предполагаю, что вы
+знакомы с планом запроса и основными методами оптимизации
+запросов. Все примеры буду показывать на двух таблицах.Первая таблица
+— prod_wrk.applications. Содержит 1 831 606 562 строк. DDL:CREATE
+TABLE prod_wrk.applications (    id bigint,    first_name character
+varying(32),    last_name character varying(32),    patronymic
+character varying(60),    birth_dt timestamp(0) without time zone,
+phone_mobile character varying(16),    phone_work character
+varying(16),    additional_work_phone character varying(16),
+phone_home character varying(16),    additional_phone_home character
+varying(16),    email character varying(50),    region character
+varying(255),    product_category character varying(50),    dt_created
+timestamp(0) without time zone,    some_foreign_key_1 character
+varying(255),    some_foreign_key_2 character varying(255),
+some_foreign_key_3 character varying(255),    some_foreign_key_4
+character varying(255),    some_foreign_key_5 character varying(255),
+some_foreign_key_6 character varying(255),    some_foreign_key_7
+character varying(255),    some_foreign_key_8 character varying(255),
+some_foreign_key_9 character varying(255),    some_foreign_key_10
+character varying(255),    some_foreign_key_11 character varying(255),
+some_foreign_key_12 character varying(255),    some_foreign_key_13
+character varying(255),    some_foreign_key_14 character varying(255),
+some_foreign_key_15 character varying(255),    some_foreign_key_16
+character varying(255),    some_foreign_key_17 character varying(255),
+) WITH (APPENDONLY=true, ORIENTATION=column, COMPRESSTYPE=quicklz)
+DISTRIBUTED BY (id)Вторая таблица формата key-param-value -
+prod_wrk.applications_extra_fields. Содержит 4 328 017 строк.
+DDL:CREATE TABLE prod_wrk.applications_extra_fields (   id bigint,
+name character varying(100),   value character varying(255) ) WITH
+(APPENDONLY=true, ORIENTATION=column, COMPRESSTYPE=quicklz)
+DISTRIBUTED BY (id)Немного о spill-файлахSpill-файлы, спиллы — это
+некоторый генерируемый дополнительный объем данных на жестком диске,
+который используется для выполнения запроса.Спиллы появляются, когда
+для запроса нужно хранить данных больше, чем предоставлено оперативной
+памятью. Например, есть запрос, который для выполнения требует 650 Гб
+рабочей памяти, однако под запрос выделено 500 Гб оперативной памяти.
+В итоге 650 − 500 = 150 Гб  — столько требуется сверх оперативной
+памяти. Именно этот объем сгенерируется в виде спиллов.Почему плохо,
+когда спиллов становится много?Страдаете вы. Спиллы хранятся на
+жестком диске, а скорость чтения и записи с жесткого диска в разы
+меньше, чем из оперативной памяти. Из-за этого увеличивается время
+выполнения вашего запроса.Страдают другие пользователи. Пока
+выполняется ваш запрос, другие пользователи долго ждут своей очереди к
+ресурсам хранилища. Очередь к ресурсам растягивается, и пользователи с
+оптимизированными запросами получат результаты лишь к середине
+рабочего дня.Страдают админы и хранилище в целом. Представьте, что в
+вашем GreenPlum 250 Тб данных. Если 20 пользователей запустят запросы,
+где каждый в среднем нагенерит 2,5 Тб спиллов, то в итоге около 1/6
+(50 Тб) данных в хранилище занято временными файлами на один раз, а
+ведь это место в будущем будут занимать какие-то полезные для
+аналитики данные. И если такие запросы останутся, то начнутся проблемы
+с памятью.В идеале запрос не должен содержать спиллов, но допускается
+их небольшой объем. Спиллы сами по себе не зло, а гибкий метод
+выполнения запроса несмотря на ограничение по объему оперативной
+памяти. Зло — когда их становится слишком много. Особенное зло — когда
+их слишком много на небольшом GreenPlum.Отлов и подсчет спилловУзнать,
+сколько точно спиллов генерирует запрос, нельзя. Можно узнать лишь
+объем сгенерированных спиллов на текущий момент или примерно оценить
+через EXPLAIN ANALYZE.Способ № 1. При помощи системной таблицы
+gp_toolkit.gp_workfile_usage_per_queryВ системной таблице хранятся
+данные: кто, каким запросом и сколько сгенерировал спиллов в каждом
+сегменте.Пользователям эта таблица будет интересна в целях
+самоконтроля и проверки собственных запросов. Администраторам она
+будет интересна для выявления запросов с большим объемом спиллов,
+ограничения количества таких запросов и наказания пользователей,
+которые генерируют чрезмерно много спиллов. Например, на основе этой
+таблицы можно написать скрипт, который с некоторой периодичностью
+будет проверять запросы, работающие на текущий момент, и убивать те
+запросы, объем спиллов в которых превышает штрафное значение.Пример
+запроса с использованием gp_toolkit.gp_workfile_usage_per_query. Так
+можно узнать количество и объем в Гб спиллов, которые были
+сгенерированы вашими запросами на текущий момент.select
+current_query   ,sum(size) / 1024 / 1024 / 1024 :: float
+size_spill_files_gb   ,sum(numfiles) count_spill_files from
+gp_toolkit.gp_workfile_usage_per_query where   usename = current_user
+group by   current_queryПлюсыПоказывает точный объем
+спиллов.МинусыПоказывает объем лишь на текущий момент. Возможна
+ситуация, когда запрос генерирует спиллы в какой-то промежуток
+времени, а запрос с gp_toolkit.gp_workfile_usage_per_query запущен вне
+данного промежутка. Таким образом можно сделать ошибочный вывод, что
+запрос не генерирует спиллы.Нельзя узнать проблемное место в
+запросе.Способ № 2. При помощи команды EXPLAIN ANALYZE Работу с
+EXPLAIN ANALYZE я покажу на пример. Имеем следующий запрос, который
+генерирует спиллы:select   aef.name   ,aef.value   ,aef.id   ,a.* from
+prod_wrk.applications_extra_fields as aef   left join
+prod_wrk.applications as a     on aef.id = a.idИспользуем вместе с ним
+команду EXPLAIN ANALYZE, а во время выполнения запроса параллельно
+будем вызывать gp_toolkit.gp_workfile_usage_per_query. Используя
+постоянный спам запроса с gp_toolkit.gp_workfile_usage_per_query
+выясняем, что во время запроса было сгенерировано около 344 Гб
+спиллов:Теперь изучим план запроса от EXPLAIN ANALYZE, спускаемся в
+самый низ, в секцию Slice statistic. Обратите внимание на слайс №
+1:Если хотя бы один слайс помечен звездочкой *, значит, при выполнении
+запроса происходила генерация спилл-файлов. При этом примерный объем
+сгенерированных спиллов одним сегментом написан возле bytes wanted. В
+данном случае сгенерировано 4 014 945 Кб, то есть примерно 3,82 Гб, а
+так как сегментов у нас 144, то выходит объем примерно в 550 Гб. Если
+слайсов со звездочкой больше одного, то нужно суммировать все значения
+bytes wanted. За счет слайсов со звездочкой можно понять, из-за какой
+таблицы происходит генерация спиллов. Это очень удобно, если джойнов у
+вас больше двух.Способ № 1 нам показал объем спиллов 344 Гб, а по
+способу № 2 — 550 Гб. Почему же так? Дело в том, что EXPLAIN ANALYZE
+делает лишь примерную оценку требуемой памяти. Подсчет вторым способом
+можно принять как нижнюю оценку требуемого объема памяти, то есть
+можно утверждать, что для выполнения данного запроса потребуется
+сгенерировать минимум 550 Гб спилл-файлов.ПлюсыМожно с достаточно
+высокой точностью узнать проблемное место в запросе.МинусыEXPLAIN
+ANALYZE требует полного выполнения запроса. Если запрос ужасный и
+убивается администраторами, способ не сработает.Позволяет примерно
+оценить объем спиллов.Основные причины генерации spill-файлов и их
+устранениеПричина возникновения спиллов всегда одна — нехватка
+оперативной памяти. Способов вызвать дефицит существует несколько. Вот
+несколько замеченных:обработка огромного объема данных без
+фильтров;создание хэш-таблицы на основе таблицы большого
+объема;DISTINCT на большом количестве полей;использование ORDER
+BY.Каждый случай разберу подробнее и объясню, как правильно в них
+поступать.Кейс № 1. Обработка огромного объема данных без фильтровОдин
+из простых случаев обнаружения и устранения спиллов.Когда происходит
+джоин, данные из одной таблицы помещаются в хэш-таблицу, которая
+занимает место в оперативной памяти.Если данные помещаемой таблицы
+никак не отфильтрованы, по сути, вы будете пытаться затолкать всю
+витрину данных в оперативную память. Не факт, что она поместится в
+память. А даже если и поместится, нужно будет куда-то записать
+результаты джоина, опять же, места может не хватить — и начнется
+генерация спиллов.Как решается. Используйте фильтры, особенно фильтры
+на даты и время. Очень сомнительно, что может возникнуть необходимость
+провести аналитику по всему объему данных за всё время. Если нужна
+аналитика от начала времен, создайте несколько запросов, в которых
+будут обрабатываться разные временные промежутки, и их результаты
+объедините при помощи UNION ALL. Серия запросов на ограниченных
+промежутках данных будет эффективнее, чем попытка обработать все
+разом.Кейс № 2. Создание хэш-таблицы на основе таблицы большого
+объемаОтчасти данный кейс схож с предыдущим кейсом, однако он может
+возникнуть и при фильтрации таблиц.Объем данных, помещаемых в хэш-
+таблицу зависит от двух вещей: количества строк и кол-ва вытаскиваемых
+полей.При INNER JOIN хэш-таблица формируется на основе таблицы с
+меньшим объемом строк. Логично, ведь лучше держать в оперативной
+памяти меньший объем данных. Однако это правило не работает при LEFT
+JOIN — при таком соединении хэш-таблица всегда строится на основе
+правой таблицы, несмотря на ее объем. Таким образом, мы можем
+ненароком поместить в оперативную память большую таблицу, если
+пропишем конструкцию вида «маленькая_таблица LEFT JOIN
+большая_таблица», чем забьем оперативную память и начнем генерировать
+спиллы.Также все зависит от вызываемых в SELECT, WHERE и условии
+джойна количества полей в большой таблице. Чем их больше — тем больший
+объем оперативной памяти будет занят.Рассмотрим запрос из примера №
+1:select   aef.name   ,aef.value   ,aef.id   ,a.* from
+prod_wrk.applications_extra_fields as aef   left join
+prod_wrk.applications as a     on aef.id = a.idВ начале статьи я
+упоминал, что объем строк в таблице prod_wrk.applications — 1 831 606
+562, а в таблице prod_wrk.applications_extra_fields 4 328 017 строк.
+EXPLAIN ANALYZE данного запроса представлен ниже:  QUERY PLAN Gather
+Motion 144:1  (slice1; segments: 144)  (cost=0.00..238481.48
+rows=8656034 width=654)   Rows out:  4328017 rows at destination with
+24367 ms to first row, 65561 ms to end.   ->  Hash Left Join
+(cost=0.00..225847.13 rows=60112 width=654)         Hash Cond:
+applications_extra_fields.id = applications.id         Rows out:  Avg
+30055.7 rows x 144 workers.  Max 30572 rows (seg125) with 33702 ms to
+first row, 48803 ms to end.         Executor memory:  1003773K bytes
+avg, 1005792K bytes max (seg97).         Work_mem used:  1003773K
+bytes avg, 1005792K bytes max (seg97). Workfile: (144 spilling)
+Work_mem wanted: 4011233K bytes avg, 4014945K bytes max (seg115) to
+lessen workfile I/O affecting 144 workers.         (seg115) Initial
+batch 0:         (seg115)   Wrote 2899696K bytes to inner workfile.
+(seg115)   Wrote 1248K bytes to outer workfile.         (seg115)
+Initial batches 1..3:         (seg115)   Read 2899005K bytes from
+inner workfile: 966335K avg x 3 nonempty batches, 967097K max.
+(seg115)   Read 1261K bytes from outer workfile: 421K avg x 3 nonempty
+batches, 423K max.         (seg115) Hash chain length 3.2 avg, 16 max,
+using 3991901 of 4194304 buckets.         ->  Table Scan on
+applications_extra_fields  (cost=0.00..431.84 rows=30056 width=37)
+Rows out:  Avg 30055.7 rows x 144 workers.  Max 30572 rows (seg125)
+with 29 ms to first row, 37 ms to end.         ->  Hash
+(cost=4845.30..4845.30 rows=12719490 width=617)               Rows in:
+Avg 3180162.9 rows x 144 workers.  Max 3185478 rows (seg83) with 38691
+ms to end, start offset by 15 ms.               ->  Table Scan on
+applications  (cost=0.00..4845.30 rows=12719490 width=617)
+Rows out:  Avg 12719490.0 rows x 144 workers.  Max 12719888 rows
+(seg57) with 8.758 ms to first row, 16397 ms to end. Slice statistics:
+(slice0)    Executor memory: 582K bytes.   (slice1)  * Executor
+memory: 1471761K bytes avg x 144 workers, 1471867K bytes max (seg117).
+Work_mem: 1005792K bytes max, 4014945K bytes wanted. Statement
+statistics:   Memory used: 2555904K bytes   Memory wanted: 4015344K
+bytes Settings:  gp_enable_relsize_collection=on;
+optimizer_join_arity_for_associativity_commutativity=18 Optimizer
+status: PQO version 3.111.0 Total runtime: 65731.204 msИз плана видно,
+что:хэш строится на огромную таблицу applications;генерируются спиллы
+на первом слайсе;время выполнения — 65 секунд.Как решается. Способов
+избавиться от спиллов несколько. Первый из них и самый наивный —
+уменьшить объем таблицы, которая помещается в хэш. Этого можно
+добиться путем уменьшения количества строк с помощью фильтрации либо
+уменьшения извлекаемых полей, так как вряд ли для анализа требуется
+весь атрибутный состав витрины. Изменим запрос, уменьшив количество
+извлекаемых полей из таблицы applications:select   aef.name
+,aef.value   ,aef.id   ,a.dt_created   ,a.product_category
+,a.some_foreign_key_1 from   prod_wrk.applications_extra_fields as aef
+left join prod_wrk.applications as a     on aef.id = a.idПлан данного
+запроса представлен ниже:QUERY PLAN Gather Motion 144:1  (slice1;
+segments: 144)  (cost=0.00..24457.91 rows=8656034 width=74)   Rows
+out:  4328017 rows at destination with 8567 ms to first row, 18771 ms
+to end.   ->  Hash Left Join  (cost=0.00..23028.33 rows=60112
+width=74)         Hash Cond: applications_extra_fields.id =
+applications.id         Rows out:  Avg 30055.7 rows x 144 workers.
+Max 30572 rows (seg125) with 9182 ms to first row, 9849 ms to end.
+Executor memory:  561745K bytes avg, 561825K bytes max (seg118).
+Work_mem used:  561745K bytes avg, 561825K bytes max (seg118).
+Workfile: (0 spilling)         (seg125) Hash chain length 1.9 avg, 11
+max, using 6547487 of 8388608 buckets.         ->  Table Scan on
+applications_extra_fields  (cost=0.00..431.84 rows=30056 width=37)
+Rows out:  Avg 30055.7 rows x 144 workers.  Max 30572 rows (seg125)
+with 13 ms to first row, 18 ms to end.         ->  Hash
+(cost=4845.30..4845.30 rows=12719490 width=45)               Rows in:
+Avg 12719490.0 rows x 144 workers.  Max 12719888 rows (seg57) with
+16865 ms to end, start offset by 292 ms.               ->  Table Scan
+on applications  (cost=0.00..4845.30 rows=12719490 width=45)
+Rows out:  Avg 12719490.0 rows x 144 workers.  Max 12719888 rows
+(seg57) with 4.584 ms to first row, 6608 ms to end. Slice statistics:
+(slice0)    Executor memory: 514K bytes.   (slice1)    Executor
+memory: 1180565K bytes avg x 144 workers, 1180565K bytes max (seg0).
+Work_mem: 561825K bytes max. Statement statistics:   Memory used:
+2555904K bytes Settings:  gp_enable_relsize_collection=on;
+optimizer_join_arity_for_associativity_commutativity=18 Optimizer
+status: PQO version 3.111.0 Total runtime: 18920.442 msИз плана видно,
+что:хэш по-прежнему строится на таблицу applications;спиллы не
+генерируются;время выполнения уменьшилось — 18 секунд.Очевидный
+вывод: чем меньше колонок вы указали в запросе, тем быстрее он
+выполнится. GreenPlum — это база с поколоночным хранением. Чем меньше
+указано колонок, тем меньший объем данных читается и хранится в
+оперативной памяти.Другой вариант решения применяется, если вы уже по
+максимуму урезали количество строк и колонок. Тут мы должны заставить
+оптимизатор строить хэш на меньшую таблицу. Это можно сделать двумя
+способами: либо поменять LEFT JOIN на INNER JOIN, либо поменять
+местами таблицы при LEFT JOIN. Заменим LEFT на INNER в начальном
+запросе:select   aef.name   ,aef.value   ,aef.id   ,a.* from
+prod_wrk.applications_extra_fields as aef   inner join
+prod_wrk.applications as a     on aef.id = a.idПлан данного запроса
+представлен ниже:  QUERY PLAN Gather Motion 144:1  (slice1; segments:
+144)  (cost=0.00..33280.61 rows=4328017 width=654)   Rows out:
+1952503 rows at destination with 3301 ms to first row, 34665 ms to
+end.   ->  Hash Join  (cost=0.00..26963.43 rows=30056 width=654)
+Hash Cond: applications.id = applications_extra_fields.id         Rows
+out:  Avg 13559.0 rows x 144 workers.  Max 13878 rows (seg127) with
+483 ms to first row, 20343 ms to end.         Executor memory:  2034K
+bytes avg, 2067K bytes max (seg125).         Work_mem used:  2034K
+bytes avg, 2067K bytes max (seg125). Workfile: (0 spilling)
+(seg127) Hash chain length 1.0 avg, 3 max, using 29968 of 4194304
+buckets.         ->  Table Scan on applications  (cost=0.00..4845.30
+rows=12719490 width=617)               Rows out:  Avg 12719490.0 rows
+x 144 workers.  Max 12719888 rows (seg57) with 114 ms to first row,
+26154 ms to end.         ->  Hash  (cost=431.84..431.84 rows=30056
+width=37)               Rows in:  Avg 30055.7 rows x 144 workers.  Max
+30572 rows (seg125) with 26 ms to end, start offset by 70 ms.
+->  Table Scan on applications_extra_fields  (cost=0.00..431.84
+rows=30056 width=37)                     Rows out:  Avg 30055.7 rows x
+144 workers.  Max 30572 rows (seg125) with 2.260 ms to first row,
+9.303 ms to end. Slice statistics:   (slice0)    Executor memory: 590K
+bytes.   (slice1)    Executor memory: 75065K bytes avg x 144 workers,
+75067K bytes max (seg117).  Work_mem: 2067K bytes max. Statement
+statistics:   Memory used: 2555904K bytes Settings:
+gp_enable_relsize_collection=on;
+optimizer_join_arity_for_associativity_commutativity=18 Optimizer
+status: PQO version 3.111.0 Total runtime: 34748.601 msИз плана видно,
+что:хэш строится на меньшую таблицу applications_extra_fields;спиллы
+не генерируются;время выполнения — 34 секунд.При этом мы смогли даже
+извлечь все колонки из таблицы applications!Однако можно заметить, что
+замена LEFT на INNER или перестановка таблиц местами меняет логику
+запроса. Если важно ее сохранить, запрос можно переписать через CTE,
+подзапрос или временную таблицу. Ниже показан пример запроса,
+переписанный при помощи CTE:with pre_join as ( select   a.* from
+prod_wrk.applications_extra_fields as aef   inner join
+prod_wrk.applications as a     on aef.id = a.id ) select   aef.name
+,aef.value   ,aef.id   ,a.* from   prod_wrk.applications_extra_fields
+as aef   left join pre_join as a     on aef.id = a.idПлан данного
+запроса:  QUERY PLAN Gather Motion 144:1  (slice1; segments: 144)
+(cost=0.00..40573.86 rows=8656034 width=654)   Rows out:  4385665 rows
+at destination with 11395 ms to first row, 26902 ms to end.   ->  Hash
+Left Join  (cost=0.00..27939.50 rows=60112 width=654)         Hash
+Cond: prod_wrk.applications_extra_fields.id = applications.id
+Rows out:  Avg 30456.0 rows x 144 workers.  Max 30966 rows (seg125)
+with 12956 ms to first row, 13011 ms to end.         Executor memory:
+28739K bytes avg, 29410K bytes max (seg121).         Work_mem used:
+28739K bytes avg, 29410K bytes max (seg121). Workfile: (0 spilling)
+(seg125) Hash chain length 1.0 avg, 4 max, using 13291 of 262144
+buckets.         ->  Table Scan on applications_extra_fields
+(cost=0.00..431.84 rows=30056 width=37)               Rows out:  Avg
+30055.7 rows x 144 workers.  Max 30572 rows (seg125) with 0.593 ms to
+first row, 10 ms to end.         ->  Hash  (cost=26938.13..26938.13
+rows=30056 width=617)               Rows in:  Avg 13559.0 rows x 144
+workers.  Max 13878 rows (seg127) with 13689 ms to end, start offset
+by 6.996 ms.               ->  Hash Join  (cost=0.00..26938.13
+rows=30056 width=617)                     Hash Cond: applications.id =
+prod_wrk.applications_extra_fields.id                     Rows out:
+Avg 13559.0 rows x 144 workers.  Max 13878 rows (seg127) with 372 ms
+to first row, 13628 ms to end.                     Executor memory:
+940K bytes avg, 956K bytes max (seg125).                     Work_mem
+used:  940K bytes avg, 956K bytes max (seg125). Workfile: (0 spilling)
+(seg127) Hash chain length 1.0 avg, 3 max, using 29968 of 4194304
+buckets.                     ->  Table Scan on applications
+(cost=0.00..4845.30 rows=12719490 width=617)
+Rows out:  Avg 12719490.0 rows x 144 workers.  Max 12719888 rows
+(seg57) with 7.392 ms to first row, 20819 ms to end.
+->  Hash  (cost=431.84..431.84 rows=30056 width=8)
+Rows in:  Avg 30055.7 rows x 144 workers.  Max 30572 rows (seg125)
+with 15 ms to end, start offset by 69 ms.                           ->
+Table Scan on applications_extra_fields  (cost=0.00..431.84 rows=30056
+width=8)                                 Rows out:  Avg 30055.7 rows x
+144 workers.  Max 30572 rows (seg125) with 1.150 ms to first row,
+4.730 ms to end. Slice statistics:   (slice0)    Executor memory: 582K
+bytes.   (slice1)    Executor memory: 126241K bytes avg x 144 workers,
+126243K bytes max (seg117).  Work_mem: 29410K bytes max. Statement
+statistics:   Memory used: 2555904K bytes Settings:
+gp_enable_relsize_collection=on;
+optimizer_join_arity_for_associativity_commutativity=18 Optimizer
+status: PQO version 3.111.0 Total runtime: 27070.592 ms Из плана
+видно, что:хэш строится на меньшую таблицу
+applications_extra_fields;спиллы не генерируются;время выполнения — 27
+секунд.При этом мы смогли даже извлечь все колонки из таблицы
+applications!Стоит заметить, что при INNER JOIN хэш-таблица
+формируется на основе статистики. Если оптимизатор строит хэш на
+большую таблицу, проверьте статистики таблиц, участвующих в
+джоине.Кейс № 3. DISTINCT на большом количестве полейПочему в данном
+случае возникают спиллы? Каждое уникальное сочетание значений полей
+сохраняется в оперативную память. Соответственно, чем больше таких
+сочетаний, тем быстрее забивается оперативная память и начинают
+генерироваться спиллы.Скорость заполнения оперативной памяти также
+зависит от размера полей, которые участвуют в DISTINCT. То есть четыре
+поля размером по 8 байта каждое потребуют больше памяти, чем 12 полей
+по 1 байту каждое, при условии равного количества строк.Как решается.
+Сокращайте количество полей в DISTINCT. Дополнительно можно сделать
+оценки сверху и снизу по требуемому объему памяти для операции
+DISTINCT. На основе оценок можно принять решение о запуске запроса.
+Если верхняя граница начинает превышать «штрафной» порог, имеет смысл
+воздержаться от запуска данного запроса. Метод оценки показан в
+примере ниже:Пусть в нашем DISTINCT участвуют три колонки: C1, C2 и
+C3.Каждая колонка имеет размерность в байтах (Ai) и количество
+уникальных значений (count(distinct Ci) = Di).Допустим, наши колонки
+имеют следующие Ai и Di:C1 — A1 = 16 байт, D1 = 156;C2 — A2 = 8 байт,
+D2 = 832;C3 — A3 = 4 байта, D3 = 16.В первую очередь нужно узнать
+объем, занимаемый одной строкой. Он равен сумме Ai:В нашем случае А =
+16 + 8 + 4 = 28 байт — столько будет занимать одна строка.Теперь нужно
+оценить количество строк D.Минимальное значение строк равно максимуму
+из уникальных значений D = max(Di), то есть D = D2 = 832. Почему
+именно столько? Минимум может быть только 832 строки, это случай,
+когда во всех возможных сочетаниях все значения из столбца C2
+повторяются лишь по одному разу. Меньше быть не может.Максимальное
+значение строк равно произведению всех Di, то есть:Это случай
+декартового произведения, когда каждое уникальное значение сочетается
+с каждыми уникальными значениями всех столбцов. В нашем случае D = 156
+× 832 × 16 = 2 076 672 строк. Теперь посчитаем объем данных,
+получаемый сверху и снизу:оценка снизу: A × D = (A1 + A2 + A3) ×
+MAX(Di) = (16 + 8 + 4) × 832 = 23 296 байта ≈ 22,75 Кб;оценка сверху:
+A × D = (A1 + A2 + A3) × (D1 × D2 × D3) = (16 + 8 + 4) × (156 × 832 ×
+16) = 58 146 816 байт ≈ 55,45 Мб.Таким образом, требуемый объем памяти
+будет в пределах от 22,75 Кб до 55,45 Мб. Общая формула:где n —
+количество колонок, Ai — размерность i-ой колонки, Di — количество
+уникальных значений i-ой колонки (count(distinct Ci)).С ростом
+количества колонок сильно растет оценка сверху. Давайте в пример выше
+добавим еще одну колонку размерностью A4 = 4 байта и количеством
+уникальных значений D4 = 60. Таким образом, оценка сверху станет: A ×
+D = (A1 + A2 + A3 + A4) × (D1 × D2 × D3 × D4) = (16 + 8 + 4 + 4) ×
+(156 × 832 × 16 × 60) = 3 987 210 240 байт ≈ 3,71 Гб! То есть
+потенциальный необходимый объем вырос почти в 68,5 раза!Самый дикий
+случай, который ни в коем случае нельзя запускать:select    distinct *
+from    some_tableЕсли в таблице имеется уникальный ключ или сочетания
+ключей, то в данном случае вы пытаетесь поместить всю таблицу в
+оперативную память. А когда она не влезает, то начинается генерация
+огромного количества спиллов.Чтобы узнать размерность колонок, можно
+применить функцию pg_column_size(column). Она вернет размерность
+колонки в байтах.Кейс № 4. Использование ORDER BYА там-то откуда
+спиллы? Все очень просто. Когда вы даете команду сортировки, GreenPlum
+должен где-то хранить промежуточный результат сортировки. Сначала
+место хранения — оперативная память, затем — жесткий диск, то есть
+начнется генерация спиллов. Особенно быстро переход к генерации
+спиллов совершается тогда, когда вы хотите отсортировать большой объем
+данных.Попробуем запустить сортировку и посмотреть на спиллы:explain
+analyze select   * from   prod_wrk.applications order by   dt_created
+,idК сожалению (или к счастью администраторов), я не дождался
+выполнения этого запроса и отменил его. Однако всего за пару секунд
+работы получилось сгенерировать почти половину терабайта:Как решается.
+Не используйте ORDER BY, совсем! В GreenPlum конструкция ORDER BY
+работает крайне медленно (во многом благодаря спиллам). Если вам
+требуется сортировка, то сортируйте данные уже в приемнике данных
+(например, в dBeaver, Excel, Tableau), а не в самом запросе. Для
+конструкции DISTINCT ON и оконных выражений может потребоваться
+наличие ORDER BY. В этом случае максимально уменьшите объем строк, так
+как на большом объеме данных запрос не отработает (или будет работать
+долго) и cгенерирует большое количество спиллов.ЗаключениеЯ рассмотрел
+не все возможные кейсы, однако большинство частных случаев так или
+иначе будут основываться на кейсах, описанных в статье.Краткие
+выводы:Основа всех случаев генерации спиллов — попытка поместить
+большой объем данных в оперативную память.Следите за объемами данных и
+оценивайте их.Следите за джоинами.Не увлекайтесь DISTINCT.Избегайте
+ORDER BY.Полезные ссылки и источники.Чтение плана запросаЧто такое
+spill-filesРазмеры типов данных в PostgresПроверка наличия spill-
+файлов

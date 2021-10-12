@@ -1,0 +1,395 @@
+Автор: kalirgum
+Дата: 2021-10-07T13:22:55.000Z
+Название: Адаптация Qt-приложений под мониторы высокой чёткости
+Теги: Программирование *, C++ *, Qt *, ООП *, Разработка под Windows *
+Текст:
+ВведениеВ связи с техническим прогрессом рынок мониторов постоянно
+обновляется моделями с повышенным разрешением, плотностью пикселей
+и/или размером экрана. Году в 2010 стандартным монитором можно было
+считать экземпляр 19’’ c разрешением WXGA++ (1600*900) и фактической
+плотностью пикселей 97 DPI (dots per inch). Сейчас (2021 год)
+стандартным монитором, думаю, можно признать экземпляр 24’’ c
+разрешением Full HD (1920*1080) и плотностью пикселей 92 DPI. Под
+«стандартным» я понимаю тот монитор, который стоит на рабочем месте у
+большинства работающего люда: инженеры, бухгалтеры, переводчики и т.д.
+(при этом, конечно, «стандартность» — это субъективная и
+приблизительная оценка). Относительно новые и отчасти нишевые модели
+(для фотографов, видеографов, геймеров) имеют характеристики: 4K UHD
+(3840*2160) и 28’’ (157 DPI) или UWQHD (3440x1440) и 34" (109 DPI) или
+QHD (2560x1440) и 27" (109 DPI) или UWHD (2560x1080) и 29" (96 DPI).
+Таким образом, наблюдается рост в связанных группах признаков:
+разрешение+размер экрана, или разрешение+плотность пикселей, или даже
+разрешение+плотность пикселей+размер экрана. На рынке ноутбуков в
+плане экранов похожая ситуация – растет разрешение+плотность
+пикселей.К сожалению, не всегда программное обеспечение поспевает за
+ростом характеристик мониторов. Нередко оно выглядит немного коряво и
+неухоженно, что расстраивает пользователя. Действительно, на дворе 21
+век, а зачастую приходится видеть размытые шрифты, а иногда и
+микроскопические иконки. Что касается высокой чёткости (большой
+плотности пикселей), то в ОС Windows давно есть такие настройки, как
+масштабирование шрифта и изображений (масштаб экрана), которые
+применяются для увеличения слишком малых элементов GUI на мониторах с
+высокой чёткостью (High DPI). Также есть поддержка в платформе Qt (с
+нюансами, об этом далее). Однако способно ли Ваше, конкретное ПО их
+адекватно учитывать, применять?Если пока ещё нет, то в этой статье мы
+собрали рецепты по адаптации Вашего ПО, написанного на платформе Qt, к
+современным мониторам высокой четкости. Мы искали и открывали эти
+рецепты в процессе адаптации одного из наших продуктов. Общий размер
+кодовой базы GUI – около 200 тысяч строк кода (С++) и 100+ виджетов,
+код писался разными людьми и в разное время (в том числе и в эпоху
+16-пиксельных картинок, которые, как нетрудно догадаться, не очень
+выгодно выглядят на современных мониторах). В нашей кодовой базе мы
+нашли целую библиотеку примеров, которые выглядят проблемно на
+мониторах высокой четкости, и мы постарались эту библиотеку
+систематизировать, обобщить, упростить и создать на ее базе готовые и
+легкие для понимания рецепты. В этой статье мы поделимся некоторыми из
+этих рецептов.Исходный код примеров был протестирован на Qt5 и Qt6
+(более точно – 5.15 и 6.2), на операционках Windows 10 и Windows 7. В
+основном в статье описаны реалии и будни Qt5 (поскольку именно на Qt5
+проблема стоит особенно остро), но рецепты можно с успехом применять и
+на Qt6 – ничего от этого не поломается.Пример 1. «Студенческий».Начнем
+разбираться в ситуации на примере простого виджета. Будем
+последовательно находить проблемы, фиксировать причины и выводить из
+них решения, затем будем усложнять пример, снова находить проблемы,
+фиксировать причины и выводить из них решения, и далее по кругу.Итак,
+виджет в студию!Windows 10 и Windows7, масштаб экрана 100%А вот и
+исходный код:ScaleWgt::ScaleWgt(QWidget* parent)         :
+QWidget(parent) {         QLabel* label1 = new QLabel("Field1 long
+long long long name", this);         QLabel* label2 = new
+QLabel("Field2 long long long name", this);         QSpinBox* sb = new
+QSpinBox(this);         sb->setMaximum(10);         sb->setMinimum(0);
+sb->setValue(5);         auto cb = new QComboBox(this);
+cb->addItem("Field2 value 1");         cb->addItem("Field2 value 2");
+QPushButton* ok = new QPushButton("Ok", this);         QPushButton*
+def = new QPushButton("Apply default values", this);
+label1->setGeometry(10, 10, 150, 20);         label2->setGeometry(10,
+40, 150, 20);         sb->setGeometry(170, 10, 90, 20);
+cb->setGeometry(170, 40, 90, 20);         ok->setGeometry(210, 70, 50,
+25);         def->setGeometry(10, 70, 130, 25); } int main(int argc,
+char *argv[]) {         QApplication a(argc, argv);         ScaleWgt
+w;         w.show();         return a.exec(); } Не будем пока
+обсуждать, насколько хорош или плох данный код, а сосредоточимся
+только на том, насколько хорошо виджет выглядит на бОльших масштабах
+экрана, и что с этим делать. На исходном масштабе в 100% выглядит
+приемлемо, проблем с GUI нет. А вот при большем масштабировании
+начинаются проблемы.Windows 10 и Windows7, масштаб экрана 150%По
+заголовку видно, что системный, родной шрифт Windows вырос. При этом
+на Windows 10 наш, запрограммированный, шрифт на виджетах не вырос, а
+на Windows 7 он вырос, но не поместился по размеру в рамки виджетов.
+Хорошо, это на данный момент и есть наши проблемы, а как с ними
+бороться?Рецепт 1.  Настройте DPI Awareness Level.К счастью, Windows
+представляет нам готовую системную настройку для работы с высокими
+DPI. Соответствующая обертка в Qt называется Qt DPI Awareness Level
+(подробнее см. здесь).Чтобы произвести настройку, надо всего лишь
+рядом с выполняемым файлом (exe) приложения положить файл qt.conf со
+следующим содержимым:[Platforms] WindowsArguments =
+dpiawareness=1Здесь 1 = System-DPI Aware.В результате такого нехитрого
+трюка все стандартные элементы управления Qt (такие, как QLabel,
+QComboBox, QPushButton и пр.) станут рисовать адекватный шрифт (как в
+Windows7, так и в Windows10), причем для всех виджетов в рамках всего
+приложения сразу.Для сравнения на рисунках ниже показан наш виджет в
+разных вариациях параметра DPI Awareness Level.Windows 7, 150%,
+Awareness Level = 0,1,2 (слева направо)Windows 10, 150%, Awareness
+Level = 0,1,2 (слева направо)Особенно важно то, что такая настройка
+позволяет масштабировать шрифты ровно настолько, насколько установлен
+масштаб экрана: 125%, 150%, 175%  и т. д. Это будет важно для
+последующего обсуждения, пока что просто запомним это.Итак, мы
+добились того, что все шрифты теперь всегда имеют должный размер
+(можете проверить для других масштабов экрана), но осталась проблема
+того, что текст не помещается по размеру в рамки виджетов. Решить ее
+поможет следующий рецепт.Рецепт 2. Используйте автокомпоновку.Ранее в
+коде мы явным образом размещали элементы управления внутри виджета
+посредством вызова setGeometry. Аналогичное действие имел бы вызов
+функций move, resize, setFixedSize. Можно сказать, что это одного поля
+ягоды. Так вот, следует отказаться от этой порочной практики.
+Менеджеры компоновки (классы, производные от QLayout) прекрасно
+справляются с задачей расчета позиции и размера виджета для любых
+масштабов экрана. Таким образом, в нашем примере нам просто стоит
+заменить код на следующий:Показать кодScaleWgt::ScaleWgt(QWidget
+*parent)         : QWidget(parent) {         auto layout = new
+QGridLayout();         QLabel* label1 = new QLabel("Field1 long long
+long long name");         QLabel* label2 = new QLabel("Field2 long
+long long name");         QSpinBox* sb = new QSpinBox();
+sb->setMaximum(10);         sb->setMinimum(0);
+sb->setValue(5);         auto cb = new QComboBox();
+cb->addItem("Field2 value 1");         cb->addItem("Field2 value 2");
+layout->addWidget(label1, 0, 0);         layout->addWidget(label2, 1,
+0);         layout->addWidget(sb, 0, 1);         layout->addWidget(cb,
+1, 1);          QPushButton* ok = new QPushButton("Ok");
+QPushButton* def = new QPushButton("Apply default values");
+QHBoxLayout* hbl = new QHBoxLayout();         hbl->addWidget(def);
+hbl->addStretch();         hbl->addWidget(ok);
+layout->addLayout(hbl, 2, 0, 1, 2);         setLayout(layout); }В
+результате получаем адекватно выглядящие виджеты при любых
+масштабах:Windows 10 и Windows7, масштаб экрана 150%Windows7, масштаб
+экрана 100%, 125%, 150%.Здесь очень важно то, что использование
+автокомпоновки не просто упрощает задачу создания графических
+интерфейсов, не просто автоматизирует некоторые действия и расчеты, а
+кардинальным образом меняет сам стиль работы программиста: 
+разработчик ПОЛНОСТЬЮ избавлен от необходимости устанавливать какие-
+либо фиксированные размеры и координаты, что полностью исключает
+артефакты отображения при больших масштабах экрана.Однако,  усомнимся,
+полностью ли? Может, всё же необходимо иногда устанавливать
+фиксированные размеры и координаты? Может, иногда совсем-совсем без
+этого не обойтись? К сожалению, да, иногда. Есть некоторые, довольно
+редкие, классы задач, где это действительно необходимо. Последующее
+изложение будет посвящено как раз таким классам и способам
+решения.Пример 2. Анимация движения.Предположим, мы хотим реализовать
+анимацию появления элементов GUI на форме: пусть названия полей
+выплывают справа, значения – слева, а кнопки - снизу. В этом случае
+без задействования setGeometry не обойтись. Неважно, что эту функцию
+будет дергать класс QPropertyAnimation, а не наш, клиентский, код, все
+равно вызовы setGeometry будут. Вот как будет выглядеть наш класс с
+анимацией:ScaleWgt::ScaleWgt(QWidget* parent)         :
+QWidget(parent) {         QLabel* label1 = new QLabel("Field1 long
+long long long name", this);         QLabel* label2 = new
+QLabel("Field2 long long long name", this);         QSpinBox* sb = new
+QSpinBox(this);         sb->setMaximum(10);         sb->setMinimum(0);
+sb->setValue(5);         auto cb = new QComboBox(this);
+cb->addItem("Field2 value 1");         cb->addItem("Field2 value 2");
+QPushButton* ok = new QPushButton("Ok", this);         QPushButton*
+def = new QPushButton("Apply default values", this);
+QPropertyAnimation* anim1 = new QPropertyAnimation(label1,
+"geometry");         anim1->setDuration(300);
+anim1->setStartValue(QRect(-150, 10, 150, 20));
+anim1->setEndValue(QRect(10, 10, 150, 20));
+QPropertyAnimation* anim2 = new QPropertyAnimation(label2,
+"geometry");         anim2->setDuration(300);
+anim2->setStartValue(QRect(-150, 40, 150, 20));
+anim2->setEndValue(QRect(10, 40, 150, 20));
+QPropertyAnimation* anim3 = new QPropertyAnimation(sb, "geometry");
+anim3->setDuration(300);         anim3->setStartValue(QRect(270, 10,
+90, 20));         anim3->setEndValue(QRect(170, 10, 90, 20));
+QPropertyAnimation* anim4 = new QPropertyAnimation(cb, "geometry");
+anim4->setDuration(300);         anim4->setStartValue(QRect(270, 40,
+90, 20));         anim4->setEndValue(QRect(170, 40, 90, 20));
+QPropertyAnimation* anim5 = new QPropertyAnimation(def, "geometry");
+anim5->setDuration(300);         anim5->setStartValue(QRect(10, 105,
+130, 25));         anim5->setEndValue(QRect(10, 70, 130, 25));
+QPropertyAnimation* anim6 = new QPropertyAnimation(ok, "geometry");
+anim6->setDuration(300);         anim6->setStartValue(QRect(210, 105,
+50, 25));         anim6->setEndValue(QRect(210, 70, 50, 25));
+setFixedSize(270, 105);          QParallelAnimationGroup* group = new
+QParallelAnimationGroup(this);         group->addAnimation(anim1);
+group->addAnimation(anim2);         group->addAnimation(anim3);
+group->addAnimation(anim4);         group->addAnimation(anim5);
+group->addAnimation(anim6);         group->start(); } Нетрудно понять,
+что после завершения анимации мы получим те проблемы, которые уже
+видели: текст не будет вписываться в слишком узкие для него
+рамки:Windows 10 и Windows7, масштаб экрана 150%Собственно, это
+произошло именно потому, что значение QRect, которое мы подаем в
+функцию setEndValue, то же самое, что мы подаем выше (см. пример 1) в
+функцию setGeometry.Таким образом, проблема аналогична той, на которую
+мы вышли в конце рецепта 1, но решать ее надо без
+автокомпоновщика.Рецепт 3. Используйте метрику шрифтов при явном
+задании размеров.К счастью, в Qt есть возможность через QFontMetrics
+рассчитывать размеры (ширину, высоту) любых текстовых строк, а значит,
+можно из них выводить все размеры элементов и все отступы (промежутки)
+между ними. Однако, в нашем примере не только текстовые элементы, а
+иная графика: стрелочки у QComboBox и QSpinBox. Что ж, это не сильно
+усложняет задачу. Их размеры тоже можно выводить из размера шрифта или
+явно узнавать из стиля.Далее будем модифицировать текст примера 1
+(«Студенческий»), а не примера 2 с анимацией, поскольку последний
+более сложный, а идею можно понять и на более простом.Итак, сначала
+уберем нечитаемую логику из той части кода, где логика компоновки
+элементов была скрыта за сплошными вызовами setGeometry для каждого
+отображаемого элемента. А логика там явно есть: мы хотим рисовать GUI
+в      три строки,первые 2 строки имеют      табличное размещение
+(аналогично QGridLayout),в третьей строке есть 2      кнопки, и они
+прижаты к левому и правому краю соответственно,между всеми элементами
+интерфейса одинаковые отступы. Итак, эту часть кода можно переписать
+следующим образом:Показать код     int offset = 10;         int
+textHeight = 20;         int buttonHeigh = 25;         int
+column1Width = 150;         int column2Width = 90;         int
+okBtnWidth = 50;         int defBtnWidth = 130;          int
+line1Offset = offset;         int line2Offset = line1Offset +
+textHeight + offset;         int line3Offset = line2Offset +
+textHeight + offset;         int column1Offset = offset;         int
+column2Offset = column1Offset + column1Width + offset;          int
+widgetWidth = column2Offset + column2Width + offset;         int
+widgetHeight = line3Offset + buttonHeigh + offset;          int
+okBtnOffset = widgetWidth - offset - okBtnWidth;
+label1->setGeometry(column1Offset, line1Offset, column1Width,
+textHeight);         label2->setGeometry(column1Offset, line2Offset,
+column1Width, textHeight);         sb->setGeometry(column2Offset,
+line1Offset, column2Width, textHeight);
+cb->setGeometry(column2Offset, line2Offset, column2Width, textHeight);
+ok->setGeometry(okBtnOffset, line3Offset, okBtnWidth, buttonHeigh);
+def->setGeometry(column1Offset, line3Offset, defBtnWidth,
+buttonHeigh);          setFixedSize(widgetWidth, widgetHeight); Не
+правда ли, складывается ощущение, что мы реализовали свою
+автокомпоновку, «навелосипедили»? Да, но без этого в этом примере
+нельзя.Далее нам остается лишь заменить установку явных значений для
+offset, textHeight, buttonHeigh, column1Width, column2Width,
+okBtnWidth, defBtnWidth на значения, посчитанные из метрики шрифта.
+Размеры стрелочек для QComboBox и QSpinBox будем узнавать из стилей
+(хотя можно было бы тоже пытаться примерно высчитать из размера
+шрифта). Для точного понимания приведем весь код:Показать
+кодScaleWgt::ScaleWgt(QWidget* parent)         : QWidget(parent) {
+QString text1 = "Field1 long long long long name";         QString
+text2 = "Field2 long long long name";         QLabel* label1 = new
+QLabel(text1, this);         QLabel* label2 = new QLabel(text2, this);
+QSpinBox* sb = new QSpinBox(this);         sb->setMaximum(10);
+sb->setMinimum(0);         sb->setValue(5);         auto cb = new
+QComboBox(this);         QString value1 = "Field2 value 1";
+QString value2 = "Field2 value 2";         cb->addItem(value1);
+cb->addItem(value2);          QString okText = "Ok";
+QPushButton* ok = new QPushButton(okText, this);         QString
+defText = "Apply default values";         QPushButton* def = new
+QPushButton(defText, this);          QFontMetrics fm(font());
+QStyleOptionSpinBox opt;         const int arrowWidth =
+sb->style()->subControlRect(                 QStyle::CC_SpinBox, &opt,
+QStyle::SC_SpinBoxUp).width();         const int maxTextWidth =
+fm.horizontalAdvance("10");         const int sbxWidth = maxTextWidth
++ 2 * arrowWidth; // x2 just for more visual space
+QStyleOptionComboBox opt2;         const int arrow2Width =
+cb->style()->subControlRect(                 QStyle::CC_ComboBox,
+&opt2, QStyle::SC_ComboBoxArrow).width();         const int cbWidth =
+fm.horizontalAdvance(value1) + arrow2Width + fm.averageCharWidth();
+int offset = qRound(fm.height() * 0.75);         int textHeight =
+qRound(fm.height() * 1.5);         int buttonHeight = fm.height() *
+2.0;         int column1Width =
+std::max<int>(fm.horizontalAdvance(text1),
+fm.horizontalAdvance(text2));         int column2Width =
+std::max<int>(cbWidth, sbxWidth);         int okBtnWidth =
+fm.horizontalAdvance(okText) + 8 * fm.averageCharWidth(); //x8 just
+for more visual space;         int defBtnWidth =
+fm.horizontalAdvance(defText) + 4 * fm.averageCharWidth(); //x4 just
+for more visual space          int line1Offset = offset;         int
+line2Offset = line1Offset + textHeight + offset;         int
+line3Offset = line2Offset + textHeight + offset;         int
+column1Offset = offset;         int column2Offset = column1Offset +
+column1Width + offset;          int widgetWidth = column2Offset +
+column2Width + offset;         int widgetHeight = line3Offset +
+buttonHeight + offset;          int okBtnOffset = widgetWidth - offset
+- okBtnWidth;          label1->setGeometry(column1Offset, line1Offset,
+column1Width, textHeight);         label2->setGeometry(column1Offset,
+line2Offset, column1Width, textHeight);
+sb->setGeometry(column2Offset, line1Offset, column2Width, textHeight);
+cb->setGeometry(column2Offset, line2Offset, column2Width, textHeight);
+ok->setGeometry(okBtnOffset, line3Offset, okBtnWidth, buttonHeight);
+def->setGeometry(column1Offset, line3Offset, defBtnWidth,
+buttonHeight);          setFixedSize(widgetWidth, widgetHeight);
+}После таких манипуляций на любых масштабах экрана виджет будет
+адекватно выглядеть:Windows7, масштаб экрана 100%, 125%, 150%.Итак, мы
+смогли использовать метрику шрифтов вместо явного, хардкорного задания
+размеров. Однако, оценив разросшийся код,  легко понять, что прибегать
+к этому рецепту следует только тогда, когда автокомпоновку
+использовать совсем никак нельзя.Рецепт 4. Не используйте атрибут
+Qt::AA_EnableHighDpiScalingМожет показаться, что переписывание примера
+1 по рецептам 2 или 3 – долгая и ненужная затея, что можно обойтись
+меньшей кровью. К сожалению, это не так. В Qt5 существуют быстрые и
+обходные пути решения проблемы  High DPI: атрибут
+Qt::AA_EnableHighDpiScaling, переменные окружения
+QT_ENABLE_HIGHDPI_SCALING, QT_AUTO_SCREEN_SCALE_FACTOR и прочие. Все
+эти простые пути приводят к неслабым артефактам. На рисунке ниже
+приведен пример применения атрибута Qt::AA_EnableHighDpiScaling к коду
+из примера 1.Windows7, масштаб экрана 100%, 125%, 150%.На всех
+масштабах, кроме исходного 100%, видны проблемы. На 125% увеличился
+текст, но не увеличились размеры виджетов, а на 150% видно (сравните с
+рисунками из рецептов 2 и 3), что всё увеличилось не в 1.5 раза, а
+ровно в 2 раза (что неприемлемо), но текст всё равно помещается не
+везде.Таким образом, просто установить атрибут
+Qt::AA_EnableHighDpiScaling и не делать больше ничего (не применять
+описанные рецепты) не получится, а раз мы все равно вынуждены
+применять рецепты 2 и 3, то никакой необходимости в быстрых и обходных
+решениях, типа Qt::AA_EnableHighDpiScaling, попросту нет. Кроме того,
+атрибут Qt::AA_EnableHighDpiScaling отвратительно масштабирует текст
+на масштабах 125% (100% вместо 125%), 150% (200% вместо 150%), 175%
+(200% вместо 175%) и др. Собственно, именно это имелось в виду в
+документации Qt5 в краткой, как сестра таланта, фразе «Non-integer
+scale factors may cause significant scaling/painting artifacts».Мы не
+будем подробно останавливаться на других уловках, типа
+QT_ENABLE_HIGHDPI_SCALING, QT_AUTO_SCREEN_SCALE_FACTOR (и тем более на
+причинах, почему они работают плохо), просто скажем, что может быть,
+для каких-то очень простых приложений они и подойдут, но для любого
+сколько-нибудь серьезного их попросту не хватит, будут вылезать
+многочисленные артефакты.Хорошо, но с начала статьи мы не слова не
+сказали про иконки и вообще про любые картинки. Что с ними? Пример 3.
+Простые иконки.Добавим в наш простой пример ситуацию, которая вполне
+могла бы сложиться в реальной жизни в случае, когда приложение
+разрабатывалось достаточно давно. А именно: приложение может содержать
+устаревшие, маленькие иконки 16x16 или даже 12x12. Добавим их в текст
+нашего примера (для случая автокомпоновки, конечно):
+ok->setIcon(QIcon(":/button_ok.png"));
+def->setIcon(QIcon(":/home.png"));На масштабе 100% они выглядят
+приемлемо (хотя и немного старовато), а вот при бОльших масштабах
+иконки выглядят слишком мелкими:Windows7, масштаб экрана 100%,  200%,
+размер иконок 16x16.Рецепт 5. Увеличьте все иконки или переходите на
+векторный формат.В простых случаях, как в описанном примере,
+достаточно просто заменить растровые иконки размером 16x16 на
+аналогичные, бОльшие, например, 32x32 или даже 64x64. Также можно
+заменить растровые иконки на векторные(SVG). Это навсегда закроет
+проблему больших экранов.Windows7, масштаб экрана 200%, размер иконок
+32x32.Однако такой простой трюк имеет ограниченную область применения.
+Это будет работать, когда не требуется явно задавать никакие размеры
+иконок, в том числе не устанавливать собственные стили. Так, для
+функции QAbstractButton::setIcon в документации явно сказано:The
+icon's default size is defined by the GUI style, but can be adjusted
+by setting the iconSize property.То есть если просто вызываем
+QAbstractButton::setIcon, то будет работать, а если хотим вызвать еще
+QAbstractButton::setIconSize, то… надо высчитывать размеры иконок, но
+не из метрики шрифтов (как в рецепте 3), а другим, более простым
+способом.Пример 4. Иконки с размерами.Немного изменим наш пример и
+добавим туда кнопки с иконками фиксированного размера:       auto
+reloadBtn = new QToolButton();
+reloadBtn->setStyleSheet("QToolButton {"                 "icon-size:
+14px 14px; "                 "background: rgb(101, 180, 93); }");
+reloadBtn->setIcon(QIcon(":/reload.svgz"));(Отметим, что совершенно
+неважно, каким именно способом выставляется размер иконок: через
+QAbstractButton::setIconSize или через задание css-стилей, как здесь.
+Результат будет одинаковый.)Как и в примере 3, на масштабе 100% кнопки
+выглядят приемлемо, а вот при бОльших масштабах иконки выглядят
+слишком мелкими:Windows7, масштаб экрана 100%,  200%, размер иконок
+14x14.Рецепт 6. Используйте экранный масштаб при явном задании
+размеров.Qt позволяет нам явно узнать значение экранного масштаба, для
+этого есть функция QScreen::logicalDotsPerInchX(), которая возвращает
+значение плотности пикселей в так называемых «логических» координатах.
+Значение 96 в этой системе координат означает 100% масштаба экрана,
+значение 120 соответствует масштабу экрана 125%, значение 144 – 150% и
+т.д. Таким образом, масштаб экрана для класса QWidget можно узнать,
+например, так:const double scale = screen()->logicalDotsPerInchX() /
+96.0;Далее следует везде в коде, где встречается фиксированный размер
+value, заменить его на qRound(value * scale). Таким образом, код
+инициализации кнопки будет заменен на
+reloadBtn->setStyleSheet(QString("QToolButton {"
+"icon-size: %1px %2px; "                 "background: rgb(101, 180,
+93); }")                 .arg(qRound(14 * scale)).arg(qRound(14 *
+scale))); И в результате получим то, что хотели:Стоит отметить, что
+область применения этого рецепта – довольно широкая. Везде, где
+нелогично и неудобно применять расчет размеров через метрику шрифтов,
+следует применять расчет размеров через экранный масштаб. Чтобы стало
+более ясно, что такое «нелогично и неудобно», давайте всё же еще
+рассмотрим пару примеров на применение этого рецепта. Пример 5. Стили
+css.Предположим, что в нас проснулся Стив Джобс, и мы грезим
+скругленными кнопками. Модернизируем пример выше следующим образом:
+reloadBtn->setStyleSheet(QString("QToolButton {"
+"width: 19px; "                 "height: 19px;"
+"border-radius: 10px;"                 "icon-size: 14px 14px; "
+"background: rgb(101, 180, 93); }"));Опять имеем жестко заданные
+размеры, в том числе и радиус скругления. Чтобы адаптировать такой
+код, достаточно переписать его вот так:     const int size = 19 *
+scale;         const int borderRadius = size / 2 + 1;         const
+int iconSize = qRound(5. / 7 * size);
+reloadBtn->setStyleSheet(QString("QToolButton {"
+"width: %1px;"                 "height: %1px;"
+"border-radius: %2px;"                 "icon-size: %3px %3px; "
+"background: rgb(101, 180, 93); }")                 .arg(size)
+.arg(borderRadius)                 .arg(iconSize));И в результате
+получим то, что хотели:Пример 6. Появление HTML.Повесим на кнопку Ok
+слот onOkClicked, в котором будем вызываться QMessageBox с текстом
+html внутри:void ScaleWgt::onOkClicked() {         QMessageBox
+msg(QMessageBox::Question, "MessageBox Title",
+QString("Are you sure?<br><br> <img src=':/brain.svg'
+width='100'><br><br>Are you sure?"));         msg.exec(); }И снова
+фиксированный размер, и снова используем экранный масштаб:void
+ScaleWgt::onOkClicked() {         const double scale =
+QApplication::desktop()->logicalDpiX() / 96.0;         QMessageBox
+msg(QMessageBox::Question, "MessageBox Title",
+QString("Are you sure?<br><br> <img src=':/brain.svg'
+width='%1'><br><br>Are you sure?")                 .arg(qRound(100 *
+scale)));         msg.exec(); }Итак, с размерами виджетов в простых
+случаях разобрались. Закрепим приведенные рецепты итоговым алгоритмом
+их применения:На этом рецепты не кончаются, и в случае
+заинтересованности со стороны читателей могу опубликовать следующую
+порцию в следующей статье.Всем не болеть!

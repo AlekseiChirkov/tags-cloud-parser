@@ -1,0 +1,214 @@
+Автор: val6852
+Дата: 2021-09-22T07:56:59.000Z
+Название: Создание реалистичных тестовых данных для Java приложений
+Теги: Java *
+Текст:
+Чем ближе ваши тестовые или демонстрационные данные к реальному миру,
+тем лучше вы сможете протестировать приложение на UX, улучшить и
+отловить крайние случаи в процессе разработки. В этой статье я покажу
+вам, как использовать пример генератора данных Vaadin для создания
+демонстрационных данных для простой базы данных SQL. В статье
+показано, как создать полное приложение, используя Spring
+Boot, JPA, Project Lombok, Vaadin и MariaDB.Вы также можете посмотреть
+видеоверсию этой статьи:Настройка проектаВ этой статье я использую
+Vaadin Flow проект, созданный с помощью онлайн-инструмента под
+названием Vaadin Start. Однако вы можете использовать пример
+генератора данных Vaadin в любом Java проекте с Vaadin или без
+него.Добавление необходимых зависимостейЧтобы использовать пример
+генератора данных Vaadin, добавьте следующую зависимость
+в файл pom.xml:<dependency>     <groupId>com.vaadin</groupId>
+<artifactId>exampledata</artifactId>     <version>4.0.0</version>
+</dependency>Если вы читаете эту статью с нуля, добавьте также
+зависимости Spring Data, MariaDB JDBC и Project Lombok:<dependency>
+<groupId>org.springframework.boot</groupId>     <artifactId>spring-
+boot-starter-data-jpa</artifactId> </dependency> <dependency>
+<groupId>org.mariadb.jdbc</groupId>     <artifactId>mariadb-java-
+client</artifactId>     <scope>runtime</scope> </dependency>
+<dependency>     <groupId>org.projectlombok</groupId>
+<artifactId>lombok</artifactId>     <optional>true</optional>
+</dependency>Реализация простого бэкэндаДопустим, мы хотим реализовать
+представление для отображения списка книг. Нам нужно настроить
+соединение с базой данных, создать Java класс, представляющий книгу
+(как объект JPA), создать класс (или интерфейс) для доступа к базе
+данных с помощью JPA и реализовать service класс для инкапсуляции
+деталей технологии базы данных.Настройка подключения к базе данныхС
+помощью Spring Boot вы можете настроить соединение с базой данных
+в файле application.properties, добавив следующее:spring.datasource.ur
+l=jdbc:mariadb://localhost:3306/book_demo
+spring.datasource.username=root spring.datasource.password=password
+spring.jpa.hibernate.ddl-auto=createПоследняя строка нужна только в
+том случае, если вы хотите удалять и воссоздавать схему базы данных
+при каждом запуске приложения. Есть и другие варианты, которые могут
+быть более удобными во время разработки, в зависимости от того, на
+каком этапе вы находитесь в своем проекте.Не забудьте установить
+параметры соединения с базой данных так, чтобы они указывали на ваш
+экземпляр базы данных.Реализация сущности JPAРеализация сущности JPA
+проще с Project Lombok. Вот пример возможной реализации:package
+com.example.application.backend;  import lombok.Data; import
+lombok.EqualsAndHashCode;  import javax.persistence.*; import
+java.time.LocalDate;  @Data @EqualsAndHashCode(onlyExplicitlyIncluded
+= true) @Entity public class Book {      @EqualsAndHashCode.Include
+@Id     @GeneratedValue(strategy = GenerationType.IDENTITY)
+private Integer id;      @Lob     private String imageData;
+private String title;      private String author;      private
+LocalDate publishDate;      private Integer pages; }Этот класс
+persistence-ready, что означает, что JPA сможет отображать экземпляры
+этого класса в таблицу базы данных MariaDB (или любую другую базу
+данных, которая предоставляет драйвер JDBC). Здесь важно отметить, что
+мы хотим, чтобы столбец id автоматически генерировался для нас, если
+мы передаем значение null. С помощью Lombok аннотации @Data добавлены
+геттеры и сеттеры, и @EqualsAndHashCode... Я уверен, вы догадались,
+что он делает. Важно то, что мы дали указание Lombok использовать
+только id свойство для методов equals(Object) и hashCode(). Итак, две
+книги одинаковы, если они имеют одинаковые значения id, независимо от
+того, имеют ли другие свойства разные значения или нет. Реализация
+этих двух методов необходима для правильного функционирования
+JPA.Реализация репозитория cClassНам нужен способ доступа к базе
+данных. Мы могли бы использовать JDBC API для подключения к базе
+данных MariaDB, выполнения SQL-запросов и установки вручную
+возвращаемых значений в экземплярах класса Book. Однако миссия JPA
+состоит в том, чтобы предоставить эту функциональность, которая
+дополняется Spring Data. Доступ к базе данных настолько прост, что нам
+нужно только объявить интерфейс:package
+com.example.application.backend;  import
+org.springframework.data.jpa.repository.JpaRepository; import
+org.springframework.stereotype.Repository;  @Repository public
+interface BookRepository extends JpaRepository<Book, Integer> { }Нет
+необходимости вообще реализовывать этот интерфейс. Spring Data при
+необходимости предоставит объекты, реализующие интерфейс. Если вы
+изучите методы, доступные в интерфейсе, вы найдете множество полезных
+для создания, чтения, обновления и удаления экземпляров Book. Вы также
+можете добавлять методы в интерфейс без их реализации, и Spring Data
+будет использовать соглашение об именах для создания реализации за
+вас.Реализация Service класса Интерфейс BookRepository не скрывает тот
+факт, что мы используем JPA как механизм персистентности. Чтобы
+улучшить поддержку кода, мы можем ввести новый класс, который
+использует репозиторий и предоставляет методы, необходимые
+пользовательскому интерфейсу. В этот класс также можно добавлять любую
+дополнительную бизнес-логику, необходимую для приложения:package
+com.example.application.backend;  import
+org.springframework.stereotype.Service;  import java.util.List;
+@Service public class BookService {      private final BookRepository
+repository;      public BookService(BookRepository repository) {
+this.repository = repository;     }      public List<Book> findAll() {
+return repository.findAll();     }  }Конструктор этого Service класса
+получает объект типа BookRepository. Поскольку класс также имеет
+аннтотацию @Service, Spring создаст новый экземпляр репозитория и
+передаст его конструктору, когда у вас, в свою очередь, есть
+конструктор в другом классе (например, в другой службе или
+пользовательском интерфейсе при реализации в Java. ), который получает
+объект BookServiceобъект. Spring создает для вас все экземпляры
+класса, используя шаблон проектирования под названием Inversion of
+Control, поэтому вы никогда не используете ключевое слово new Java для
+создания этих экземпляров класса и даете Spring возможность передавать
+объекты через конструкторы с помощью шаблона проектирования,
+называемого Dependency Injection. Есть много онлайн-ресурсов, в
+которых можно узнать об этом больше.Использование примера генератора
+данных Vaadin Удобный момент для создания демонстрационных данных -
+при запуске приложения. Чтобы запустить Java-метод при запуске
+приложения, мы можем создать bean-компонент типа
+Spring CommandLineRunner в любом классе конфигурации, например, мы
+можем добавить к классу Application следующий метод:@Bean public
+CommandLineRunner createDemoDataIfNeeded(BookRepository repository) {
+return args -> {         ... logic here ...     }; }Spring внедрит
+требуемый объект BookRepository перед выполнением метода.Настройка
+генератораДоступ к образцу генератора данных Vaadin осуществляется с
+помощью класса ExampleDataGenerator. Вот код, который мы можем
+добавить в лямбда-выражение из предыдущего фрагмента кода:if
+(repository.count() == 0) {     var generator = new
+ExampleDataGenerator<>(Book.class, LocalDateTime.now());
+generator.setData(Book::setImageData, DataType.BOOK_IMAGE_URL);
+generator.setData(Book::setTitle, DataType.BOOK_TITLE);
+generator.setData(Book::setAuthor, DataType.FULL_NAME);
+generator.setData(Book::setPublishDate, DataType.DATE_LAST_10_YEARS);
+generator.setData(Book::setPages, new ChanceIntegerType("integer",
+"{min: 20, max: 1000}"));      List<Book> books =
+generator.create(100, new Random().nextInt()); }Он проверяет, нет ли
+книг в базе данных, поскольку мы не хотим испортить данные, если они
+уже существуют.Генератор настраивается с помощью метода
+setData(BiConsumer, DataType), который принимает ссылку на метод
+setter в классе Book и конкретный тип данных. Доступно множество типов
+данных. Обязательно изучите значения в классе DataType, чтобы получить
+представление о типах данных. Вы найдете, например, типы данных для
+создания названий книг, имен людей, дат, времени, городов, стран,
+номеров телефонов, адресов, названий блюд, слов, предложений, чисел,
+логических значений и т. д.Создание и сохранение данных
+примераВызовите метод create(int, int) для создания экземпляров класса
+Book:List<Book> books = generator.create(100, new
+Random().nextInt());Первый параметр - это количество создаваемых
+экземпляров (100 книг в предыдущем примере), а второй - это начальное
+число, используемое внутренним генератором случайных чисел. Метод
+возвращает список объектов, которые мы можем сохранить с помощью
+экземпляра репозитория:repository.saveAll(books);Измерение времени
+создания и сохранения данныхПолезно отображать сообщение в журнале,
+когда приложение генерирует данные, процесс, который может занять
+время в зависимости от типа и количества создаваемых данных. Также
+полезно показать сообщение, когда процесс генерации данных завершен,
+возможно, показывая время, которое это заняло. Вот полная реализация
+метода createDemoDataIfNeeded(BookRepository), который делает именно
+это:  @SpringBootApplication @Theme(value = "demo") @PWA(name =
+"Demo", shortName = "Demo", offlineResources = {"images/logo.png"})
+@NpmPackage(value = "line-awesome", version = "1.3.0") @Log4j2 public
+class Application extends SpringBootServletInitializer implements
+AppShellConfigurator {      public static void main(String[] args) {
+SpringApplication.run(Application.class, args);     }      @Bean
+public CommandLineRunner createDemoDataIfNeeded(BookRepository
+repository) {         return args -> {             if
+(repository.count() == 0) {                 log.info("Generating demo
+data...");                 var generator = new
+ExampleDataGenerator<>(Book.class, LocalDateTime.now());
+generator.setData(Book::setImageData, DataType.BOOK_IMAGE_URL);
+generator.setData(Book::setTitle, DataType.BOOK_TITLE);
+generator.setData(Book::setAuthor, DataType.FULL_NAME);
+generator.setData(Book::setPublishDate, DataType.DATE_LAST_10_YEARS);
+generator.setData(Book::setPages, new ChanceIntegerType("integer",
+"{min: 20, max: 1000}"));                  var stopWatch = new
+StopWatch();                 stopWatch.start();
+List<Book> books = generator.create(100, new Random().nextInt());
+repository.saveAll(books);                 stopWatch.stop();
+log.info("Demo data generated in " + stopWatch.getTime() + "ms.");
+}         };     }  }Он использует Apache Commons ( StopWatch) для
+синхронизации и Lombok для ведения журнала ( @Log4j2).Реализация веб-
+представления на JavaВы можете проверить, действительно ли данные
+находятся в базе данных, подключившись к экземпляру MariaDB и выполнив
+следующий запрос:select * from book;Однако, чтобы сделать это более
+интересным способом, мы можем добавить веб-представление с помощью
+Vaadin и исследовать данные в браузере:package
+com.example.application.ui;  import
+com.example.application.backend.Book; import
+com.example.application.backend.BookService; import
+com.vaadin.flow.component.dialog.Dialog; import
+com.vaadin.flow.component.grid.Grid; import
+com.vaadin.flow.component.html.Image; import
+com.vaadin.flow.component.orderedlayout.VerticalLayout; import
+com.vaadin.flow.router.Route;  @Route("") public class BooksView
+extends VerticalLayout {      public BooksView(BookService service) {
+var grid = new Grid<Book>();         grid.setSizeFull();
+grid.addComponentColumn(this::getThumbnail);
+grid.addColumn(Book::getTitle).setHeader("Title");
+grid.addColumn(Book::getAuthor).setHeader("Author");
+grid.addColumn(Book::getPublishDate).setHeader("Publish date");
+grid.addColumn(Book::getPages).setHeader("Pages");
+grid.setItems(service.findAll());          add(grid);
+setSizeFull();     }      private Image getThumbnail(Book book) {
+var image = new Image(book.getImageData(), book.getTitle() + "
+cover");         image.setHeight("70px");
+image.addClickListener(event -> showCover(book));         return
+image;     }      private void showCover(Book book) {         var
+image = new Image(book.getImageData(), "Cover");
+image.setSizeFull();          var dialog = new Dialog(image);
+dialog.setHeight("90%");         dialog.open();     } }Этот класс
+использует API Vaadin для добавления представления, сопоставленного с
+корневым контекстом с помощью аннотации @Route(""). Конструктор
+создает компонент пользовательского интерфейса Grid и настраивает
+столбцы, соединяющие каждый из них со свойством в классе Book,
+используя соответствующие методы getter. Есть специальный столбец, в
+котором отображается миниатюра, при нажатии на которую открывается
+диалоговое окно, в котором обложка книги отображается в виде
+увеличенного изображения.Чтобы запустить приложение, выполните
+команду:mvn spring-boot:runВ качестве альтернативы вы можете просто
+запустить в классе Application стандартный метод точки
+входа main(String[]). После того, как приложение скомпилировано и
+запущено (процесс, который может занять больше времени, если вы
+создаете его впервые), вы можете получить к нему доступ в браузере по
+адресу http://localhost:8080. Вот его скриншот:

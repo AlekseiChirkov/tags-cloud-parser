@@ -1,0 +1,163 @@
+Автор: andy_pop
+Дата: 2021-10-08T09:22:38.000Z
+Название: Simics: RISC-нём?
+Теги: Блог компании Auriga, FPGA *, Виртуализация *, Программирование
+микроконтроллеров *, Анализ и проектирование систем *
+Текст:
+Ранее в сериале… Ах, да, не все технари уважают сериалы. Тем не менее,
+слово Simics уже было написано в заголовке и мне не отвертеться от
+того, что все последующее будет своеобразным практическим продолжением
+материала «Симуляторы компьютерных систем – похожи ли на реальность»
+моего коллеги @alex_dzen.         Из этих трех статей мы знаем, что
+есть такие симуляторы аппаратного обеспечения и ими пользуются
+серьезные дядьки из больших компаний. Наверное, меня тоже можно
+отнести к этим «дядькам», но у меня есть одна слабость — на досуге я
+люблю что-нибудь паять и использую для проектов «несерьезную» среду
+Arduino, где в качестве процессоров применяется что-нибудь из
+«несерьезных» Atmel-ARM или ESP32-RISC. И интрига в том, можно ли
+использовать Simics для небольших и хобби-проектов?Часть 1. 1+1Тихо, и
+без особого шума Intel выпустил общедоступную версию
+полноплатформенного симулятора Simics. По ссылке, ознакомившись и
+согласившись с лицензией, можно скачать базовый набор пакетов. В него
+входят: собственно симулятор, модели процессоров Intel с ядром
+Nehalem1, чипсета X58, модели нескольких типовых x86 компьютеров,
+пакет с Clear Linux (подготовленный к запуску в Simics) и некоторый
+набор учебных материалов. В публичную версию не вошел пакет Simics
+Eclipse. Однако разработку кода можно вести и в Visual Studio, в
+Notepad++, есть даже попытки «прикрутить» Simics к Qt Creator. Все это
+добро разворачивается специальным установщиком Intel, который нужно
+скачать там же.Если, дочитав до этого места, вы уже решили, что это не
+для вас, не спешите. Несмотря на кажущийся минимальный набор, да еще и
+«устаревшие» модели процессоров, базовый пакет вполне самодостаточен,
+например, для разработки моделей и отладки драйверов устройств на шине
+PCI, USB1/2/3, I2C/I3C и т. д. Если же вы являетесь полноправным
+пользователем Xtensa SDK, то несложный интерфейс позволяет подключать
+к Simics любые процессоры, поддерживаемые Xtensa. А если немного
+пошарить среди примеров и файлов, то окажется, что можно моделировать
+и встраиваемые системы на базе RISC-процессоров. Вот это как раз то,
+что я и искал для себя. Я предлагаю вместе со мной смоделировать
+небольшую встраиваемую систему на базе RISC-процессора, ПЗУ, ОЗУ. По
+мере продвижения, я предлагаю добавить в систему защиту памяти,
+последовательный порт и пару новых инструкций для нашего процессора,
+позаимствовав их из существующих решений.Чтобы не создавать модель
+процессора совсем уж с нуля (что, впрочем, вполне возможно даже в
+публичной версии) мы возьмем модель процессора sample-risc из
+расширенных примеров.Скопируем ее себе в рабочий каталог Simics$>
+./bin/project-setup --copy-module sample-riscСкомпилируем$> make
+sample-riscТеперь все готово чтобы собрать простейшую конфигурацию,
+состоящую из процессора и ОЗУ:Сделаем это прямо из командной строки
+Simics:simics> load-module sample-risc simics> @import simics_common
+simics> @MEMORY_SIZE = 0x10000000 simics> @cpu =
+simics_common.pre_conf_object("cpu","sample-risc") simics>
+@cpu.freq_mhz = 40 simics> @cpu_core =
+simics_common.pre_conf_object("cpu_core","sample-risc-core") simics>
+@cpu.current_risc_core = cpu_core simics> @phys_mem =
+simics_common.pre_conf_object("phys_mem","memory-space") simics>
+@cpu_core.physical_memory_space = phys_mem simics> @mem =
+simics_common.pre_conf_object("ram", "ram") simics> @mem_image =
+simics_common.pre_conf_object("mem_image", "image") simics>
+@mem_image.size = MEMORY_SIZE simics> @mem.image = mem_image simics>
+@phys_mem.map = [[0x00000000, mem, 0, 0, MEMORY_SIZE]] simics>
+@cpu_core.sample_risc = cpu simics>
+@simics.SIM_add_configuration([cpu,cpu_core,phys_mem,mem,mem_image],
+None)И вот, у нас уже работают команды Simics чтения и записи в
+память:simics> phys_mem.write(0x100, 0xDEADBEEF) simics>
+phys_mem.read(0x100) 3735928559 (BE)BE — означает, что память у нас
+«big-endian», как и полагается нашему RISC процессору. Обратите
+внимание, что строки, указанные в качестве первых параметров Python-
+функции pre_conf_object(), стали именами объектов в Simics.
+Прочитанное значение выведено в десятичном формате. Однако, нам
+привычнее 16-ти разрядная система счисления в контексте электроники и
+чипов:simics> output-radix 16 simics> phys_mem.read(0x100) 0xdeadbeef
+(BE)Память доступна, а значит уже можно вручную оттранслировать и
+записать в память программу и ее данные ;-)Как это выглядит можно
+посмотреть в тестах на модель sample-risc. Например, файл s-add.py
+демонстрирует инструкцию add r1, r2.Чтобы не набирать все
+вышеприведенные команды каждый раз, давайте создадим компонент,
+интегрирующий в нашу систему процессор и память.В рабочем каталоге
+Simics, в подкаталоге modules создадим папку myrisc-comp.И в ней
+файлы. Файл Makefile:#
+-*- Makefile -*- # Simics module makefile #  MODULE_COMPONENTS :=
+RISC_controller  PYTHON_FILES = myrisc_comp.py module_load.py
+THREAD_SAFE=yes SIMICS_API := latest  include $(MODULE_MAKEFILE)
+module_load.py myrisc_comp.py Файл module_load.py: from . import
+myrisc_comp myrisc_comp.RISC_controller.register()Этот файл будет
+загружен и исполнен автоматически при выполнении команды load-module
+<module>. В нем находится код регистрирующий объекты модели и
+добавляющий им специфические команды. Мы еще вернемся к module_load.py
+и с его помощью расширим функционал модели.Файл myrisc_comp.py:import
+simics import simics_common from comp import *  class
+RISC_controller(StandardConnectorComponent):     """Base class for
+RISC controller."""      def setup(self):         super().setup()
+if not self.instantiated.val:             self.add_objects()
+class basename(StandardConnectorComponent.basename):         val =
+"controller"      class freq_mhz(SimpleConfigAttribute(40, 'i')):
+"""Processor frequency in MHz, default is 40 MHz."""         def
+setter(self, val):             if val <= 0:                 raise
+CompException('Illegal processor frequency %d' % val)
+self.val = val      class mem_size(SimpleConfigAttribute(0x10000000,
+'i')):         """Contoller RAM size, default is 0x10000000 bytes."""
+def setter(self, val):             if val <= 0:                 raise
+CompException('Illegal controller memory size %d' % val)
+self.val = val      class
+component_queue(StandardComponent.component_queue):         def
+getter(self):             return self._up.get_clock()      def
+get_clock(self):         sub_cmps = [x for x in
+self.obj.iface.component.get_slot_objects() if (
+isinstance(x, simics.conf_object_t) and hasattr(x.iface,
+'component'))]         clocks = []         for c in sub_cmps:
+if hasattr(c, 'component_queue'):                 q =
+c.component_queue                 if q:
+clocks.append(q)         if len(clocks) > 0:             return
+clocks[0]      def add_objects(self):         cpu_core =
+self.add_pre_obj('cpu_core', 'sample-risc-core')         cpu =
+self.add_pre_obj('cpu', 'sample-risc')         cpu.freq_mhz =
+self.freq_mhz.val         cpu.current_risc_core = cpu_core
+cpu_core.sample_risc = cpu         phys_mem =
+self.add_pre_obj('phys_mem', 'memory-space')
+cpu_core.physical_memory_space = phys_mem         mem =
+self.add_pre_obj('ram', 'ram')         mem_image =
+self.add_pre_obj('mem_image', 'image')         mem_image.size =
+self.mem_size.val         mem.image = mem_image         phys_mem.map =
+[[0x00000000, mem, 0, 0, self.mem_size.val]]      def
+get_processors(self):         ret = [self.get_slot('cpu')]
+return list(set(ret))      class
+top_level(StandardComponent.top_level):         def _initialize(self):
+self.val = True      class cpu_list(StandardComponent.cpu_list):
+def getter(self):             return self._up.get_processors()В
+последнем файле мы видим уже знакомые нам команды, создающие те или
+иные объекты модели. Только вместо вызова pre_conf_object()
+используется метод add_pre_obj() из класса StandardComponent. Это
+позволяет вместо плоского набора объектов получить их иерархию. Мы это
+увидим чуть позже. Скомпилируем:$> make sample-riscТеперь модель
+нашего контроллера можно загрузить в Simics тремя командами:simics>
+load-module myrisc-comp simics> $controller=(create-RISC-controller
+name="controller") simics> instantiate-componentsПосмотрим, как
+выглядит иерархия объектов модели контроллера:simics> list-objects
+namespace=controller -tree ┐ ├ cell ┐ │      └ ps  ├ cpu ┐ │     └
+vtime ┐ │             ├ cycles  │             └ ps  ├ cpu_core  ├
+mem_image  ├ phys_mem  └ ram ┐       └ port ┐              └ tags Но и
+три команды много ;-) Сделаем отдельный скрипт для запуска модели. В
+рабочем каталоге Simics, в подкаталоге targets, файл
+myrisc.simics:load-module myrisc-comp $controller=(create-RISC-
+controller name="controller") instantiate-components controller.status
+Теперь вся модель может быть загружена одной командой:simics> run-
+command-file "%simics%/targets/myrisc.simics" Status of controller
+[class RISC_controller] ============================================
+Setup:     Top component : controller      Instantiated : True
+System Info :   Attributes:          freq_mhz : 40          mem_size :
+268435456  Connections: Что в итоге? 1+1=2?Подведем промежуточный итог
+наших усилий. Мы автоматизировали создание нашей модели. Несмотря на
+то, что, казалось бы, три команды ввести несложно, автоматизация важна
+с той точки зрения, что создание модели не является самоцелью. Целью
+является ее многократный запуск при написании и отладке прошивки, при
+отладке взаимодействия с другими устройствами и системами (возможно,
+физическими) и, вероятно, даже долговременная работа в качестве замены
+подсистемы, которая еще не создана в железе.   Осталось проверить что
+наш контроллер все также позволяет работать с памятью:simics>
+controller.phys_mem.write(0x100, 0xDEADBEEF) simics>
+controller.phys_mem.read(0x100) 3735928559 (BE)На этом пока, пожалуй,
+стоит остановиться чтобы подумать и передохнуть… Но мы ведь с вами не
+закончили. Вы помните? Нам предстоит, еще как минимум — добавить ПЗУ,
+защиту памяти и последовательный порт. Не переключайтесь.[1] Intel
+Core i7©, Intel Xeon 5500©, 5530, Intel Atom©

@@ -1,7 +1,7 @@
 import bs4
 import requests
 
-URL = 'https://habr.com/ru/all/'
+URL = 'https://habr.com'
 RES = requests.get(URL)
 SOUP = bs4.BeautifulSoup(RES.content, 'html.parser')
-DATA_PATH = '/home/scareface/Desktop/projects/ITMO/articles_parser/src/data'
+DATA_PATH = '/home/scareface/Documents/Projects/articles-parser/src/data'

@@ -1,0 +1,513 @@
+Автор: MaxRokatansky
+Дата: 2021-09-30T10:45:13.000Z
+Название: Тестирование интеграции с внешним API при помощи мок-объектов на
+Python
+Теги: Блог компании OTUS, Тестирование веб-сервисов *
+Текст:
+В этом руководстве продемонстрирован способ тестирования интеграции с
+внешним API при помощи мок-объектов на PythonИнтеграция со сторонним
+приложением — это отличный способ расширить функционал продукта.В то
+же время преимущества интеграции несут с собой потенциальные проблемы.
+Внешняя библиотека вам не принадлежит, то есть вы не можете управлять
+серверами, на которых она размещена, не контролируете код, описывающий
+логику ее работы, равно как и данные, которые передаются между ней и
+вашим приложением. Вдобавок к этим проблемам пользователи постоянно
+манипулируют данными в процессе взаимодействия с библиотекой.Если вы
+хотите повысить ценность своего приложения за счет стороннего API, вам
+нужна гарантия того, что обе системы будут работать хорошо. Для этого
+необходимо провести серию тестов в контролируемой среде и убедиться,
+что два приложения взаимодействуют предсказуемым образом.На первый
+взгляд может показаться, что у вас нет никакого контроля над сторонним
+приложением. Многие из них не предлагают тестовые серверы. Тестировать
+интеграцию на реальных данных нельзя, а даже если бы это и было
+возможно, тесты возвращали бы ненадежные результаты, поскольку данные
+могут обновляться в процессе использования продукта. Кроме того, ни в
+коем случае нельзя допускать, чтобы автотесты подключались к внешнему
+серверу. Ошибка на его стороне может застопорить процесс разработки,
+если релиз вашего кода зависит от того, пройдут ли тесты. К счастью,
+существует способ, позволяющий тестировать интеграцию со сторонним API
+в контролируемой среде без необходимости фактического подключения к
+внешнему источнику данных. Решение состоит в том, чтобы подделать
+функционал внешнего кода, используя мок-объекты (англ. mock —
+«передразнивать», «имитировать»).Мок-объект (или подставной объект) —
+это создаваемый разработчиком тестов поддельный объект, который
+выглядит и действует, как реальные данные. Подставив мок-объект на
+место реального объекта, можно «обмануть» систему, заставив ее думать,
+что мок-объект — это то, что он заменяет. Использование мок-объекта
+напоминает классический киносюжет, где герой захватывает противника,
+переодевается в его форму и встает во вражеский строй. Никто не
+замечает самозванца, и все продолжают маршировать как ни в чем не
+бывало.Один из типичных сценариев, в которых уместно применять мок-
+объекты, — это использование сторонних механизмов аутентификации,
+например OAuth. OAuth требует, чтобы ваше приложение взаимодействовало
+с внешним сервером, оно использует реальные пользовательские данные, и
+ваше приложение полагается на его успешную работу при получении
+доступа к его API. Имитация аутентификации через мок-объекты позволит
+вам тестировать свою систему в качестве авторизованного пользователя
+без необходимости по-настоящему проходить процесс обмена учетными
+данными. В этом случае у вас нет цели проверять, успешно ли ваша
+система аутентифицирует пользователя; вы хотите тестировать поведение
+функций своего приложения после того, как аутентификация
+пройдена.Примечание. В этом руководстве используется Python версии
+3.5.1.Первые шагиНачнем с настройки новой среды разработки для
+хранения кода нашего проекта. Создадим виртуальную среду и установим
+следующие библиотеки:$ pip install nose requestsВот краткое описание
+каждой из устанавливаемых библиотек (на случай, если вы ранее с ними
+не сталкивались):Библиотека mock используется для тестирования Python-
+кода путем замены частей системы на мок-объекты. Примечание: Если вы
+пользуетесь Python версии 3.3 или выше, библиотека mock является
+частью пакета unittest. При использовании более ранних версий
+установите библиотеку backport mock.Библиотека nose расширяет
+встроенный в Python модуль unittest, чтобы упростить тестирование. Для
+достижения тех же результатов можно использовать unittest или другие
+сторонние библиотеки (например, pytest), но я предпочитаю методы
+утверждения (assert), используемые в nose.Библиотека requests
+значительно упрощает работу с HTTP-вызовами в Python.В этом
+руководстве мы будем коммуницировать с фиктивным онлайн-API, созданным
+для тестирования, — JSON Placeholder. Прежде чем писать какие-либо
+тесты, необходимо понять, чего следует ожидать от API.Во-первых, API,
+к которому мы подключаемся, должен возвращать ответы на наши запросы.
+Подтвердим это предположение, вызвав конечную точку с помощью cURL:$
+curl -X GET 'http://jsonplaceholder.typicode.com/todos'Этот вызов
+должен возвращать сериализованный список задач в формате JSON.
+Обратите внимание на структуру данных о задачах в ответе. Вы должны
+увидеть список объектов с ключами userId, id, title и completed.
+Теперь можно переходить к следующему предположению, так как мы знаем,
+как должны выглядеть данные, а конечная точка API активна и
+функционирует. Мы доказали это, вызвав API из командной строки. Теперь
+напишем тест на nose, который в будущем позволит нам удостоверяться в
+работоспособности сервера. Пусть это будет самый простой тест. Нас
+здесь волнует лишь то, вернет ли сервер ответ
+«OK».project/tests/test_todos.py# Third-party imports... from
+nose.tools import assert_true import requests   def
+test_request_response():     # Send a request to the API server and
+store the response.     response =
+requests.get('http://jsonplaceholder.typicode.com/todos')       #
+Confirm that the request-response cycle completed successfully.
+assert_true(response.ok)Запустив тест, мы увидим, что он выполнится
+успешно:$ nosetests --verbosity=2 project
+test_todos.test_request_response ... ok
+----------------------------------------------------------------------
+Ran 1 test in 9.270s  OK Remove adsРефакторинг кода: создаем
+сервисВполне вероятно, что в своем приложении вы будете вызывать
+внешний API много раз. Кроме того, эти вызовы API, скорее всего, будут
+включать в себя больше логики, чем просто выполнение HTTP-запроса,
+например будет осуществляться преобразование данных, обработка ошибок
+и фильтрация. Необходимо отрефакторить код теста, превратив его в
+функцию-сервис, содержащую всю ожидаемую логику.Перепишем наш тест
+так, чтобы он ссылался на функцию-сервис, и протестируем новую
+логику.project/tests/test_todos.py# Third-party imports... from
+nose.tools import assert_is_not_none  # Local imports... from
+project.services import get_todos   def test_request_response():     #
+Call the service, which will send a request to the server.
+response = get_todos()      # If the request is sent successfully,
+then I expect a response to be returned.
+assert_is_not_none(response)Запустим тест и увидим, что он не
+проходит, а затем допишем немного кода, чтобы тест
+прошел:project/services.py# Standard library imports... try:     from
+urllib.parse import urljoin except ImportError:     from urlparse
+import urljoin  # Third-party imports... import requests  # Local
+imports... from project.constants import BASE_URL  TODOS_URL =
+urljoin(BASE_URL, 'todos')   def get_todos():     response =
+requests.get(TODOS_URL)     if response.ok:         return response
+else:         return Noneproject/constants.pyBASE_URL =
+'http://jsonplaceholder.typicode.com'В первом тесте, который мы
+написали, ожидалось, что будет возвращен ответ со статусом «OK».
+Теперь мы преобразовали эту программную логику в функцию-сервис,
+которая возвращает сам ответ при успешном выполнении запроса на
+сервер. Если запрос завершается неудачно, возвращается значение None.
+Теперь тест включает утверждение, подтверждающее, что функция не
+возвращает None.Обратите внимание, что я проинструктировал вас создать
+файл constants.py, содержащий адрес BASE_URL. Функция-сервис дополняет
+адрес BASE_URL, образуя адрес TODOS_URL. Поскольку все конечные точки
+API используют один и тот же базовый URL-адрес, этот фрагмент кода
+можно не переписывать при создании новых тестов. Нахождение BASE_URL в
+отдельном файле позволяет редактировать адрес лишь в одном месте, что
+пригодится, если на этот код будут ссылаться несколько
+модулей.Запустим тест и убедимся, что он проходит.$ nosetests
+--verbosity=2 project test_todos.test_request_response ... ok
+----------------------------------------------------------------------
+Ran 1 test in 1.475s  OKПишем первый мокКод работает, как ожидается.
+Мы уверены в этом, потому что у нас есть успешно выполняющийся тест.
+Однако есть проблема: наша функция-сервис по-прежнему напрямую
+обращается к внешнему серверу. Когда мы вызываем get_todos(), наш код
+делает запрос к конечной точке API и возвращает результат, который
+зависит от того, работает ли этот сервер. Ниже я продемонстрирую, как
+отделить программную логику от реальной внешней библиотеки, заменив
+реальный запрос на фиктивный запрос, возвращающий те же
+данные.project/tests/test_todos.py# Standard library imports... from
+unittest.mock import Mock, patch  # Third-party imports... from
+nose.tools import assert_is_not_none  # Local imports... from
+project.services import get_todos
+@patch('project.services.requests.get') def
+test_getting_todos(mock_get):     # Configure the mock to return a
+response with an OK status code.     mock_get.return_value.ok = True
+# Call the service, which will send a request to the server.
+response = get_todos()      # If the request is sent successfully,
+then I expect a response to be returned.
+assert_is_not_none(response)Обратите внимание, что я никоим образом не
+менял функцию-сервис. Единственной частью кода, которую я
+отредактировал, был сам тест. Во-первых, я импортировал функцию
+patch() из библиотеки mock. Затем я модифицировал тестовую функцию
+путем применения к ней функции-декоратора patch() и передачи ссылки на
+project.services.requests.get. Самой тестовой функции я передал
+параметр mock_get, а затем в ее тело добавил строку для установки
+значения mock_get.return_value.ok = True.Отлично. Что же сейчас на
+самом деле происходит, когда запускается тест? Прежде чем я в это
+углублюсь, нам нужно немного разобраться в принципе работы библиотеки
+requests. Когда мы вызываем функцию requests.get(), она за кадром
+выполняет HTTP-запрос, а затем возвращает HTTP-ответ в виде объекта
+Response. Сама функция get() взаимодействует с внешним сервером,
+поэтому объектом имитации необходимо сделать именно ее. Если вернуться
+к аналогии с героем, переодевающимся во врага, то здесь нужно создать
+мок-объект и «переодеть» его так, чтобы он выглядел и действовал, как
+функция requests.get().При запуске тестовой функции она находит
+модуль, в котором объявлена библиотека requests (это
+ project.services), и заменяет целевую функцию requests.get() на мок-
+объект. Тест также предписывает мок-объекту вести себя так, как
+ожидает от него функция-сервис. Если вы посмотрите на get_todos(), вы
+увидите, что успешное выполнение функции зависит от того, возвращается
+ли в ветви кода if response.ok: значение True. Именно это делает
+строка mock_get.return_value.ok = True. Когда вызывается свойство ok
+мок-объекта, он возвращает значение True, — точно так же, как и
+настоящий объект. Функция get_todos() вернет ответ, который является
+мок-объектом, и тест пройдет, потому что мок не равен значению
+None.Запустим тест и убедимся, что он проходит.$ nosetests
+--verbosity=2 projectДругие способы подмены функцииДекоратор является
+лишь одним из нескольких способов подставить вместо функции мок-
+объект. В следующем примере я явно подменю функцию в блоке кода,
+используя контекстный менеджер. Оператор with подменяет функцию при ее
+использовании любым оператором в этом блоке кода. Когда блок кода
+заканчивается, восстанавливается исходная функция. Оператор with и
+декоратор достигают одной и той же цели: они модифицируют
+project.services.request.get.project/tests/test_todos.py# Standard
+library imports... from unittest.mock import patch  # Third-party
+imports... from nose.tools import assert_is_not_none  # Local
+imports... from project.services import get_todos   def
+test_getting_todos():     with patch('project.services.requests.get')
+as mock_get:         # Configure the mock to return a response with an
+OK status code.         mock_get.return_value.ok = True          #
+Call the service, which will send a request to the server.
+response = get_todos()      # If the request is sent successfully,
+then I expect a response to be returned.
+assert_is_not_none(response)Запустим тесты и убедимся, что они по-
+прежнему проходят.Другой способ модифицировать функцию заключается в
+использовании патчера. Здесь я определяю исходный объект для патчинга,
+а затем явно начинаю использовать мок-объект. Патчинг не прекращается
+до тех пор, пока я явно не скажу системе прекратить подставлять мок-
+объект.project/tests/test_todos.py# Standard library imports... from
+unittest.mock import patch  # Third-party imports... from nose.tools
+import assert_is_not_none  # Local imports... from project.services
+import get_todos   def test_getting_todos():     mock_get_patcher =
+patch('project.services.requests.get')      # Start patching
+`requests.get`.     mock_get = mock_get_patcher.start()      #
+Configure the mock to return a response with an OK status code.
+mock_get.return_value.ok = True      # Call the service, which will
+send a request to the server.     response = get_todos()      # Stop
+patching `requests.get`.     mock_get_patcher.stop()      # If the
+request is sent successfully, then I expect a response to be returned.
+assert_is_not_none(response)Запустим тесты еще раз и получим тот же
+успешный результат.Итак, мы познакомились с тремя способами подмены
+функции на мок-объект. Давайте разберемся: когда следует использовать
+тот или иной способ? Короткий ответ: решение полностью за вами. Каждый
+из способов подмены функций полностью корректен. Однако я обнаружил,
+что определенные подходы к написанию кода особенно хорошо совместимы
+со следующими способами:Используйте декоратор, когда весь код в теле
+тестовой функции использует мок-объект.Используйте контекстный
+менеджер, когда часть кода в тестовой функции использует мок-объект, а
+другой код ссылается на настоящую функцию.Используйте патчер, когда
+требуется явно запускать и останавливать имитацию функции в нескольких
+тестах (например, функции setUp() и tearDown() в тестовом
+классе).Далее в этом руководстве я покажу каждый из этих способов и
+остановлюсь на них подробнее.Имитация полного поведения сервисаВ
+предыдущих примерах мы реализовали базовый мок-объект и протестировали
+простое утверждение: вернула ли функция get_todos() значение None.
+Функция get_todos() вызывает внешний API и получает ответ. Если вызов
+выполнен успешно, функция возвращает объект ответа, который содержит
+сериализованный список задач в формате JSON. Если запрос завершается
+неудачно, get_todos() возвращает None. В следующем примере я
+продемонстрирую, как сымитировать весь функционал get_todos(). Первый
+вызов, который мы сделали на сервер с помощью cURL в начале этого
+руководства, вернул в формате JSON сериализованный список словарей,
+которые представляли собой задачи. В следующем примере будет показано,
+как сымитировать эти данные.Напомню, как работает декоратор
+@patch(), — мы задаем для него путь к функции, которую хотим подменить
+мок-объектом. Функция найдена, patch() создает объект Mock, и
+настоящая функция временно заменяется мок-объектом. Когда get_todos()
+вызывается тестом, функция использует mock_get так же, как она
+использовала бы реальный метод get(). Это означает, что она вызывает
+mock_get как функцию и ожидает, что будет возвращен объект ответа.В
+этом случае объектом ответа является объект Response из библиотеки
+requests, который имеет несколько атрибутов и методов. В предыдущем
+примере мы подделали одно из этих свойств — ok. Объект Response также
+имеет функцию json(), которая преобразует сериализованное строковое
+содержимое из формата JSON в тип данных Python (например, list или
+dict).project/tests/test_todos.py# Standard library imports... from
+unittest.mock import Mock, patch  # Third-party imports... from
+nose.tools import assert_is_none, assert_list_equal  # Local
+imports... from project.services import get_todos
+@patch('project.services.requests.get') def
+test_getting_todos_when_response_is_ok(mock_get):     todos = [{
+'userId': 1,         'id': 1,         'title': 'Make the bed',
+'completed': False     }]      # Configure the mock to return a
+response with an OK status code. Also, the mock should have     # a
+`json()` method that returns a list of todos.
+mock_get.return_value = Mock(ok=True)
+mock_get.return_value.json.return_value = todos      # Call the
+service, which will send a request to the server.     response =
+get_todos()      # If the request is sent successfully, then I expect
+a response to be returned.     assert_list_equal(response.json(),
+todos)   @patch('project.services.requests.get') def
+test_getting_todos_when_response_is_not_ok(mock_get):     # Configure
+the mock to not return a response with an OK status code.
+mock_get.return_value.ok = False      # Call the service, which will
+send a request to the server.     response = get_todos()      # If the
+response contains an error, I should get no todos.
+assert_is_none(response)В предыдущем примере я упоминал, что когда вы
+подменяете функцию get_todos() мок-объектом с помощью патчера, она
+возвращает мок-объект response. Возможно, вы заметили закономерность:
+когда к мок-объекту добавляется return_value, этот объект
+модифицируется, чтобы его можно было запускать как функцию, и по
+умолчанию возвращает другой мок-объект. В этом примере я решил явно
+объявить мок-объект — mock_get.return_value = Mock(ok=True) — чтобы
+было яснее. Функция mock_get() соответствует requests.get() —
+requests.get() возвращает объект Response, а mock_get() возвращает
+объект Mock. У объекта Response есть свойство ok, поэтому мы добавили
+свойство ok в объект Mock.У объекта Response также есть функция
+json(), поэтому мы добавили свойство json в объект Mock и дополнили
+его возвращаемым значением return_value, так как это свойство будет
+вызываться как функция. Функция json() возвращает список задач.
+Заметим, что в тесте теперь есть утверждение, проверяющее
+значение response.json(). Вам нужно убедиться, что
+функция get_todos() возвращает список задач, как настоящий сервер.
+Наконец, в завершение тестирования get_todos(), я добавляю тест на
+ошибку в ответе.Запустите тесты, они должны выполниться успешно.$
+nosetests --verbosity=2 project
+test_todos.test_getting_todos_when_response_is_not_ok ... ok
+test_todos.test_getting_todos_when_response_is_ok ... ok
+----------------------------------------------------------------------
+Ran 2 tests in 0.285s  OK Remove adsИмитация интегрированных
+функцийПримеры, которые я привел выше, были довольно простыми.
+Следующий пример будет посложнее. Представьте себе сценарий, где
+создается новая функция-сервис, которая вызывает get_todos(), а затем
+фильтрует результаты, возвращая только те элементы задач, которые были
+выполнены (поле completed). Нужно снова имитировать requests.get()?
+Нет, в этом случае следует имитировать функцию get_todos() напрямую!
+Помните, что, когда мы имитируем функцию, мы заменяем фактический
+объект мок-объектом и следует заботиться лишь о том, как функция-
+сервис взаимодействует с этим мок-объектом. В случае get_todos() мы
+знаем, что функция не принимает параметров и возвращает ответ с
+помощью функции json(), которая возвращает список объектов задач. Нам
+все равно, что происходит под капотом; нам просто важно, чтобы мок-
+объект get_todos() возвращал то, что ожидается от реальной функции
+get_todos().project/tests/test_todos.py# Standard library imports...
+from unittest.mock import Mock, patch  # Third-party imports... from
+nose.tools import assert_list_equal, assert_true  # Local imports...
+from project.services import get_uncompleted_todos
+@patch('project.services.get_todos') def
+test_getting_uncompleted_todos_when_todos_is_not_none(mock_get_todos):
+todo1 = {         'userId': 1,         'id': 1,         'title': 'Make
+the bed',         'completed': False     }     todo2 = {
+'userId': 1,         'id': 2,         'title': 'Walk the dog',
+'completed': True     }      # Configure mock to return a response
+with a JSON-serialized list of todos.     mock_get_todos.return_value
+= Mock()     mock_get_todos.return_value.json.return_value = [todo1,
+todo2]      # Call the service, which will get a list of todos
+filtered on completed.     uncompleted_todos = get_uncompleted_todos()
+# Confirm that the mock was called.
+assert_true(mock_get_todos.called)      # Confirm that the expected
+filtered list of todos was returned.
+assert_list_equal(uncompleted_todos, [todo1])
+@patch('project.services.get_todos') def
+test_getting_uncompleted_todos_when_todos_is_none(mock_get_todos):
+# Configure mock to return None.     mock_get_todos.return_value =
+None      # Call the service, which will return an empty list.
+uncompleted_todos = get_uncompleted_todos()      # Confirm that the
+mock was called.     assert_true(mock_get_todos.called)      # Confirm
+that an empty list was returned.
+assert_list_equal(uncompleted_todos, [])Обратите внимание, что теперь
+я подменяю тестовую функцию для поиска и замены
+project.services.get_todos на мок-функцию, которая должна возвращать
+объект, содержащий в себе функцию json(). При вызове функции json()
+она должна возвращать список объектов задач. Я также добавляю
+утверждение, чтобы подтвердить, что функция get_todos() действительно
+вызывается. Таким образом можно удостовериться, что, когда функция-
+сервис обращается к реальному API, будет выполняться реальная функция
+get_todos(). Еще я добавил тест, который проверяет, что если
+get_todos() возвращает None, то функция get_uncompleted_todos()
+возвращает пустой список. Опять же, я подтверждаю, что функция
+get_todos() вызывается.Напишем эти тесты и запустим их, чтобы
+убедиться, что они не проходят. Затем напишем код, необходимый для их
+прохождения.project/services.pydef get_uncompleted_todos():
+response = get_todos()     if response is None:         return []
+else:         todos = response.json()         return [todo for todo in
+todos if todo.get('completed') == False]Теперь тесты
+пройдены.Рефакторинг тестов: используем классыВозможно, вы заметили,
+что некоторые из тестов стоило бы объединить в группу. У нас есть два
+теста, которые нацелены на функцию get_todos(). Два других теста
+сосредоточены на get_uncompleted_todos(). Всякий раз, когда я начинаю
+замечать тенденции и сходства между тестами, я объединяю их в тестовый
+класс. Такой рефакторинг позволяет достичь нескольких
+целей:Перемещение общих тестовых функций в класс позволяет легче
+прогонять тесты, принадлежащие одной группе. Вы можете нацелить nose
+на список функций, но проще нацелить его на единый класс.Общие
+тестовые функции часто требуют аналогичных шагов по созданию и
+уничтожению данных, используемых каждым тестом. Эти шаги можно
+заключить в функции setup_class() и teardown_class() соответственно,
+чтобы выполнять код на подходящих этапах.В классе можно создать
+служебные функции для повторного использования логики, которая
+повторяется в разных тестовых функциях. Представьте, что вместо этого
+приходится вызывать одну и ту же логику для создания данных в каждой
+функции по отдельности. Это крайне неудобно!Обратите внимание, что я
+использую патчер, чтобы имитировать целевые функции в тестовых
+классах. Как я уже упоминал ранее, этот метод подмены функций отлично
+подходит для создания мок-объекта, совместно используемого в
+нескольких функциях. Код в методе teardown_class() явно
+восстанавливает оригинальный код после завершения
+тестов.project/tests/test_todos.py# Standard library imports... from
+unittest.mock import Mock, patch  # Third-party imports... from
+nose.tools import assert_is_none, assert_list_equal, assert_true  #
+Local imports... from project.services import get_todos,
+get_uncompleted_todos   class TestTodos(object):     @classmethod
+def setup_class(cls):         cls.mock_get_patcher =
+patch('project.services.requests.get')         cls.mock_get =
+cls.mock_get_patcher.start()      @classmethod     def
+teardown_class(cls):         cls.mock_get_patcher.stop()      def
+test_getting_todos_when_response_is_ok(self):         # Configure the
+mock to return a response with an OK status code.
+self.mock_get.return_value.ok = True          todos = [{
+'userId': 1,             'id': 1,             'title': 'Make the bed',
+'completed': False         }]          self.mock_get.return_value =
+Mock()         self.mock_get.return_value.json.return_value = todos
+# Call the service, which will send a request to the server.
+response = get_todos()          # If the request is sent successfully,
+then I expect a response to be returned.
+assert_list_equal(response.json(), todos)      def
+test_getting_todos_when_response_is_not_ok(self):         # Configure
+the mock to not return a response with an OK status code.
+self.mock_get.return_value.ok = False          # Call the service,
+which will send a request to the server.         response =
+get_todos()          # If the response contains an error, I should get
+no todos.         assert_is_none(response)   class
+TestUncompletedTodos(object):     @classmethod     def
+setup_class(cls):         cls.mock_get_todos_patcher =
+patch('project.services.get_todos')         cls.mock_get_todos =
+cls.mock_get_todos_patcher.start()      @classmethod     def
+teardown_class(cls):         cls.mock_get_todos_patcher.stop()
+def test_getting_uncompleted_todos_when_todos_is_not_none(self):
+todo1 = {             'userId': 1,             'id': 1,
+'title': 'Make the bed',             'completed': False         }
+todo2 = {             'userId': 2,             'id': 2,
+'title': 'Walk the dog',             'completed': True         }
+# Configure mock to return a response with a JSON-serialized list of
+todos.         self.mock_get_todos.return_value = Mock()
+self.mock_get_todos.return_value.json.return_value = [todo1, todo2]
+# Call the service, which will get a list of todos filtered on
+completed.         uncompleted_todos = get_uncompleted_todos()
+# Confirm that the mock was called.
+assert_true(self.mock_get_todos.called)          # Confirm that the
+expected filtered list of todos was returned.
+assert_list_equal(uncompleted_todos, [todo1])      def
+test_getting_uncompleted_todos_when_todos_is_none(self):         #
+Configure mock to return None.
+self.mock_get_todos.return_value = None          # Call the service,
+which will return an empty list.         uncompleted_todos =
+get_uncompleted_todos()          # Confirm that the mock was called.
+assert_true(self.mock_get_todos.called)          # Confirm that an
+empty list was returned.         assert_list_equal(uncompleted_todos,
+[])Запустите тесты. Они должны выполниться успешно, потому что мы не
+добавляли никакой новой логики, а просто перегруппировали код.$
+nosetests --verbosity=2 project
+test_todos.TestTodos.test_getting_todos_when_response_is_not_ok ... ok
+test_todos.TestTodos.test_getting_todos_when_response_is_ok ... ok tes
+t_todos.TestUncompletedTodos.test_getting_uncompleted_todos_when_todos
+_is_none ... ok test_todos.TestUncompletedTodos.test_getting_uncomplet
+ed_todos_when_todos_is_not_none ... ok
+----------------------------------------------------------------------
+Ran 4 tests in 0.300s  OKТестирование с учетом обновлений данных APIНа
+протяжении всего этого руководства я демонстрировал, как имитировать
+данные, возвращаемые сторонним API. При создании этих фиктивных данных
+мы исходим из предположения, что в реальных данных используется тот же
+формат, что и в тех, что мы имитируем. Первый шаг заключался в вызове
+реального API и просмотре возвращенных данных. За тот короткий
+промежуток времени, что мы потратили на проработку этих примеров,
+структура данных вряд ли изменится, но не стоит уповать на то, что она
+останется неизменной навсегда. Любая развитая внешняя библиотека
+регулярно обновляется. Хотя разработчики и стремятся поддерживать
+обратную совместимость, однажды наступает момент, когда код
+устаревает.Так что, как вы понимаете, полностью полагаться на
+фиктивные данные опасно. Тестируя свой код без связи с реальным
+сервером, можно приобрести излишнюю уверенность в надежности тестов, а
+когда придет время использовать приложение с реальными данными, все
+развалится. Ниже приведена стратегия, позволяющая удостовериться в
+том, что данные, которых мы ожидаем от сервера, соответствуют данным,
+на которых мы тестируем свое приложение. Цель здесь состоит в
+сравнении структуры данных (например, ключей в объекте), а не самих
+данных.Обратите внимание, как я применяю способ подмены функций с
+помощью контекстного менеджера. Здесь нам нужно вызвать реальный
+сервер и отдельно сымитировать его.project/tests/test_todos.pydef
+test_integration_contract():     # Call the service to hit the actual
+API.     actual = get_todos()     actual_keys =
+actual.json().pop().keys()      # Call the service to hit the mocked
+API.     with patch('project.services.requests.get') as mock_get:
+mock_get.return_value.ok = True
+mock_get.return_value.json.return_value = [{             'userId': 1,
+'id': 1,             'title': 'Make the bed',             'completed':
+False         }]          mocked = get_todos()         mocked_keys =
+mocked.json().pop().keys()      # An object from the actual API and an
+object from the mocked API should have     # the same data structure.
+assert_list_equal(list(actual_keys), list(mocked_keys))Тесты должны
+пройти успешно. Имитированная структура данных соответствует структуре
+настоящего API.Сценарии условного тестированияИтак, у нас есть тест
+для сравнения реальных форматов данных с имитированными, теперь нужно
+понять, когда этот тест следует запускать. Тест, обращающийся к
+реальному серверу, не должен быть автоматизирован, потому что сбой
+такого теста не обязательно означает, что ваш код плохой. Подключение
+к реальному серверу во время выполнения набора тестов может давать
+сбой по десятку причин, которые находятся вне вашего контроля. Такой
+тест следует запускать отдельно от автотестов (но с достаточной
+частотой). Один из способов выборочного пропуска тестов — использовать
+переменную среды в качестве переключателя. В приведенном ниже примере
+все тесты выполняются, если для переменной среды SKIP_REAL не
+установлено значение True. Когда переменная SKIP_REAL включена, любой
+тест с декоратором @skipIf(SKIP_REAL) будет
+пропущен.project/tests/test_todos.py# Standard library imports... from
+unittest import skipIf  # Local imports... from project.constants
+import SKIP_REAL   @skipIf(SKIP_REAL, 'Skipping tests that hit the
+real API server.') def test_integration_contract():     # Call the
+service to hit the actual API.     actual = get_todos()
+actual_keys = actual.json().pop().keys()      # Call the service to
+hit the mocked API.     with patch('project.services.requests.get') as
+mock_get:         mock_get.return_value.ok = True
+mock_get.return_value.json.return_value = [{             'userId': 1,
+'id': 1,             'title': 'Make the bed',             'completed':
+False         }]          mocked = get_todos()         mocked_keys =
+mocked.json().pop().keys()      # An object from the actual API and an
+object from the mocked API should have     # the same data structure.
+assert_list_equal(list(actual_keys),
+list(mocked_keys))project/constants.py# Standard-library imports...
+import os   BASE_URL = 'http://jsonplaceholder.typicode.com' SKIP_REAL
+= os.getenv('SKIP_REAL', False)Запустите тесты и обратите внимание на
+результат. Один тест был проигнорирован, а на консоли отобразилось
+сообщение «Skipping tests that hit the real API server».
+Замечательно!$ nosetests --verbosity=2 project
+test_todos.TestTodos.test_getting_todos_when_response_is_not_ok ... ok
+test_todos.TestTodos.test_getting_todos_when_response_is_ok ... ok tes
+t_todos.TestUncompletedTodos.test_getting_uncompleted_todos_when_todos
+_is_none ... ok test_todos.TestUncompletedTodos.test_getting_uncomplet
+ed_todos_when_todos_is_not_none ... ok
+test_todos.test_integration_contract ... SKIP: Skipping tests that hit
+the real API server.
+----------------------------------------------------------------------
+Ran 5 tests in 0.240s  OK (SKIP=1)Дальнейшие шагиИтак, мы изучили, как
+можно протестировать интеграцию приложения со сторонним API с помощью
+мок-объектов. Теперь, когда вы знаете, как подойти к проблеме, вы
+можете попрактиковаться в написании функций-сервисов для других
+конечных точек API, доступных в JSON Placeholder (например, сообщения,
+комментарии и пользователи).Усовершенствуйте свои навыки, подключив
+свое приложение к реальной внешней библиотеке, такой как Google,
+Facebook или Evernote, и посмотрите, получится ли у вас написать тесты
+с мок-объектами. Продолжайте писать чистый и надежный код и ждите
+продолжения, в котором я покажу, как вывести тестирование на новый
+уровень с помощью мок-серверов!Скачайте код из репозитория.Материал
+подготовлен в преддверии старта специализации QA Automation Engineer.

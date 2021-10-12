@@ -1,0 +1,203 @@
+Автор: bmar
+Дата: 2021-10-01T09:18:25.000Z
+Название: Обзор утилиты Weave Scope для мониторинга и отладки
+контейнеризированных приложений
+Теги: Блог компании Флант, Системное администрирование *, DevOps *,
+Kubernetes *
+Текст:
+Weave Scope — Open Source-утилита для контроля за микросервисными
+приложениями, развернутыми в Docker и Kubernetes. Утилита
+визуализирует топологию приложения на уровне контейнеров, помогает
+находить проблемы и оптимизировать архитектуру. Управление
+организовано через простой веб-интерфейс; командная строка нужна
+только для установки и запуска приложения.Weave Scope можно
+использовать бесплатно на локальном сервере. Также есть платная SaaS-
+версия. Создатели Weave Scope — компания Weaveworks, которая известна
+и другими популярными cloud native-решениями (например, Cortex и
+Flux).Чтобы продемонстрировать возможности Weave Scope, развернем
+утилиту на хосте, потом в кластере Kubernetes, после чего попробуем
+подключить один из готовых плагинов, который расширяет базовую
+функциональность Weave Scope.Установка на хостДля начала установим
+утилиту на хост с Docker (волею судеб им оказался один из GitLab
+Runner’ов):sudo curl -L git.io/scope -o /usr/local/bin/scope sudo
+chmod a+x /usr/local/bin/scopeЗапускаем:# scope launch Unable to find
+image 'weaveworks/scope:1.13.1' locally 1.13.1: Pulling from
+weaveworks/scope c9b1b535fdd9: Pull complete 550073704c23: Pull
+complete 8738e5bbaf1d: Pull complete 0a8826d26027: Pull complete
+387c1aa951b4: Pull complete e72d45461bb9: Pull complete 75cc44b65e98:
+Pull complete 11f7584a6ade: Pull complete a5aa3ebbe1c2: Pull complete
+7cdbc028c8d2: Pull complete Digest: sha256:4342f1c799aba244b975dcf1231
+7eb11858f9879a3699818e2bf4c37887584dc Status: Downloaded newer image
+for weaveworks/scope:1.13.1
+094c702d56db92e59c3dd686971738e67088f85d8e98dfebd8f54da7bef993c1 Scope
+probe started Weave Scope is listening at the following URL(s):   *
+http://10.0.0.1:4040/Проверим контейнер:# docker ps CONTAINER ID
+IMAGE                     COMMAND                  CREATED
+STATUS              PORTS               NAMES 094c702d56db
+weaveworks/scope:1.13.1   "/home/weave/entrypo…"   46 seconds ago
+Up 45 seconds                           weavescopeВажно. Для простоты
+у нашей машины внешний адрес. На ней нет никаких запрещающих правил
+iptables, поэтому всё работает «из коробки». В боевых условиях это
+опасно: любому человеку достаточно будет адреса вашей машины с Docker,
+чтобы получить полный доступ к интерфейсу Weave Scope, а значит, и к
+контейнерам.Зайдем в наш контейнер через браузер:Пусто! Действительно,
+на машине пока ничего нет.Добавим что-нибудь интересное — запустим
+кролика в травку побегать контейнер с RabbitMQ:# docker run -d --rm
+--name rabbitmq -p 5672:5672 -p 15672:15672
+rabbitmq:3-managementТеперь их двое, им хотя бы не будет скучно.#
+docker ps CONTAINER ID        IMAGE                     COMMAND
+CREATED             STATUS              PORTS
+NAMES 0594046d0809        rabbitmq:3-management     "docker-
+entrypoint.s…"   40 seconds ago      Up 36 seconds       4369/tcp,
+5671/tcp, 0.0.0.0:5672->5672/tcp, 15671/tcp, 15691-15692/tcp,
+25672/tcp, 0.0.0.0:15672->15672/tcp   rabbitmq 094c702d56db
+weaveworks/scope:1.13.1   "/home/weave/entrypo…"   11 minutes ago
+Up 11 minutes
+weavescopeНаш «кролик» появился и в веб-интерфейсе. Нажимаем на
+контейнер и видим краткую информацию о нем, а также несколько
+управляющих кнопок: attach к контейнеру, exec в его терминале,
+рестарт, приостановка и остановка контейнера. Последние, впрочем,
+доступны только при использовании Scope на хосте (не в
+Kubernetes).Слева внизу и вверху панели управления — набор кнопок для
+сортировки контейнеров по разным признакам и для переключения между
+разными режимами приложения. Например, можно посмотреть сеть у хоста и
+контейнеров:Вернемся к этой панели, когда будем запускать утилиту в
+K8s — картина должна быть куда интереснее.Есть также режим
+визуализации в виде таблицы:И наконец, режим с метриками:В каждом из
+режимов отображения можно нажимать на любой контейнер, чтобы увидеть
+подробности. Например:Что ж, мы запустили Weave Scope на одном хосте —
+но это только для затравки.Установка и первый запуск в
+KubernetesРазвернем утилиту в реально работающем K8s-кластере (на базе
+платформы Deckhouse):$ kubectl apply -f
+"https://cloud.weave.works/k8s/scope.yaml?k8s-version=$(kubectl
+version | base64 | tr -d '\n')" namespace/weave created
+serviceaccount/weave-scope created
+clusterrole.rbac.authorization.k8s.io/weave-scope created
+clusterrolebinding.rbac.authorization.k8s.io/weave-scope created
+deployment.apps/weave-scope-app created service/weave-scope-app
+created deployment.apps/weave-scope-cluster-agent created
+daemonset.apps/weave-scope-agent createdНа каждый узел к нам
+«прискакал» DaemonSet. Плюс в namespace’е weave поселился кластерный
+«агент» и само приложение:$ kubectl -n weave get po -owide NAME
+READY   STATUS    RESTARTS   AGE   IP             NODE
+NOMINATED NODE   READINESS GATES weave-scope-agent-4nflf
+1/1     Running   0          53s   10.1.2.154   kube-front-1    <none>
+<none> weave-scope-agent-52ncg                      1/1     Running
+0          53s   10.1.2.161   kube-master-3   <none>           <none>
+weave-scope-agent-62s6g                      1/1     Running   0
+53s   10.1.2.152   kube-system-1   <none>           <none> weave-
+scope-agent-7wqdk                      1/1     Running   0
+53s   10.1.2.159   kube-master-1   <none>           <none> weave-
+scope-agent-jtv78                      1/1     Running   0
+53s   10.1.2.162   kube-node-1     <none>           <none> weave-
+scope-agent-mfgdx                      1/1     Running   0
+53s   10.1.2.163   kube-node-2     <none>           <none> weave-
+scope-agent-sl968                      1/1     Running   0
+53s   10.1.2.155   kube-front-2    <none>           <none> weave-
+scope-agent-t9vlp                      1/1     Running   0
+53s   10.1.2.164   kube-node-3     <none>           <none> weave-
+scope-agent-tjz92                      1/1     Running   0
+53s   10.1.2.153   kube-system-2   <none>           <none> weave-
+scope-agent-wnj6m                      1/1     Running   0
+53s   10.1.2.160   kube-master-2   <none>           <none> weave-
+scope-app-545ddf96b4-l98b4             1/1     Running   0
+53s   10.2.7.248   kube-node-3     <none>           <none> weave-
+scope-cluster-agent-74c596c6b7-wwrtb   1/1     Running   0
+53s   10.2.7.247   kube-node-3     <none>           <none>Дальше
+применим простой Ingress, чтобы попасть внутрь:apiVersion:
+networking.k8s.io/v1 kind: Ingress metadata:   name: weave
+namespace: weave spec:   rules:   - host: weave.kokoko.kom     http:
+paths:       - path: /         pathType: Prefix         backend:
+service:             name: weave-scope-app             port:
+name: appОбщий вид — графы, где вершинами являются контроллеры и
+Pod’ы, а ребрами — имеющиеся связи этих Pod’ов:Графы строятся на лету,
+показывая взаимодействия между ресурсами кластера: Ещё графы (входящие
+соединения в пространстве имен d8-monitoring):На следующей иллюстрации
+— Pod’ы в namespace’е d8-monitoring (компоненты мониторинга) и их
+связь между собой, в режиме показа Services:Нажимаем, например, на
+trickster и видим входящие/исходящие соединения:Переключаемся в
+Controllers:И далее — в Pods. Здесь уже более развесистое дерево:Если
+нажата кнопка Live, происходящее в кластере транслируется «в живую».
+При этом графы периодически перестраиваются, и довольно сильно:К
+сожалению, перестраиваются они буквально постоянно, что причиняет
+определенные неудобства. Например, в какой-то момент может получиться
+такая малоинформативная схема:У некоторых из наших клиентов в одном
+namespace’е размещаются по 50-60 различных микросервисов вместе с
+инфраструктурными компонентами вроде Kafka и ZooKeeper. Страшно
+представить, как в таком случае будут выглядеть графы Weave Scope:
+вероятно, кнопка Pause будет нажата там большую часть
+времени.Подключаем плагиныПопробуем подключить плагин IOWait. Это
+приложение, которое использует iostat. IOWait показывает информацию об
+ожидании и простое CPU хоста прямо в интерфейсе Weave Scope.$ kubectl
+apply -f https://raw.githubusercontent.com/weaveworks-plugins/scope-
+iowait/master/deployments/k8s-iowait.yaml error: unable to recognize
+"https://raw.githubusercontent.com/weaveworks-plugins/scope-
+iowait/master/deployments/k8s-iowait.yaml": no matches for kind
+"DaemonSet" in version "extensions/v1beta1"Печально. Но мы не унываем
+и пробуем решить эту проблему очевидным способом:$ curl
+https://raw.githubusercontent.com/weaveworks-plugins/scope-
+iowait/master/deployments/k8s-iowait.yaml -so k8s-iowait.yaml $ sed -i
+'s/extensions\/v1beta1/apps\/v1/' k8s-iowait.yaml $ kubectl -n scope
+apply -f k8s-iowait.yaml error: error validating "k8s-iowait.yaml":
+error validating data: ValidationError(DaemonSet.spec): missing
+required field "selector" in io.k8s.api.apps.v1.DaemonSetSpec; if you
+choose to ignore these errors, turn validation off with
+--validate=falseЛадно, действительно: без селектора DaemonSet не
+DaemonSet. Исправим, добавив в spec DaemonSet’а:spec:   selector:
+matchLabels:       app: weavescope  $ kubectl -n weave get po NAME
+READY   STATUS    RESTARTS   AGE weave-scope-agent-2h4dj
+1/1     Running   0          89m weave-scope-agent-94zkx
+1/1     Running   0          93m weave-scope-agent-9tfbc
+1/1     Running   0          88m weave-scope-agent-ccbfs
+1/1     Running   0          90m weave-scope-agent-h22xn
+1/1     Running   0          92m weave-scope-agent-kz2nc
+1/1     Running   0          91m weave-scope-agent-lj49z
+1/1     Running   0          89m weave-scope-agent-nxkpm
+1/1     Running   0          92m weave-scope-agent-ps25k
+1/1     Running   0          90m weave-scope-agent-rg6lb
+1/1     Running   0          94m weave-scope-app-5f9f566559-8rkcb
+1/1     Running   0          94m weave-scope-cluster-
+agent-6b6f974dc6-6bt9k   1/1     Running   0          94m weavescope-
+iowait-plugin-2djqv               1/1     Running   0          2m1s
+weavescope-iowait-plugin-2xgrr               1/1     Running   0
+2m1s weavescope-iowait-plugin-6s6tq               1/1     Running   0
+2m1s weavescope-iowait-plugin-ph8gh               1/1     Running   0
+2m1s weavescope-iowait-plugin-pzxvg               1/1     Running   0
+2m1s weavescope-iowait-plugin-vd7xl               1/1     Running   0
+2m1sПлагин запустился!Теперь можно увидеть, что у одного из узлов
+процессор бездействует 70% времени:У Weave Scope есть и другие готовые
+плагины. Например, HTTP Statistics, который показывает статистику HTTP
+с помощью eBPF (если есть поддержка в ядре).Статус проектаПеред
+заключением хотелось бы также отдельно указать на актуальный статус
+Weave Scope. Дело в том, что его последние релизы выходили очень
+редко: версия 1.13.1 вышла в мае 2020 года, а следующая — 1.13.2 — аж
+в апреле 2021 г. И с тех пор новых релизов не видно.Коммиты в
+репозитории появляются чуть чаще, однако все они от одного человека,
+причем данный проект — явно не основной фокус его работы.С другой
+стороны, явных упоминаний о каком-либо deprecation сообщений не видно,
+а количество звёзд на GitHub (5000+) говорит о потенциально большом
+интересе к проекту со стороны пользователей.В общем, выглядит так, что
+Weave Scope не имеет активного развития, и это важно учитывать при
+намерении брать его на вооружение.РезюмеУтилита предлагает несколько
+неплохих визуализаций происходящего в Kubernetes-кластере или на
+отдельном Docker-узле. С помощью Weave Scope можно:смотреть на узлы и
+их загрузку;смотреть на контейнеры, их входящие и исходящие
+соединения;перезапускать контейнеры и удалять Pod’ы;смотреть логи;в
+Kubernetes — смотреть describe нужных ресурсов;расширять
+функциональность утилиты готовыми и пользовательскими плагинами.Нужна
+ли эта утилита SRE-инженеру? Дело вкуса и вопрос необходимости. Точно
+полезной в некоторых ситуациях может оказаться возможность мониторить
+входящие/исходящие соединения в виде таблицы (но в виде системы графов
+— вряд ли).Я убежден, что хорошо настроенный комплект из Grafana +
+Prometheus закроет 99,9% потребностей по мониторингу и для SRE, и для
+разработчика. Визуализация — это хорошо и полезно, но для мониторинга
+и observability (наблюдаемости) гораздо важнее возможность написать
+алерт к метрике, чем красивая картинка.P.S. А для тех, кому важен
+одновременно и полностью работающий мониторинг (с настроенными
+метриками и алертами), и подобная визуализация, можно посоветовать
+посмотреть на готовые Kubernetes-платформы вроде Deckhouse. Доступный
+там веб-интерфейс от Istio поможет отслеживать соединения в
+приложениях даже с большей детализацией, чем предлагает
+Scope.P.P.S.Читайте также в нашем блоге:«Обзор Lens — IDE для
+Kubernetes»;«Headlamp — новый GUI для работы с Kubernetes»;«Обзор k9s
+— продвинутого терминального интерфейса для Kubernetes».

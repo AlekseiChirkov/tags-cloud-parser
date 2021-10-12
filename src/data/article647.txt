@@ -1,0 +1,116 @@
+Автор: i15in
+Дата: 2021-09-26T19:00:02.000Z
+Название: Jetpack Compose — как легко построить UI на Android
+Теги: Блог компании FUNCORP, Разработка мобильных приложений *, Интерфейсы
+*, Разработка под Android *, Kotlin *
+Текст:
+В июле этого года вместе с Android Studio Arctic Fox вышла одна из
+долгожданных библиотек — Jetpack Compose. Она позволяет создавать
+пользовательский интерфейс в декларативном стиле и обещает быть
+революцией в построении UI.Разбираемся, так ли это на самом деле,
+какие у библиотеки преимущества и недостатки. Подробности — в
+статье.Преимущества Jetpack ComposeJetpack Compose — это набор
+инструментов для разработки UI в Android-приложении. Он призван
+ускорить и упростить разработку пользовательского интерфейса, избавить
+от лишнего кода и соединить модель реактивного программирования с
+лаконичностью Kotlin.Сразу с места в карьер — какие есть преимущества
+у библиотеки:1. Меньше кода. Jetpack Compose позволяет писать меньше
+кода, а значит разработчик может больше фокусироваться на проблеме, с
+меньшим количеством тестов и дебага, а значит и багов.2. Интуитивно
+понятный. Compose использует декларативный API — разработчику нужно
+лишь сказать, что сделать, а все остальное ляжет на плечи
+библиотеки.3. Удобство внедрения. Compose совместим с любым
+существующим кодом. Например, можно вызвать Compose-код из вьюх (view)
+и, наоборот, вьюхи из Compose. Многие библиотеки вроде Jetpack
+Navigation, ViewModel и Coroutines уже адаптированы под Compose, что
+позволяет сравнительно быстро внедрить его в свой код. Кроме того,
+Android Studio Arctic Fox поддерживает превью создаваемых вьюх.4.
+Имеет обширный инструментарий. Jetpack Compose позволяет создавать
+красивые приложения с прямым доступом к Android Platform API и build-
+in поддержкой Material Design, тёмной темы, анимаций и других крутых
+штук.Далее пройдёмся по основным аспектам библиотеки и посмотрим, как
+сильно повышается производительность приложения.Подключение к
+проектуЧтобы подключить Jetpack Compose к проекту, необходимо указать
+некоторые строки кода в своем build.gradle.В рутовом объявим
+переменную с версией Compose:ext {    compose_version = '1.0.1' } В
+build.gradle модуля укажем следующие строки: android {    ...
+buildFeatures {       compose true    }    composeOptions {
+kotlinCompilerExtensionVersion compose_version
+kotlinCompilerVersion '1.5.21'    }    ... } dependencies {
+implementation "androidx.compose.ui:ui:$compose_version"
+implementation "androidx.compose.material:material:$compose_version"
+implementation "androidx.compose.ui:ui-tooling-
+preview:$compose_version"    implementation
+'androidx.activity:activity-compose:1.3.1' }Здесь мы указываем, что в
+проекте будем использовать Jetpack Compose и объявляем необходимые
+зависимости (подробнее про зависимости можно почитать в официальном
+гайде).Дальше всё просто. В активити (activity) объявлем Composable-
+функцию, строим иерархию вьюх с указанием необходимых атрибутов и
+смотрим результат. Пройдемся по коду. Я написал две реализации вёрсток
+различной сложности:1. Простая реализация@Composable fun
+Greeting(name: String) {    Text(text = "Hello $name!") }Добавляет
+TextView в вёрстку с текстом с конкатенацией Hello и аргумента,
+переданного в Greeting.Важно отметить, что имена Composable-функций
+начинаются с заглавной буквы. Это соглашение по наименованию функций,
+поэтому если писать со строчной, то студия будет подсвечивать неверный
+нейминг.2. Более сложная реализация@Composable fun
+ComplexComposeContent() {    val scrollState = rememberScrollState()
+Column(       modifier = Modifier.verticalScroll(scrollState)
+.padding(16.dp)          .fillMaxSize()    ) {       Text(text =
+stringResource(id = R.string.article_title))       Spacer(modifier =
+Modifier.height(16.dp))       Image(painterResource(id =
+R.drawable.ic_atom), "atom", modifier = Modifier.wrapContentHeight())
+Spacer(modifier = Modifier.height(16.dp))       Text(text =
+stringResource(id = R.string.text))       Spacer(modifier =
+Modifier.height(16.dp))       Button(onClick = {}, modifier =
+Modifier.fillMaxWidth()) {          Text(text = stringResource(id =
+R.string.close_caption))       }    } }Этот вариант представляет собой
+скролящийся экран, который содержит изображение, текст и кнопку.
+Рассмотрим некоторые особенности:Необходимо объявить Scroll State.
+Только не обычный, а тот, который позволяет сохранять состояние
+скролла сквозь рекомпозицию — rememberScrollState().Column
+представляет собой ViewGroup с вертикальным расположением
+элементов. Modifier позволяет управлять атрибутами, добавлять
+декорации и поведение к вьюхам.Остальное интуитивно понятно. И это как
+раз одна из ключевых особенностей Jetpack Compose — даже если вы не
+использовали библиотеку ранее, то всё равно с ней разберётесь.Добавить
+вьюхи в активити можно через extension setContent {},
+например:override fun onCreate(savedInstanceState: Bundle?) {
+super.onCreate(savedInstanceState)       setContent {
+Greeting("Android")         } }В общем-то, создание UI выглядит
+действительно просто. Теперь определим, насколько сильно
+оптимизируется приложение и как быстро пользователь увидит
+окончательный экран. Для тестирования воспользуемся библиотекой
+Jetpack Benchmark, о которой, кстати, тоже рассказывали в отдельной
+статье. Код теста выглядит так:@RunWith(AndroidJUnit4::class) class
+LayoutBenchmark {        @get:Rule val activityRule =
+createAndroidComposeRule(MainActivity::class.java)        @get:Rule
+val benchmarkRule = BenchmarkRule()        @Test    @UiThreadTest
+fun testSimpleResourceLayout() {       activityRule.activity.let {
+benchmarkRule.measureRepeated {
+it.setSimpleResourceContent()          }       }    }        @Test
+@UiThreadTest    fun testSimpleViewLayout() {
+activityRule.activity.let {          benchmarkRule.measureRepeated {
+it.setSimpleViewContent()          }       }    }        @Test
+@UiThreadTest    fun testSimpleComposableLayout() {
+activityRule.activity.let {          benchmarkRule.measureRepeated {
+it.setSimpleComposableContent()          }       }    } …
+}Протестируем три версии установки вьюхи в активити:При передаче
+ресурса в setContentView.При передаче вьюхи в setContentView.С
+Composable-функцией.Итоги тестирования можно посмотреть в таблице:
+левый столбец — название теста, правый — время на выполнение:ТестВремя
+тестаLayoutBenchmark.simpleResourceLayout84 291
+ns LayoutBenchmark.complexResourceLayout964 792
+nsLayoutBenchmark.simpleViewLayout2 481
+ns LayoutBenchmark.complexViewLayout126 024
+ns LayoutBenchmark.simpleComposableLayout94
+nsLayoutBenchmark.complexComposableLayout88 nsВывод простой —
+Composable-функция работает быстрее каждого из предыдущих вариантов в
+несколько раз. Так что в копилку преимуществ добавляется и быстрый
+показ UI пользователю.Вместо заключенияНедостаток библиотеки есть, но
+очень субъективный — если неверно декомпозировать и экран имеют
+большую вложенность, то функция разрастётся в непрезентабильный вид. А
+такой код уже сложнее поддерживать. Пожалуй, на этом минусы
+заканчиваются.Jetpack Compose новый и амбициозный инструмент,
+позволяющий декларативно и в понятном формате описывать
+пользовательский интерфейс. Его определённо стоит попробовать.

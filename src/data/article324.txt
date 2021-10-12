@@ -1,0 +1,104 @@
+Автор: ncwca
+Дата: 2021-10-02T08:58:36.000Z
+Название: Немного уличной магии, либо как статически определить вызывается ли
+функция
+Теги: Ненормальное программирование *, C++ *
+Текст:
+Недавно мне задали задачку, в обсуждении всё свелось к следующему: -
+есть объект, в нём есть методы. Каждый метод/ы требует загрузки какой-
+то логики в рантайме. Хотим точно знать - какие методы были вызваны,
+после в рантайме затребовать загрузки только нужной
+функциональности.ДисклеймерСразу предвосхищу множество комментов на
+тему "а вот в стандарте не определено", "а вот мой гцц 5", "а вот в
+моей команде си с классами" и прочее. Поэтому, если всё(что-либо из)
+это касается вас - не нужно применять ничего из описанного здесь в
+своей практике. Применять подобное могут те, кто понимает что он
+делает и какие у этого последствия. Мои представления о C++ весьма
+специфичны и я никому не рекомендую без каких-либо оснований следовать
+тому, чему следую я. А так же прошу воздержаться от излишнего
+навязывания мне видений ваших.Везде, где я говорю о С++, либо о каком-
+либо его поведении - я всегда имею ввиду gnu++, и поведение его(gnu++)
+реализаций. Если я буду писать дальше - это будет проявляться все
+больше и больше.Не нужно приходить и демонстрировать свои познания
+бюрократии, разводя здесь религиозные войны. Фокус базируется на
+нескольких базовых свойствахstruct a {      static inline auto x =
+123;//статическая инициализация происходит   //до старта программы,
+которая main };  struct b {      static bool f() {     return true;
+}   static inline auto x = f(); };Здесь static inline auto x = f() -
+инициализация зависит от результата, значит в процессе необходимо
+вызвать функцию. Любые побочные эффекты в функции будут исполнены,
+даже несмотря на то, что там return true - это базовая семантика
+языка.таким образом, подобная программа:#include<cstdio>  struct c {
+static bool f() {     fprintf(stderr, "%s\n", __PRETTY_FUNCTION__);
+return true;   }   static inline auto x = f(); };   int main() {
+fprintf(stderr, "%s\n", __PRETTY_FUNCTION__); }выведет: static bool
+c::f() int main()Самый очевидный паттерн использования -
+этоtemplate<typename> struct plugin {      static bool f() {
+fprintf(stderr, "%s\n", __PRETTY_FUNCTION__);     return true;   }
+static inline auto x = f(); };  struct my_plugin: plugin<my_plugin>
+{};//подобное работать не будетПравило здесь простое - любые сущности
+внутри полиморного/шаблонного контекста инстанцируются лениво, т.е.
+только при обращении.template<typename T> struct test {   auto f() {
+T x = "";   } };  test<int> _;//никакой ошибки не будет.Это позволяет
+не платить за то, что не используемвозьмём подобный
+пример:template<auto x> struct integral_constant {   constexpr
+operator auto() const { return x; }      template<auto y> constexpr
+integral_constant<x % y> operator%(integral_constant<y>) const {
+return {};}   template<auto y> constexpr integral_constant<x + y>
+operator+(integral_constant<y>) const { return {};}
+};static_assert(integral_constant<1.>{} + integral_constant<2.>{} ==
+3.); - не нужно реализовывать то,  что мы не используем. В данном
+случае %Таким образом, если в integral_constant есть operator%, а
+параметризуем мы её(integral_constant) double для которой % не
+определена - всё работаетАналогично с
+остальным:static_assert(integral_constant<3>{} %
+integral_constant<2>{} == 1);   constexpr auto test_mod(auto a, auto
+b) {   return requires {     a % b;   }; }
+static_assert(!test_mod(integral_constant<1.>{},
+integral_constant<2.>{}));
+static_assert(test_mod(integral_constant<1>{},
+integral_constant<2>{}));Есть важный момент - sfinae. Если мы хотим от
+подобных методов такого же поведения как у дефолтных реализация
+операторов, допустим для того же double - необходимо вынести все
+зависимости в сигнатуру. В данном случае я вынес ихтак:
+integral_constant<x % y> - мы не сможем инстанцировать эту сигнатуру
+если между x и y не определено %. Если же мы попытаемся перенести это
+в теле - sfinae будет пробиваться.Этот механизм предполагает, что из
+факта возможно инстанцирования сигнатуры следует возможность
+инстанцирования тела. +/- это работало когда-то, но не сейчас. Здесь
+нужно будет побороться с наследием.Решение проблемы выше очевидно -
+нужно использовать поле вне полиморфного/шаблонного контекстаstruct
+my_plugin2: plugin<my_plugin2> {   static inline auto x =
+plugin::x;//сайд-эффектом этой инициализации является вызов
+plugin<my_plugin2>::f.   //То, что нам и нужно };Осталось лишь
+совместить все вместеtemplate<auto tag> struct registry {   static
+auto push() {     fprintf(stderr, "%s\n", __PRETTY_FUNCTION__);
+return true;   }   static inline auto x = push(); };  #undef NDEBUG
+#include<cassert>  template<typename = void> struct object {   void
+a() {     assert(registry<&object::a>::x);   }   void b() {
+assert(registry<&object::b>::x);   } };  void test_registry() {
+object o;   o.a();//static auto registry<<anonymous> >::push() [with
+auto <anonymous> = &object<void>::a]   //o.b();//static auto
+registry<<anonymous> >::push() [with auto <anonymous> =
+&object<void>::b] }Так же мы можем воспользоваться свойством
+static_assert, который требует конвертации выражения в constexpr но не
+требует всего выражения как constexprconstexpr integral_constant<true>
+true_;  template<auto tag> struct registryv2 {   static auto push() {
+fprintf(stderr, "%s\n", __PRETTY_FUNCTION__);     return true_;   }
+static inline auto x = push(); };  template<typename = void> struct
+objectv2 {   void a() {
+static_assert(registryv2<&objectv2::a>::x);   }   void b() {
+static_assert(registryv2<&objectv2::b>::x);   } };  void
+test_registryv2() {   objectv2 o;   o.a();//static auto
+registryv2<<anonymous> >::push() [with auto <anonymous> =
+&objectv2<void>::a] //   o.b();//static auto registryv2<<anonymous>
+>::push() [with auto <anonymous> = &objectv2<void>::b] }
+template<typename T = void> void f() {
+static_assert(registryv2<&f<T>>::x); }  void test_f() { //
+f();//static auto registryv2<tag>::push() [with auto tag = f<>] }
+int main() {   fprintf(stderr, "%s\n", __PRETTY_FUNCTION__);
+}Запретить сувать так просто в шаблон какие-то аргументы можно очень
+просто:using private_unique_type = decltype([]{});  template<typename
+T = private_unique_type> void f2() {   static_assert(__is_same(T,
+private_unique_type));   static_assert(registryv2<&f2<T>>::x); }
+void test_f2() { //   f2(); }Полный текст, с которым можно поиграться.

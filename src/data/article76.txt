@@ -1,0 +1,100 @@
+Автор: MisterFix
+Дата: 2021-10-07T08:41:53.000Z
+Название: Разрабатываем расширения для VS Code на Kotlin/JS
+Теги: JavaScript *, Программирование *, Kotlin *
+Текст:
+Kotlin/JS – это технология, позволяющая транслировать код, написанный
+на Kotlin, в JavaScript. Мне не удалось найти информации о том, как
+написать своё расширение для Visual Studio Code, популярного редактора
+кода, используя Kotlin, поэтому я задался вопросом, а возможно ли это?
+Какие проблемы нас ждут?TLDR: да, возможноDisclaimer: это не гайдлайн
+по написанию расширений, а лишь туториал по подготовке
+инфраструктурыДля разработки расширений на TypeScript
+представлены декларации типов в формате d.ts. Мы можем
+переиспользовать их в Kotlin/JS, благодаря инструменту Dukat.
+Инструмент генерирует из d.ts деклараций аналогичные на
+Kotlin.Приступим к созданию проекта. Создание проектаВоспользуемся
+генератором проектов из Intellij IDEA, выбрав Kotlin – Node.JS
+application – Gradle Kotlin – IR Kotlin/JS Compiler. IR в данном
+контексте – это новый бекенд компилятора, который в скором времени
+станет бекендом по умолчанию.Демонстрация создания проектаПолучим
+build.gradle.kts файл примерно следующего содержанияplugins {
+kotlin("js") version "1.5.31" }  group = "com.alikhachev" version =
+"1.0-SNAPSHOT"  repositories {     mavenCentral() }  dependencies {
+testImplementation(kotlin("test")) }  kotlin {     js(IR) {
+binaries.executable()         nodejs {          }     } }Нам
+понадобится экспортировать функции, что пока является
+экспериментальной фичей языка, поэтому добавим в блок kotlin следующий
+код, разрешающий использовать в коде аннотацию @JsExport:sourceSets {
+all {         languageSettings {
+optIn("kotlin.js.ExperimentalJsExport")         }     } }Kotlin Gradle
+plugin, очевидно, не знает о том, что мы собираемся писать расширение
+для VS Code, поэтому добавим вручную необходимые записи в
+package.json, которые нужны для работы расширения. Для этого добавим в
+блок конфигурации js следующий кодcompilations.named("main") {
+packageJson {         customField("categories", listOf("Other"))
+customField("activationEvents",
+listOf("onCommand:helloworld.helloWorld"))
+customField("contributes", mapOf("commands" to listOf(mapOf("command"
+to "helloworld.helloWorld", "title" to "Hello World"))))
+customField("engines", mapOf("vscode" to "^1.60.0"))
+customField("displayName", "HelloWorld")
+customField("description", "My first extension")     } }Также добавим
+упомянутую выше зависимость на @types/vscode в блок
+dependencies:implementation(npm("@types/vscode", "^1.60.0",
+generateExternals = true))Указывая generateExternals = true, мы просим
+Kotlin Gradle Plugin сгенерировать Kotlin-декларации из d.ts для этой
+зависимости с помощью Dukat.К сожалению, для этой зависимости
+генерируется немного некорректный код, который не компилируется,
+поэтому находим соответствующий issue в Dukat и голосуем за него. А до
+момента, пока баг не исправят, обойдем проблему ручным исправлением
+сгенерированных файлов. Выставим generateExternals = false и
+сгенерируем их вручную, выполнив команду ./gradlew generateExternals.
+Декларации сгенерировались в директорию externals нашего проекта.
+Создадим Kotlin/JS модуль vscode, перенесем сгенерированный код в него
+(выносить в отдельный модуль желательно для того, чтобы механизм dead
+code elimination смог корректно вырезать неиспользуемый код из
+итогового js-файла). Подправленный код, как и сам модуль, не привожу,
+заинтересованный читатель может посмотреть его в репозитории, ссылка
+на который будет в конце статьи. Далее заменим декларацию зависимости
+@types/vscode зависимостью на новый
+модуль:implementation(project(":vscode"))Также сразу напишем задачу,
+которая позволит в один клик собрать расширение и установить его в VS
+Code:tasks.register("installExtension", Sync::class) {
+dependsOn("productionExecutableCompileSync")     from({
+kotlin.js().compilations.named("main").map { it.npmProject.dir }
+}) // build/js/packages/<имя модуля>     into {
+project.provider { File(providers.systemProperty("user.home").get()).r
+esolve(".vscode/extensions").resolve(project.name) }     } //
+~/.vscode/extensions/<имя модуля>     doFirst {
+logger.info("Installing VS Code extension into $destinationDir")     }
+}Задача будет брать готовый npm модуль и перекладывать его в
+директорию с расширениями VS Code ~/.vscode/extensions/Код
+расширенияУдалим код, который нам сгенерировала IDEA, он нам не нужен.
+Создадим файл extension.kt в исходниках, и напишем код, аналогичный
+тому, который создаётся в туториале от Microsoft Your First
+Extension:@JsExport fun activate(context: vscode.ExtensionContext) {
+val disposable =
+vscode.commands.registerCommand("helloworld.helloWorld", {
+vscode.window.showInformationMessage("Hello World from Kotlin/JS!")
+})      context.subscriptions.asDynamic().push(disposable) }
+@JsExport fun deactivate() {  }Запустим нашу задачу по сборке и
+установке ./gradlew installExtension и проверим работу расширения,
+запустив VS Code и исполнив команду Hello World. Радуемся своему
+первому работающему расширению на Kotlin/JS :)Отладка расширенияКакая
+серьёзная разработка без отладки?Добавим в build.gradle.kts задачу,
+которая будет запускать VS Code в специальном режиме отладки,
+подхватывая наше расширение без необходимости
+установки:tasks.register("debugExtension", Exec::class) {
+dependsOn("developmentExecutableCompileSync")     val path =
+kotlin.js().compilations.named("main").map { it.npmProject.dir }.get()
+commandLine("code", "--inspect-extensions=9229", "--
+extensionDevelopmentPath=$path") }Также создадим Run configuration в
+IDEA:IDEA run configurationТеперь мы можем начать сеанс отладки,
+запустив ./gradlew debugExtension и подключившись дебаггером через
+созданную конфигурацию.ЗаключениеБлагодарю за прочтение. У вас может
+возникнуть вопрос, а зачем, собственно, это всё нужно при наличии
+TypeScript? Например, вы любите Kotlin и хотите использовать
+библиотеки, написанные используя Kotlin Multiplatform или Kotlin/JS,
+тогда описанный путь сделает это для вас удобнее. Или вы такой же, как
+и я, больной на голову интересующийся чем-то новым инженер ;)GitHub

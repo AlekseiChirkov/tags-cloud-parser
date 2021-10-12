@@ -1,0 +1,173 @@
+Автор: kmoseenk
+Дата: 2021-09-29T16:16:59.000Z
+Название: Переменные представления в MVC-приложениях на ASP.NET
+Теги: Блог компании OTUS, Программирование *, C# *
+Текст:
+В этой серии статей обсуждаются некоторые аспекты, связанные с
+использованием представлений в модуле MVC.Razor Engine в MVCПеременные
+представления в MVC-приложениях на ASP.NET — эта статьяПеременные
+представления в MVC-приложениях на ASP.NET CorePartial, RenderParial,
+Action, RenderActionВведениеСодержание статьи:MVC-приложения на
+ASP.NETНастройка среды для тестирования кодаЧто такое ViewBag,
+ViewData, TempData и Session?Как работают ViewBag, ViewData, TempData
+и Session?ViewBag и ViewDataTempDataSessionMVC-приложения на ASP.NET
+Core (рассматриваются в следующей статье)Что такое ViewBag, ViewData,
+TempData и Session?Как работают ViewBag, ViewData, TempData и
+Session?Часть I. Настройка среды MVC для тестирования кодаШаг 1.
+Создание MVC-приложения на ASP.NETДля создания приложения будем
+использовать текущую версию Visual Studio 2019 16.9.4 и платформу .NET
+Framework 4.8.Запустите Visual Studio и выберите Create a new project
+(Создать новый проект).В диалоговом окне создания проекта выберите
+ASP.NET Web Application (.NET Framework) (Веб-приложение ASP.NET [.NET
+Framework]) и нажмите кнопку Next (Далее).В диалоговом окне Configure
+your new project (Настройка нового проекта) введите MVC в качестве
+имени проекта (Project name) и нажмите кнопку Create (Создать).В
+диалоговом окне Create a new ASP.NET Web Application (Создание веб-
+приложения ASP.NET) выберите MVC и нажмите кнопку Create
+(Создать).Примечание: Инструкции для новичков можно найти здесь.Шаг 2.
+Добавление ViewBag, ViewData, TempData и SessionВ контроллере измените
+действие HomeController/Index.namespace MVC.Controllers {     public
+class HomeController : Controller     {         public ActionResult
+Index()         {             List<string> Student = new
+List<string>();             Student.Add("Jignesh");
+Student.Add("Tejas");             Student.Add("Rakesh");
+this.ViewData["Student"] = Student;             this.ViewBag.Student =
+Student;             this.TempData["Student"] = Student;
+this.HttpContext.Session["Student"] = Student;              return
+View();         }          ......     } }Внесите следующие изменения в
+шаблон View/Home/Index.cshtml.@{     ViewBag.Title = "Home Page"; }
+<br> <br>  @*<ul>     <b>ViewBag</b>     @foreach (var student in
+ViewBag.Student)     {         <li>@student</li>     } </ul>*@ <ul>
+<b>ViewData</b>     @foreach (var student in ViewData["Student"] as
+List<string>)     {         <li>@student</li>     }  </ul> <ul>
+<b>TempData</b>     @foreach (var student in TempData["Student"] as
+List<string>)     {         <li>@student</li>     } </ul> <ul>
+<b>Session</b>     @foreach (var student in Session["Student"] as
+List<string>)     {         <li>@student</li>     }
+</ul>Результат:Часть II. Что такое ViewBag, ViewData, TempData и
+Session?ViewBag, ViewData, TempData и Session представляют собой
+варианты отправки значений из контроллера в представление либо в
+другой метод действия или на страницу действий.1. Они являются
+свойствами контроллера в MVCЕсли конкретнее, ViewBag, ViewData и
+TempData — это свойства класса ControllerBase, который является
+родителем класса Controller.Session является свойством класса
+Controller:2. ТипВсе эти переменные имеют тип Dictionary со строкой в
+качестве ключа, за исключением переменной ViewBag, которая имеет
+динамический тип:ViewData — public System.Web.Mvc.ViewDataDictionary
+ViewData { get; set; }ViewBag — public dynamic ViewBag { get;
+}TempData — public System.Web.Mvc.TempDataDictionary TempData
+{ get; set; }Session — public System.Web.HttpSessionStateBase Session
+{ get; }Примечание.ViewBag представляет собой обертку над ViewData и
+позволяет сохранять и извлекать значения, используя синтаксис
+«объект — значение», а не «ключ — значение», как в случае объектов
+типа Dictionary. Это возможно за счет особенностей динамического типа
+данных, доступного в .NET. Часть III. Как работают ViewBag, ViewData,
+TempData и Session?1. ViewBag и ViewDataЭти переменные можно
+использовать для передачи данных из контроллера в представление, но
+только в рамках одного запроса и только в одном направлении.В
+следующем примере показано, что если переменной ViewBag присвоить
+значение в одном действии (Index), а затем попытаться извлечь данные
+из другого представления (About), то это не сработает, т. к. мы имеем
+дело с двумя разными запросами.Закомментируйте ViewBag в шаблоне
+домашней страницы (Index).Добавьте следующий код в шаблон
+View/Home/About.cshtml.<ul>     <b>ViewBag</b>     @foreach (var
+student in ViewBag.Student)     {         <li>@student</li>     }
+</ul>Запустите приложение. Откроется домашняя страница. Затем нажмите
+кнопку About, чтобы перейти на страницу About.Произошла ошибка,
+поскольку значение, определенное в переменной ViewBag, существует
+только в соответствующем действии и запросе. Таким образом, если
+значение ViewBag нужно получать в View/Home/About.cshtml, оно должно
+быть определено в действии About.Разница между ViewBag и
+ViewData:ViewDataПри передаче строки в переменную ViewData нет
+необходимости в приведении типов.При передаче объекта в переменную
+ViewData необходимо выполнять приведение типов, при чем перед этим
+необходимо проверять, не равен ли объект значению null.ViewBagViewBag
+имеет динамический тип, поэтому необходимости в приведении типов
+нет.2. TempDataTempData используется для передачи данных из
+представления в контроллер, из контроллера в представление или из
+одного метода действия в другой метод действия того же или другого
+контроллера.TempData сохраняет данные временно и автоматически удаляет
+их после извлечения значения, т. е. значение можно извлечь ровно один
+раз.Продемонстрируем на примере, как TempData передает информацию
+(последовательно выполняйте код из примера с шага 1 по шаг 4).Шаг 1.
+Перейдите к действию Index и определите TempDatapublic ActionResult
+Index() {     List<string> Student = new List<string>();
+Student.Add("Jignesh");     Student.Add("Tejas");
+Student.Add("Rakesh");      this.ViewData["Student"] = Student;
+this.ViewBag.Student = Student;     this.TempData["Student"] =
+Student;     this.HttpContext.Session["Student"] = Student;
+return View(); }В представлении закомментируйте TempData.@{
+ViewBag.Title = "Home Page"; }  <br> <br>  <ul>     <b>ViewBag</b>
+@foreach (var student in ViewBag.Student)     {
+<li>@student</li>     } </ul> <ul>     <b>ViewData</b>     @foreach
+(var student in ViewData["Student"] as List<string>)     {
+<li>@student</li>     }  </ul> @*<ul>     <b>TempData</b>     @foreach
+(var student in TempData["Student"] as List<string>)     {
+<li>@student</li>     } </ul>*@ <ul>     <b>Session</b>     @foreach
+(var student in Session["Student"] as List<string>)     {
+<li>@student</li>     } </ul>Результат: значения из TempData не
+отображаются, как и ожидалось.Шаг 2. Ничего не меняйте в действии
+Contact, но внесите изменения в соответствующее представлениеИзвлеките
+TempData["Student"] и переопределите TempData["name"] = "Steve".}
+<h2>@ViewBag.Title.</h2> <h3>@ViewBag.Message</h3>  <address>     One
+Microsoft Way<br />     Redmond, WA 98052-6399<br />     <abbr
+title="Phone">P:</abbr>     425.555.0100 </address>  <address>
+<strong>Support:</strong>   <a
+href="mailto:Support@example.com">Support@example.com</a><br />
+<strong>Marketing:</strong> <a
+href="mailto:Marketing@example.com">Marketing@example.com</a>
+</address>  <ul>     <b>TempData</b>     @foreach (var student in
+TempData["Student"] as List<string>)     {         <li>@student</li>
+} </ul> @{     TempData["name"] = "Steve"; } <ul>     <b>Session</b>
+@foreach (var student in Session["Student"] as List<string>)     {
+<li>@student</li>     } </ul>Результат: показываются извлеченные
+значения TempData["Student"].Шаг 3. Перейдите к действию
+AboutИзвлеките TempData["name"] и переопределите
+TempData["Student"].public ActionResult About() {     ViewBag.Message
+= "Your application description page.";      if
+(TempData["name"].ToString() == "Steve")     {         List<string>
+Student = new List<string>();         Student.Add("Jignesh");
+Student.Add("Tejas");         Student.Add("Rakesh");
+this.ViewData["Student"] = Student;         this.ViewBag.Student =
+Student;         this.TempData["Student"] = Student;
+this.HttpContext.Session["Student"] = Student;     }     return
+View(); }В представлении выведите TempData["Student"].<ul>
+<b>TempData</b>     @foreach (var student in TempData["Student"] as
+List<string>)     {         <li>@student</li>     } </ul> <ul>
+<b>Session</b>     @foreach (var student in Session["Student"] as
+List<string>)     {         <li>@student</li>     } </ul>Результат:
+как и ожидалось, показываются данные из TempData["Student"].Шаг
+4Наконец, вернитесь назад и нажмите кнопку Contact. Таким образом вы
+попытаетесь второй раз извлечь TempData["Student"] и получите
+ошибку.Подведем итог:TempData хранит данные в сессии, поэтому по
+истечении длительности сессии данные теряются.TempData удаляет
+ключ/значение сразу после доступа к ним, однако их можно сохранить для
+последующего запроса, если вызвать метод TempData.Keep().TempData
+обычно используется для передачи сообщений об ошибках или чего-либо
+подобного.3. SessionПеременная Session хранит данные в
+сессии.Переменная Session, в отличие от TempData, хранит данные не для
+однократного доступа. Их можно считывать сколько угодно раз.Переменная
+Session никогда не принимает значение null, пока не истечет время
+сессии или не наступит ее тайм-аут.Не рекомендуется использовать
+Session слишком часто или сохранять в этой переменной большие объемы
+данных, т. к. это сказывается на производительности.РезюмеВ этой
+статье рассмотрены переменные представления ViewBag, ViewData,
+TempData и Session, доступные в MVC-приложениях на ASP.NET. В
+следующей статье мы рассмотрим те же переменные в контексте ASP.NET
+Core.MVC-приложения на ASP.NETНастройка среды для тестирования кодаЧто
+такое ViewBag, ViewData, TempData и Session?Как работают ViewBag,
+ViewData, TempData и Session?ViewBag и ViewData можно использовать для
+передачи данных из контроллера в представление, но только в рамках
+одного запроса и только в одном направлении.TempData позволяет
+передавать данные из представления в контроллер, из контроллера в
+представление или из одного метода действия в другой метод действия
+того же или другого контроллера. Извлекать данные из этой переменной
+можно ровно один раз.Session — эта переменная похожа на TempData, но
+извлекать данные из нее можно несколько раз.СсылкиViewData, ViewBag,
+TempData и Session в MVC — advancesharp.comВ чем разница между
+ViewData и TempData? — stackoverflow.comСравнение ViewData, ViewBag и
+TempData в MVC — c-sharpcornerКласс Controller — MicrosoftКласс
+ControllerBase — MicrosoftМатериал подготовлен в рамках курса «C#
+Developer. Professional». Если вам интересно узнать подробнее о
+формате обучения и программе, познакомиться с преподавателем курса —
+приглашаем на день открытых дверей онлайн. Регистрация здесь.

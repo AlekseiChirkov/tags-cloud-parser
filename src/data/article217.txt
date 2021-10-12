@@ -1,0 +1,173 @@
+Автор: jestr
+Дата: 2021-10-05T08:00:17.000Z
+Название: Упрощаем работу в Camunda Modeler с помощью плагинов
+Теги: Блог компании ДомКлик, Программирование *, Java *, Визуальное
+программирование *
+Текст:
+Camunda Modeler позволяет довольно легко набросать BPMN-схему
+процесса, перетащив элементы в рабочую область и соединив их
+стрелками. Далее дела обстоят немного сложнее: нужно быть очень
+внимательным, чтобы с первого раза для каждого элемента заполнить
+необходимые поля в панели свойств и не допустить ни одной ошибки. С
+этой точки зрения создание исполняемых BPMN-схем напоминает
+программирование в Блокноте.Например, очень легко в Script Task
+написать скрипт на Groovy и забыть указать Script Format. Тогда по
+умолчанию движок попробует выполнить переданную ему строку как JUEL-
+код, и вряд ли мы получим ожидаемый результат.Было бы неплохо иметь
+что-то вроде подсказок, на какие поля нужно обратить внимание, какое
+значение вписать, какие флаги отметить, и так далее в соответствии с
+принятыми в команде практиками. К счастью, Camunda Modeler позволяет
+расширять функциональность, не форкая всё приложение, а применив
+плагины, что мы и решили сделать.Разберем несколько важных для нас
+плагинов:BPMN Linter — статический анализатор BPMN-файлов с
+графическим отображением найденных ошибок. Позволяет добавить
+собственные правила, с помощью которых мы и справились с описанной
+выше болью.Transaction boundaries — визуализация границы
+транзакций.Token simulation — моделирование токена в BPMN-процессе.А в
+конце статьи посмотрим, как можно создать плагин самому.УстановкаСам
+по себе Camunda Modeler является Electron-приложением, а плагин
+представляет собой модуль Node.js.module.exports = {   name: 'My
+Awesome Plugin', // the name of your plugin   style: './style.css', //
+changing the appearance of the modeler   menu: './menu.js', // adding
+menu entries to the modeler   script: './script.js' // extend the
+modeling tools for BPMN, CMMN and DMN };Для установки достаточно
+поместить проект плагина в одну из
+директорий:{APP_DATA_DIRECTORY}/resources/plugins, где
+{APP_DATA_DIRECTORY}—  директория, в которой находится исполняемый
+файл Camunda Modeler.{USER_DATA_DIRECTORY}/camunda-
+modeler/resources/plugins, где {USER_DATA_DIRECTORY}—  директория, в
+которой находятся пользовательские данные приложений:%APPDATA% в
+Windows;$XDG_CONFIG_HOME или ~/.config в Linux;~/Library/Application
+Support в macOS.Плагины появляются в Camunda Modeler после перезапуска
+приложения, некоторые можно включить/выключить в меню Plugins.BPMN
+LinterПлагин анализирует XML-файл схемы на соответствие правилам и
+подсвечивает проблемные места. В комплекте идет набор стандартных
+правил, их можно отключить в файле .bpmnlintrc или сменить уровень c
+error на warning.{   "extends": "bpmnlint:recommended",   "rules": {
+"label-required": "off",     "no-inclusive-gateway": "warning"    }
+}Стандартные правила BPMN LinterВ скобках приведено имя правила, по
+которому его можно отключить в .bpmnlintrc, под спойлером — пример в
+виде изображения схемы с ошибкой и без.Условный поток (conditional-
+flows)Проверяет, что из условного fork-шлюза выходит условный поток
+или поток по умолчанию.ПримерСправа — после добавления
+условия.<bpmn:sequenceFlow name="Conditional">
+<bpmn:conditionExpression>foo</bpmn:conditionExpression>
+</bpmn:sequenceFlow>Завершающее событие обязательно (end-event-
+required)Проверяет, что каждый процесс и подпроцесс имеет завершающее
+событие.ПримерТипизированное начальное событие в подпроцессе по
+событию (event-sub-process-typed-start-event)Проверяет, что подпроцесс
+по событию начинается не с пустого начального события, а с
+типизированного, то есть с такого, которое этот подпроцесс может
+запустить.ПримерЛожное соединение (fake-join)Согласно правилу, задачи
+и события не должны соединять собой потоки управления, эту роль должен
+выполнять join-шлюз.ПримерИмя обязательно (label-required)У каждого
+элемента должно быть заполнено поле "Name".Никаких шлюзов включающего
+"ИЛИ" (no-inclusive-gateway)Во-первых, у этого шлюза сложная fork- и
+join-семантика (подробнее). Во-вторых, по утверждению авторов правила,
+поддержка шлюза, включающего ИЛИ, в Camunda Engine реализована не
+полностью. Кстати, на Хабре была статья про дедлок в Camunda, и там
+как раз был замешан inclusive gateway.ПримерНикаких комплексных шлюзов
+(no-complex-gateway)По сравнению с предыдущим правилом здесь всё
+гораздо прозаичнее. Комплексный шлюз не имеет строгого определения в
+BPMN-нотации, и поэтому BPM-движками не поддерживается в
+принципе.ПримерНикаких несоединенных объектов (no-disconnected)Объект
+должен быть соединен с помощью либо входящего, либо исходящего потока
+управления.ПримерНикаких дублируемых потоков управления (no-duplicate-
+sequence-flows)Линтер подсветит, если потоки повторяются, приводя к
+непреднамеренному ветвлению.ПримерНикаких join-fork-шлюзов (no-
+gateway-join-fork)За соединение должен отвечать один шлюз, за
+разветвление — другой.ПримерНикаких неявных ветвлений (no-implicit-
+split)Проверяет, что из задачи не исходит более одного потока. Для
+ветвления должны использоваться шлюзы.ПримерЕдинственное пустое
+начальное событие (single-blank-start-event)Проверяет, что процесс или
+подпроцесс имеет только одно пустое начальное событие.ПримерНачальное
+событие обязательно (start-event-required)ПримерПустое начальное
+событие в простом подпроцессе (sub-process-blank-start-
+event)ПримерЛишний шлюз (superfluous-gateway)Если шлюз имеет только
+один вход и один выход, то он будет помечен как лишний.ПримерКонечно
+же, можно добавить свои правила. То, о чем я писал ранее и чего нам не
+хватало: подсказки, значения полей, нужные флаги.Проще всего будет
+дополнительно установить стартер проект. Правило в виде JS-файла
+помещаем в директорию bpmnlint-plugin-custom/rules и прописываем его
+в bpmnlint-plugin-custom/index.js.module.exports = {   configs: {
+recommended: {       rules: {         'my-custom-rule': 'error'
+}     }   } }В конце активируем правило в локальном файле
+.bpmnlintrc.Одно из правил, которое мы используем и о причине
+существования которого упоминал в самом начале: Script Format в Script
+Task должен быть Groovyconst {     is } = require('bpmnlint-utils');
+/**  * Rule reports that script format is not groovy  */
+module.exports = function () {      function check(node, reporter) {
+if (is(node, 'bpmn:ScriptTask')) {             if
+(!node.hasOwnProperty('scriptFormat')) {
+reporter.report(node.id, 'Script Task has no script format');
+} else if (node.scriptFormat.toLowerCase() !== 'groovy') {
+reporter.report(node.id, 'Script format should be groovy');
+}         }     }      return {         check: check     }; };Примеры
+других наших правилService Task должен иметь флаг asynchronous
+afterПравило повторяет смысл плагина Transaction Boundaries, только
+здесь мы явно указываем на необходимость проставить Asynchronous
+After.const {     is } = require('bpmnlint-utils');   /**  * Rule that
+reports Async After isn't checked  */ module.exports = function () {
+function check(node, reporter) {         if (is(node,
+'bpmn:ServiceTask') && (!node.hasOwnProperty('asyncAfter') ||
+node.asyncAfter !== true)) {             reporter.report(node.id,
+'Asynchronous After should be checked');         }     }      return {
+check: check     }; }; Error Boundary Event должен иметь Message
+VariableВ Message Variable записывается сообщение исключения, которое
+мы обычно используем при обработке ошибки. const {     is } =
+require('bpmnlint-utils');   /**  * Rule that reports error message
+variable absence in Boundary Event.  */ module.exports = function () {
+function check(node, reporter) {         if (is(node,
+'bpmn:ErrorEventDefinition') &&             is(node.$parent,
+'bpmn:BoundaryEvent')) {             if
+(!node.hasOwnProperty('errorMessageVariable')) {
+reporter.report(node.$parent.id, 'Error Boundary Event has no error
+message variable');             }         }     }      return {
+check: check     }; };Теперь давайте взглянем на другие плагины из
+нашего списка — Transaction Boundaries и Token Simulation.Transaction
+BoundariesВизуализирует границы транзакций, которые в моделлере
+устанавливаются с помощью флагов asynchronous before и asynchronous
+after. Отличный плагин, если вы следуете rule of thumb и каждый
+Service Task помечаете как асинхронный: он помогает не забыть
+поставить соответствующий флаг в нужном месте.ПримерToken
+SimulationЕсть отдельные статьи, описывающие концепцию токена в BPMN.
+Если вкратце: токены служат для описания поведения BPMN-процесса,
+начальное событие выпускает токен, который обходит процесс, разделяясь
+на fork-шлюзах и соединяясь на join-шлюзах. Запустится ли join-шлюз,
+зависит от количества ожидаемых и пришедших в него токенов. Порой
+сложно понять, способен ли процесс завершиться, просто взглянув на
+него, и тут на помощь приходит плагин Token Simulation (к сожалению не
+поддерживает Inclusive Gateway).Пример с параллельным шлюзом, когда
+схема не завершитсяJoin-шлюз соединяет четыре потока и запустится
+только в том случае, если на него придет четыре токена, но из-за XOR-
+шлюза всегда будет приходить только три.Рабочий вариантТри потока, три
+токена — процесс дошел до конца.Создание своего плагинаРассмотрим
+создание плагина на примере расширения возможностей поиска в BPMN-
+схеме. Точнее, будем искать элементы не только по имени и id, но и по
+Java-классу если это Service Task.Воспользуемся стартер-проектом.
+Создаем файл client/search-extension/index.js, в котором будем
+экспортировать наш модуль плагина. В Camunda Modeler за поиск отвечает
+модуль BpmnSearchProvider.js, для простоты сделаем топорно и скопируем
+этот файл в client/search-extension , а затем дополним условия
+поиска:...   elements = map(elements, function(element) {     return {
+primaryTokens: matchAndSplit(getLabel(element), pattern),
+secondaryTokens: matchAndSplit(element.id, pattern),
+javaClassTokens: element.businessObject.hasOwnProperty('class') ?
+matchAndSplit(element.businessObject.class, pattern) : [],
+element: element     };   }); ...   // exclude non-matched elements
+elements = filter(elements, function(element) {     return
+hasMatched(element.primaryTokens) ||
+hasMatched(element.secondaryTokens) ||
+hasMatched(element.javaClassTokens);   }); ...В client/search-
+extension/index.js прописываем:import BpmnSearchProvider from
+'./BpmnSearchProvider';  export default {   __depends__: [
+SearchPadModule   ],   __init__: [ 'bpmnSearch'],   bpmnSearch: [
+'type', BpmnSearchProvider ] };В client/index.js:import {
+registerBpmnJSPlugin } from 'camunda-modeler-plugin-helpers';  import
+BpmnSearchProvider from './search-extension';
+registerBpmnJSPlugin(BpmnSearchProvider);Выполняем npm run all и
+перезапускаем Camunda Modeler.ВуаляЗаключениеВ статье описаны только
+используемые нами плагины и не затронуты DMN-таблицы, для которых
+также есть полезные дополнительные фичи.Общая документация к
+плагинам.Список плагинов в одном месте в README.md
+репозитория.Оригинальное описание правил BPMN linter.

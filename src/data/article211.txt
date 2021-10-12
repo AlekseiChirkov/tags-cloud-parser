@@ -1,0 +1,618 @@
+Автор: mopsicus
+Дата: 2021-10-05T08:49:04.000Z
+Название: Разработка Unity плагинов для iOS и Android
+Теги: Разработка под iOS *, Разработка под Android *, C# *, Unity *
+Текст:
+Есть куча ситуаций когда одной Unity недостаточно и нужно использовать
+возможности платформы. Банально, но до сих пор, в Unity нет работы с
+галерей и камерой из коробки. Понятно, что Unity не ограничивается
+мобильными платформами, но 60-70% всех мобильных игр, как бы говорят:
+Если говорить о самой Unity, то особых подвижек в этом направлении у
+них нет. Они заняты более важными вещами… В менеджере пакетов есть
+какой-то куцый пакет для уведомлений, да и всё вроде. Это если
+говорить про мобайл. Недавно они зарелизили пакет для локализации (уже
+что-то!). Всё остальное делают сторонние разработчики и выкладывают
+либо на Github или продают в Asset Store. В принципе, в сторе можно
+найти и купить (или скачать) практически любой плагин для любой
+платформы. Но часто бывает, что требуется лишь одна-две функции, а
+приходится тянуть весь пакет. А сколько всего можно использовать:
+геолокация ин-апп оценки и покупки уведомления авторизация
+синхронизация данных работа с безопасным хранилищем карты   И многое
+другое уже есть у Android и iOS и этим можно пользоваться в ваших
+приложениях и играх. Только в Unity этого нет. Но благо, что они
+сделали возможность создавать плагины.   За несколько лет, я сделал
+большое количество различных плагинов для iOS и Android (iCloud,
+Google Sign-in, Sign-in with Apple, Firebase Push Service, In-app
+purchases, Browser, Sharing, Mail, Images, Review, NativeInput, ...),
+почти все они давно в продакшне и отлично работают. Система отлажена,
+обновляется и функционирует :) Да, она не идеальна, но зато проста в
+создании и использовании.   В блоге я уже давно пишу короткие посты
+про плагины:  Unity iOS plugin Unity Android plugin Система плагинов
+для iOS и Android Unity share плагин для iOS и Android   Они немного
+устарели конечно, но основа осталась примерно такая же: есть общий
+интерфейс приема/передачи сообщений на стороне Unity и есть такая же
+система на стороне платформы. Эта статья – апдейт и рефакторинг
+накопившихся знаний.   Важное отличие моего подхода к созданию и
+использованию плагинов для Unity: модульность. Собственно, оно так и
+должно быть. Т. е. каждый плагин автономен и не зависит от других
+(почти), нет необходимости тянуть скопом всё что есть, ради одной
+функции тост-сообщений :).  Unity часть (контроллер и плагин)  У Unity
+в документации есть немного про создание плагинов, если совсем только
+начали, то стоит ознакомиться. А так на Хабре (и на Медиуме) были уже
+годные статьи на эту тему, можно поискать, почитать, сравнить, выбрать
+для себя лучшее решение.   И так, делаем ещё одну свою систему
+плагинов.    Первое что понадобится: объект на сцене который будет
+принимать команды от плагинов. Но не просто объект, у него должно быть
+определенное имя, потому что любой плагин при передаче данных в Unity
+будет искать на сцене именно его. В общем-то таких объектов может быть
+много, например, для каждого плагина свой. Но это только усложнит
+архитектуру. Поэтому, делаем одну точку входа и далее контролируем все
+получаемые данные оттуда.   Кроме того, этот объект скорее всего
+должен быть неразрушаемым, мало ли какие плагины, на каких сценах и
+при каких условиях будем использовать. Теперь осталось повесить на
+этот объект скрипт и можно принимать сообщения от плагинов. Полдела
+сделано (нет). Ещё нужно определиться с именем метода который будет
+обрабатывать поступающие сообщения. Их тоже может быть несколько, как
+и объектов, но я делаю все плагины унифицированными и поэтому
+использую один объект, один метод и определенный протокол. Быстрее
+показать сразу код и объяснить.    Вот как выглядит примерный
+контроллер плагинов:     Исходный код using System; using
+System.Collections.Generic; using LeopotamGroup.Common; using
+NiceJson; #if UNITY_IOS using System.Runtime.InteropServices; #endif
+/// <summary> /// Mobile plugin interface /// Each plugin must
+implement it /// </summary> public interface IPlugin {      ///
+<summary>     /// Plaugin name     /// </summary>     string Name {
+get; }      /// <summary>     /// Callback on get data     ///
+</summary>     void OnData(JsonObject data);      /// <summary>
+/// Callback on get error     /// </summary>     void
+OnError(JsonObject data); }  /// <summary> /// Plugin service to
+manager all mobile plugins /// </summary> public class Plugins :
+MonoBehaviourService<Plugins> {  #if UNITY_ANDROID     /// <summary>
+/// Mask for Java classes     /// </summary>     public const string
+ANDROID_CLASS_MASK = "com.mopsicus.{0}.Plugin"; #endif      ///
+<summary>     /// Gameobject name on scene to receive data     ///
+ACHTUNG! Do not change it     /// </summary>     const string
+_dataObject = "Plugins";      /// <summary>     /// Dictionary of
+plugins     /// </summary>     private Dictionary<string, IPlugin>
+_plugins = null;      /// <summary>     /// Constructor     ///
+</summary>     protected override void OnCreateService() {
+name = _dataObject;         DontDestroyOnLoad(gameObject);
+InitPlugins();     }      /// <summary>     /// Destructor     ///
+</summary>     protected override void OnDestroyService() {
+_plugins = null;     }      /// <summary>     /// Init all plugins in
+app     /// </summary>     void InitPlugins() {
+gameObject.AddComponent<Images>();
+gameObject.AddComponent<Mail>();
+gameObject.AddComponent<GoogleSignIn>();         IPlugin[] plugins =
+GetComponents<IPlugin>();         _plugins = new Dictionary<string,
+IPlugin>(plugins.Length);         foreach (IPlugin item in plugins) {
+_plugins.Add(item.Name, item);         } #if DEBUG
+Logger.Info("Plugins inited"); #endif     }      /// <summary>     ///
+Handler to process data to plugin     /// ACHTUNG! Do not change it
+/// </summary>     /// <param name="data">Data from plugin</param>
+void OnDataReceive(string data) { #if DEBUG
+Logger.Info("Plugins receive data: " + data); #endif         try {
+JsonObject info = (JsonObject)JsonNode.ParseJsonString(data);
+if (_plugins.ContainsKey(info["name"])) {                 IPlugin
+plugin = _plugins[info["name"]];                 if
+(info.ContainsKey("error")) {
+plugin.OnError(info);                 } else {
+plugin.OnData(info);                 }             } else { #if DEBUG
+Logger.Error(string.Format("{0} plugin does not exists",
+info["name"])); #endif             }         } catch (Exception e) {
+#if DEBUG             Logger.Error(string.Format("Plugins receive
+error: {0}, stack: {1}", e.Message, e.StackTrace)); #endif         }
+}  }     Немного пояснений.   Все данные между Unity и плагинами
+передаются в JSON формате. Это удобно, это понятно, это легко
+реализовать. Можно использовать и свой какой-нибудь формат/протокол.
+При старте, объект контроллера делаем неразрушаемым и инициализируем
+все нужные плагины. Список можно захардкодить, можно заполнять из
+инспектора, не суть, в данном примере, инициализируются три плагина,
+добавляются на объект, а их интерфейсы в словарь. Да, все плагины
+должны реализовать интерфейс IPlugin (об этом ниже).   Также, есть
+один метод для приема всех сообщений от всех плагинов. Там как видно,
+парсится JSON и в нужный плагин передаются данные. Всё просто.   Для
+работы с JSON я давно использую NiceJson, меня он полностью
+устраивает, хотя есть и куча других сериализаторов, в том числе и
+встроенный Unity. Так что тут тоже, свобода выбора.   Теперь, что
+касается самого скрипта плагина.   Все плагины живут на объекте с
+контроллером и каждый должен реализовать интерфейс IPlugin. Он был
+описан в контроллере выше. Всё что нужно, это уметь принимать данные,
+принимать сообщения об ошибках и отдавать своё имя. Этого пока хватало
+для всего. Ниже, пример плагина для отправки писем:     Исходный код
+using System; using LeopotamGroup.Common; using
+LeopotamGroup.Localization; using NiceJson; using UnityEngine; #if
+UNITY_IOS using System.Runtime.InteropServices; #endif  /// <summary>
+/// Mail support /// </summary> public class Mail : MonoBehaviour,
+IPlugin {      /// <summary>     /// Flag for error code for no mail
+account on device     /// </summary>     const string NO_ACCOUNT =
+"NO_ACCOUNT";      /// <summary>     /// Flag for send error mail
+/// </summary>     const string MAIL_ERROR = "MAIL_ERROR";      ///
+<summary>     /// Current instance     /// </summary>     private
+static Mail _instance = null;      /// <summary>     /// Cache data
+for hidden app state     /// </summary>     private JsonObject _data =
+null;      /// <summary>     /// Cache error for hidden app state
+/// </summary>     private JsonObject _error = null;  #if UNITY_IOS
+/// <summary>     /// Send mail     /// </summary>     /// <param
+name="email">Mail to send</param>     /// <param
+name="subject">Subject of mail</param>     /// <param name="body">Body
+of message</param>     [DllImport("__Internal")]     private static
+extern void mailSend(string email, string subject, string body);
+#endif      /// <summary>     /// Constructor     /// </summary>
+private void Awake() {         if ((object)_instance == null) {
+_instance = GetComponent<Mail>();         }     }      /// <summary>
+/// Plugin name     /// </summary>     public string Name {
+get {             return GetType().Name.ToLower();         }     }
+/// <summary>     /// Callback on data     /// </summary>     public
+void OnData(JsonObject data) { #if DEBUG
+Logger.Info(string.Format("{0} plugin OnData: {1}", GetType().Name,
+data.ToJsonPrettyPrintString())); #endif         _data = data;
+try {             _data = null;         } catch (Exception e) { #if
+DEBUG             Logger.Error(string.Format("{0} plugin OnData error:
+{1}", GetType().Name, e.Message)); #endif         }     }      ///
+<summary>     /// Callback on error     /// </summary>     public void
+OnError(JsonObject data) { #if DEBUG
+Logger.Error(string.Format("{0} plugin OnError: {1}", GetType().Name,
+data.ToJsonPrettyPrintString())); #endif         _error =
+(JsonObject)data["error"];         try {             string code =
+_error["code"];             switch (code) { #if UNITY_IOS
+case NO_ACCOUNT:                     Service<Popup>.Get().Warning(Loca
+lizer.Get(BaseLocalizations.Plugins.NO_MAIL_ACCOUNT));
+break;                 case MAIL_ERROR:                     Service<Po
+pup>.Get().Error(Localizer.Get(BaseLocalizations.Plugins.MAIL_ERROR));
+break; #endif                 default:                     break;
+}             _error = null;         } catch (Exception e) { #if DEBUG
+Logger.Error(string.Format("{0} plugin OnError error: {1}",
+GetType().Name, e.Message)); #endif         }     }      /// <summary>
+/// Send mail to     /// </summary>     /// <param name="email">Mail
+to send</param>     /// <param name="subject">Subject of mail</param>
+/// <param name="body">Body of message</param>     public static void
+Send(string email, string subject, string body) { #if UNITY_EDITOR
+#elif UNITY_ANDROID         using (AndroidJavaClass plugin = new
+AndroidJavaClass(string.Format(Plugins.ANDROID_CLASS_MASK,
+_instance.Name))) {             plugin.CallStatic("send", email,
+subject, body);         } #elif UNITY_IOS         mailSend(email,
+subject, body); #endif     }  }     Это самый простой плагин. Тут
+вроде ничего сверхъестественного: один метод вызова нативных функций и
+обработчики данных и ошибок, для данного плагина больше ничего и не
+требуется. Так как из плагина никаких данных не приходит (кроме
+возможных ошибок), то метод OnData пустой.   Интересней плагин работы
+с галереей и камерой. Тут есть коллбек в котором уже возвращается
+адрес с картинкой и угол поворота. Ну и дополнительное взаимодействие
+с правами доступа и оповещением, если файл картинки долго скачивается
+из Google Photo, например.     Исходный код using System; using
+LeopotamGroup.Common; using LeopotamGroup.Localization; using
+NiceJson; using UnityEngine; #if UNITY_IOS using
+System.Runtime.InteropServices; #endif  /// <summary> /// Mobile
+native image plugin /// </summary> public class Images :
+MonoBehaviour, IPlugin {      /// <summary>     /// State when user
+denied to show permission dialog     /// </summary>     const string
+NEVER_ASK_STATE = "NEVER_ASK_STATE";      /// <summary>     /// Wait
+state to show loader while image downloading     /// </summary>
+const string WAIT_STATE = "WAIT_STATE";      /// <summary>     ///
+Cant save image to system gallery     /// </summary>     const string
+SAVE_ERROR = "SAVE_ERROR";      /// <summary>     /// Save image to
+system gallery success     /// </summary>     const string
+SAVE_SUCCESS = "SAVE_SUCCESS";      /// <summary>     /// Error occurs
+on capture photo or select in gallery     /// </summary>     const
+string IMAGE_ERROR = "IMAGE_ERROR";  #if UNITY_IOS     /// <summary>
+/// User denied access     /// </summary>     const string
+NO_PERMISSION = "NO_PERMISSION"; #endif      /// <summary>     ///
+Current instance     /// </summary>     private static Images
+_instance = null;      /// <summary>     /// Client service     ///
+</summary>     private Client _client = null;      /// <summary>
+/// Cache data for hidden app state     /// </summary>     private
+JsonObject _data = null;      /// <summary>     /// Cache error for
+hidden app state     /// </summary>     private JsonObject _error =
+null;      /// <summary>     /// Callback cache     /// </summary>
+private Action<string, int> _callback = null;      /// <summary>
+/// Callback cache for images saving     /// </summary>     private
+Action<bool> _callbackSave = null;  #if UNITY_IOS     /// <summary>
+/// Request image from gallery     /// </summary>
+[DllImport("__Internal")]     private static extern void imagesPick();
+/// <summary>     /// Request image from camera     /// </summary>
+[DllImport("__Internal")]     private static extern void
+imagesCapture();      /// <summary>     /// Open app settings     ///
+</summary>     [DllImport("__Internal")]     private static extern
+void imagesSettings();      /// <summary>     /// Save image to system
+gallery     /// </summary>     [DllImport("__Internal")]     private
+static extern void imagesSave(string filePath); #endif      ///
+<summary>     /// Constructor     /// </summary>     private void
+Awake() {         if ((object)_instance == null) {
+_instance = GetComponent<Images>();             _client =
+Service<Client>.Get();         }     }      /// <summary>     ///
+Plugin name     /// </summary>     public string Name {         get {
+return GetType().Name.ToLower();         }     }      /// <summary>
+/// Callback on data     /// </summary>     public void
+OnData(JsonObject data) { #if DEBUG
+Logger.Info(string.Format("{0} plugin OnData: {1}", GetType().Name,
+data.ToJsonPrettyPrintString())); #endif         _data = data;
+try {             string content = _data["data"];
+JsonObject response = (JsonObject)JsonNode.ParseJsonString(content);
+string path = response["path"];             int degree =
+response["degree"];             switch (path) {                 case
+WAIT_STATE:                     Service<Loader>.Get().Loading(Localize
+r.Get(BaseLocalizations.Common.WAIT));                     break;
+case SAVE_SUCCESS:                     _callbackSave(true);
+break;                 default:
+Service<Loader>.Get().Hide();                     _callback(path,
+degree);                     break;             }             _data =
+null;         } catch (Exception e) { #if DEBUG
+Logger.Error(string.Format("{0} plugin OnData error: {1}",
+GetType().Name, e.Message)); #endif         }     }      /// <summary>
+/// Callback on error     /// </summary>     public void
+OnError(JsonObject data) { #if DEBUG
+Logger.Error(string.Format("{0} plugin OnError: {1}", GetType().Name,
+data.ToJsonPrettyPrintString())); #endif         _error =
+(JsonObject)data["error"];         try {             string code =
+_error["code"];             switch (code) { #if UNITY_ANDROID
+case NEVER_ASK_STATE:                     AskOpenSettings();
+break;                 case IMAGE_ERROR:                     Service<P
+opup>.Get().Error(Localizer.Get(BaseLocalizations.Plugins.ERROR_IMAGE_
+LOAD));                     break; #elif UNITY_IOS
+case NO_PERMISSION:                     AskOpenSettings();
+break; #endif                 case SAVE_ERROR:
+_callbackSave(false);                     break;
+default:                     break;             }             _error =
+null;         } catch (Exception e) { #if DEBUG
+Logger.Error(string.Format("{0} plugin OnError error: {1}",
+GetType().Name, e.Message)); #endif         }     }      /// <summary>
+/// Open system settigns if user denied to show     /// </summary>
+private void AskOpenSettings() {         Service<Popup>.Get().Dialog(L
+ocalizer.Get(BaseLocalizations.Headers.PERMISSIONS),
+Localizer.Get(BaseLocalizations.Plugins.IMAGE_SETTINGS_MESSAGE),
+Localizer.Get(BaseLocalizations.Buttons.NO_YES), (button) => {
+if (button > 0) { #if UNITY_EDITOR #elif UNITY_ANDROID
+using (AndroidJavaClass plugin = new
+AndroidJavaClass(string.Format(Plugins.ANDROID_CLASS_MASK,
+_instance.Name))) {                     plugin.CallStatic("settings");
+} #elif UNITY_IOS                 imagesSettings(); #endif
+}         });     }      /// <summary>     /// Save image to system
+gallery     /// </summary>     /// <param name="filePath">Path to
+image to save</param>     public static void Save(string filePath,
+Action<bool> callback) {         _instance._callbackSave = callback;
+#if UNITY_EDITOR #elif UNITY_ANDROID         using (AndroidJavaClass
+plugin = new
+AndroidJavaClass(string.Format(Plugins.ANDROID_CLASS_MASK,
+_instance.Name))) {             plugin.CallStatic("save", filePath);
+} #elif UNITY_IOS         imagesSave(filePath); #endif     }      ///
+<summary>     /// Init app id for gallery     /// </summary>
+public static void Init() { #if UNITY_EDITOR #elif UNITY_ANDROID
+using (AndroidJavaClass plugin = new
+AndroidJavaClass(string.Format(Plugins.ANDROID_CLASS_MASK,
+_instance.Name))) {             plugin.CallStatic("init",
+_instance._client.Config.GameName);         } #endif     }      ///
+<summary>     /// Get image path from gallery     /// </summary>
+/// <param name="callback">Path to image</param>     public static
+void Pick(Action<string, int> callback) {         _instance._callback
+= callback;  #if UNITY_EDITOR #elif UNITY_ANDROID         using
+(AndroidJavaClass plugin = new
+AndroidJavaClass(string.Format(Plugins.ANDROID_CLASS_MASK,
+_instance.Name))) {             plugin.CallStatic("pick");         }
+#elif UNITY_IOS         imagesPick(); #endif     }      /// <summary>
+/// Get image path from camera     /// </summary>     /// <param
+name="callback">Path to image</param>     public static void
+Capture(Action<string, int> callback) {         _instance._callback =
+callback; #if UNITY_EDITOR #elif UNITY_ANDROID         using
+(AndroidJavaClass plugin = new
+AndroidJavaClass(string.Format(Plugins.ANDROID_CLASS_MASK,
+_instance.Name))) {             plugin.CallStatic("capture");
+} #elif UNITY_IOS         imagesCapture(); #endif     }      ///
+<summary>     /// Close service after use     /// </summary>
+public static void Close() { #if UNITY_EDITOR #elif UNITY_ANDROID
+using (AndroidJavaClass plugin = new
+AndroidJavaClass(string.Format(Plugins.ANDROID_CLASS_MASK,
+_instance.Name))) {             plugin.CallStatic("close");         }
+#endif             }  }     Тут в методах Pick и Capture передаётся
+Action который выполнится после выбора изображения. В нём вернётся
+путь до картинки на устройстве и угол её поворота из Exif данных. В
+общем-то, это необязательно и «выравнивать» её можно на стороне
+плагина, но я делаю так и всю обработку оставляю на стороне Unity:
+поворот, кадрирование, масштабирование и т.д.   Вот так примерно
+выглядит работа с плагином:     Запросы прав на доступ к камере и
+галерее выполняются при первом запуске. Если позже пользователь
+запретил эти права, то приложение попросит открыть настройки. Видел
+как в некоторых плагинах, система запроса прав отделена от плагинов,
+т.е. сама является плагином который только отвечает за права доступа.
+Возможно, в будущем, я тоже так сделаю – мне кажется это правильным.
+Прежде чем перейдем к нативной части, напомню, что все плагины
+хранятся в папке Plugins/iOS или Plugins/Android, если мы
+рассматриваем эти платформы, в любой глубине по иерархии проекта. Но
+следует учесть что кастомный файл AndroidManifest.xml, должен быть в
+самом верху: Assets/Plugins/Android.  Android плагины  Для создания
+плагинов под Android, я использую Android Studio, пишу на Java. Почему
+не Kotlin? Потому что пока нет времени выучить его. Но в планах, всё
+же переписать плагины на Kotlin и на Swift под iOS. Опять же, я не
+Android или iOS разработчик, поэтому не претендую на академическую
+правильность написания на Java или Obj-C :)   Все плагины – это набор
+Android Library (AAR) внутри пустого проекта.     Входная точка для
+работы плагина – класс Plugin. В нем будут хранится все основные
+методы и к нему будет обращаться скрипт Unity. Если плагин простой и
+состоит из 1-3 методов, то одного этого класса может быть достаточно.
+Если требуется какая-то более сложная реализация, то есть варианты.
+Отдельный класс Фрагмент Сервис   Вообще, внутри плагина можно делать
+всё что душе угодно, как будто вы пишите нативное приложение, но с
+некоторыми условиями. Можно даже делать свои активити и вызывать из
+Unity.   Первые версии плагинов были сделаны во фрагментах. Это было
+удобно, внутри можно было обрабатывать onActivityResult, что решало
+много вопросов. Но сейчас старые фрагменты устарели, на смену пришли
+фрагменты из AndroidX Fragment library. Сейчас можно вообще делать вот
+такую вещь:  ActivityResultLauncher<String> mGetContent =
+registerForActivityResult(new GetContent(),     new
+ActivityResultCallback<Uri>() {         @Override         public void
+onActivityResult(Uri uri) {             // Handle the returned Uri
+} });  @Override public void onCreate(@Nullable savedInstanceState:
+Bundle) {     // ...      Button selectButton =
+findViewById(R.id.select_button);
+selectButton.setOnClickListener(new OnClickListener() {
+@Override         public void onClick(View view) {             // Pass
+in the mime type you'd like to allow the user to select             //
+as the input             mGetContent.launch("image/*");         }
+}); }   В этой статье подробно описано, как использовать новые API. Но
+к сожалению, это не получится сделать у нас, потому что чтобы
+запустить метод registerForActivityResult нужно юнитевский активити
+кастануть в AppCompatActivity, а у меня это никак не получилось :(
+Если знаете как – поделитесь, буду очень благодарен.   Поэтому для
+сложных вещей я стал использовать старые-добрые сервисы. Сильно
+углубляться в эту тему не буду, можно прочитать мануал или посмотреть
+исходники на Github. Так что, поехали дальше.   Чтобы что-то отправить
+в Unity, нужно вызвать специальный метод у UnityPlayer:
+UnityPlayer.UnitySendMessage(object, receiver, data);  object – имя
+объекта на сцене Unity receiver – метод который обработает данные data
+– строка с данными   У каждого плагина можно писать в собственный
+AndroidManifest.xml, все манифесты потом мерджатся при билде. Также у
+каждого плагина могут быть свои ресурсы, картинки и всё остальное.
+Папку Plugins/Android/res в Unity проекте уже мало кто использует.
+В Gradle файл добавляете все необходимые зависимости которые будете
+использовать в плагине, например, Firebase или ещё что-то. Также
+потребуется ссылка на библиотеку с классами Unity. Эта библиотека
+понадобится, если вы захотите обратиться и использовать
+UnityPlayer.currentActivity, например, ну и собственно чтобы
+отправлять данные обратно в Unity.   Файл можно скопировать из папки
+Unity если у вас MacOS. Для Windows путь будет не особо отличаться.  /
+Applications/Unity/Hub/Editor/<YOUR_UNITY_VERSION>/PlaybackEngines/And
+roidPlayer/Variations/<mono|il2cpp>/Release/Classes/classes.jar
+Этот файл копируем в папку libs своего плагина и в Gradle добавляем:
+implementation fileTree(dir: 'libs', include: ['*.jar'])   Чтобы
+использовать в плагине методы другого своего плагина, добавляем:
+implementation project(':mylibrary')   У Gradle много настроек и
+тонкостей, это тема отдельной статьи. Добавлю лишь, как я копирую все
+скомпилированные плагины в одну папку:   task copyAAR(type: Copy) {
+from 'build/outputs/aar'         into '../!Releases'         include
+'**/*-release.aar'         rename project.name+'-release.aar',
+project.name.capitalize()+'.aar'     }      afterEvaluate {
+assemble.finalizedBy(copyAAR)     }   После запуска таска Assemble для
+всего проекта со всеми плагинами, они компилируются, переименовываются
+и копируются в одну папку.   Вот пример плагина галереи и камеры,
+точнее, только точка входа, вся магия в файле MediaService.java
+(изучить исходник можно на Github)     Тут как раз и используется
+сервис который отвечает за работу с камерой, галереей и запросом
+разрешений на их использование. В сервис передаются тип команды и
+параметры и дальше результат (или ошибка) отправляется в Unity
+приложение.   Чтобы сервис работал, нужно прописать его в манифесте:
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+package="com.mopsicus.images">     <application>         <service
+android:name=".MediaService"></service>     </application> </manifest>
+Ещё есть отдельный плагин-хелпер с помощью которого можно легко
+отправлять данные в Unity, чтобы каждый раз не хардкодить названия
+объектов и методов, всё это захардкодено там :) В хелпере есть
+несколько методов которые собирают JSON с нужными ключами и отправляют
+в Unity.     Хотя, при желании можно сделать специальный метод
+инициализации, где при старте приложения будут передаваться название
+объекта и метод куда отсылать данные, для всех плагинов.   Ну и чтобы
+завершить тему Android плагинов, расскажу как обрабатывается
+onActivityResult и разрешение прав.   Так как старые фрагменты уже
+старые, а с новыми полноценно работать пока не получается, то
+onActivityResult обрабатываю в т.н. базовом плагине. Это как раз
+единственный плагин который будет связан с другими, которым нужны
+какие-либо разрешения. Но т.к. это пока требуется только для камеры и
+галереи, то и данные отсылаются только туда.     Плагин наследуется от
+UnityPlayerActivity и переопределяется в манифесте:  <application
+android:icon="@drawable/app_icon" android:label="@string/app_name"
+android:isGame="true"
+android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+android:usesCleartextTraffic="true">     <activity
+android:name="com.mopsicus.base.Plugin"
+android:label="@string/app_name"
+android:windowSoftInputMode="adjustNothing">         <intent-filter>
+<action android:name="android.intent.action.MAIN" />
+<category android:name="android.intent.category.LAUNCHER" />
+<category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+</intent-filter>         ...     </activity> </application>    Таким
+способом можно отлавливать и другие события Activity, как например
+изменение ориентации устройства.  iOS плагины  Начнём с того, что iOS
+плагины разрабатывать легче! Тут тоже есть свои заморочки, но в целом
+– легче. Я пишу на Objective-C, да это олдскулл, но на чём знаю, на
+том и пишу.    Обычно плагин наследуется от NSObject или
+UIViewController, если требуется какое-то более сложное
+взаимодействие. Вот пример плагина нативного шаринга текста:
+Исходный код #include "Common.h"  static NSString *name = @"share";
+@interface Share : UIViewController;  - (id)init;  -
+(void)text:(NSString *)data; @end  @implementation Share;  - (id)init
+{     return [super init]; }  - (void)text:(NSString *)data {
+NSArray *items = [NSArray arrayWithObjects:data, nil];
+UIActivityViewController *controller = [[UIActivityViewController
+alloc] initWithActivityItems:items applicationActivities:nil];     if
+([[UIDevice currentDevice] userInterfaceIdiom] ==
+UIUserInterfaceIdiomPad) {         controller.modalPresentationStyle =
+UIModalPresentationPopover;
+controller.popoverPresentationController.sourceView = self.view;     }
+else {         controller.modalTransitionStyle =
+UIModalTransitionStyleCoverVertical;     }
+[UnityGetGLViewController() presentViewController:controller
+animated:YES completion:nil]; }  static Share *share = NULL;  extern
+"C" {  void shareText(const char *data) {     if (share == NULL) {
+share = [[Share alloc] init];     }     [share text:[NSString
+stringWithUTF8String:data]]; }  }  @end     В начале тоже подключается
+хелпер (тут не используется, просто по привычке подключаю везде сразу)
+для отправки данных в Unity, потом идёт сам плагин с одним методом и в
+конце блок на С, который вызывается из Unity.   Из интересного тут
+UnityGetGLViewController() – это метод который возвращает текущий
+контроллер который рендерит Unity приложение. Как
+UnityPlayer.currentActivity в Android плагинах. Собственно с этим
+контроллером и работаем обычно. В скомпилированном Xcode проекте можно
+открыть папку Classes и поизучать внутренности :) Например, файлы
+UnityAppController.mm или UnityInterface.h.   Лучше рассмотрим тот же
+плагин с камерой и галереей.     Исходный код #import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h> #import
+<AssetsLibrary/AssetsLibrary.h> #import <AVFoundation/AVFoundation.h>
+#include "Common.h"  static NSString *name = @"images";  @interface
+Images : UIViewController <UIImagePickerControllerDelegate,
+UINavigationControllerDelegate> - (id)init;  -
+(void)imagePickerController:(UIImagePickerController *)picker
+didFinishPickingMediaWithInfo:(NSDictionary *)info;  -
+(void)imagePickerControllerDidCancel:(UIImagePickerController
+*)picker;  - (UIImage *)normalizeOrientation:(UIImage *)image;  -
+(void)saveToLibrary:(NSString *)fileName;  - (void)requestPermission;
+- (void)checkAndCapture;  - (void)captureImage; @end  @implementation
+Images  - (id)init {     return [super init]; }  -
+(void)imagePickerController:(UIImagePickerController *)picker
+didFinishPickingMediaWithInfo:(NSDictionary *)info {     UIImage
+*image = (picker.sourceType ==
+UIImagePickerControllerSourceTypeCamera) ? [info
+objectForKey:UIImagePickerControllerOriginalImage] : [self
+normalizeOrientation:[info
+objectForKey:UIImagePickerControllerOriginalImage]];     NSString
+*path = [NSTemporaryDirectory()
+stringByAppendingPathComponent:@"image.jpg"];     NSData *data =
+UIImageJPEGRepresentation(image, 0.9);     [data writeToFile:path
+atomically:YES];     int degree = [self
+getOrientationAngle:image.imageOrientation];     NSMutableDictionary
+*json = [[NSMutableDictionary alloc] init];     [json setValue:path
+forKey:@"path"];     [json setValue:[NSNumber numberWithInt:degree]
+forKey:@"degree"];     NSString *result = [Common dictToJson:json];
+[Common sendData:name data:result];     [UnityGetGLViewController()
+dismissViewControllerAnimated:YES completion:nil]; }  -
+(int)getOrientationAngle:(UIImageOrientation)orientation {     switch
+(orientation) {         case UIImageOrientationRight:
+return 90;         case UIImageOrientationDown:             return
+180;         case UIImageOrientationLeft:             return 270;
+default:             return 0;     } }  -
+(void)imagePickerControllerDidCancel:(UIImagePickerController *)picker
+{     [UnityGetGLViewController() dismissViewControllerAnimated:YES
+completion:nil]; }  - (UIImage *)normalizeOrientation:(UIImage *)image
+{     if (image.imageOrientation == UIImageOrientationUp) {
+return image;     }
+UIGraphicsBeginImageContextWithOptions(image.size, NO, image.scale);
+[image drawInRect:(CGRect) {0, 0, image.size}];     UIImage
+*normalizedImage = UIGraphicsGetImageFromCurrentImageContext();
+UIGraphicsEndImageContext();     return normalizedImage; }  -
+(void)saveToLibrary:(NSString *)filePath {     dispatch_async(dispatch
+_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+NSData *imgData = [NSData dataWithContentsOfFile:filePath];
+UIImage *image = [[UIImage alloc] initWithData:imgData];
+UIImageWriteToSavedPhotosAlbum(image, self,
+@selector(image:didFinishSavingWithError:contextInfo:), NULL);     });
+}  - (void)image:(UIImage *)image didFinishSavingWithError:(NSError
+*)error contextInfo: (void *)contextInfo {     if (error) {
+[Common sendError:name code:@"SAVE_ERROR"];     } else {
+NSMutableDictionary *json = [[NSMutableDictionary alloc] init];
+[json setValue:@"SAVE_SUCCESS" forKey:@"path"];         [json
+setValue:[NSNumber numberWithInt:-1] forKey:@"degree"];
+NSString *result = [Common dictToJson:json];         [Common
+sendData:name data:result];     } }  - (void)requestPermission {
+[AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo
+completionHandler:^(BOOL granted) {         if (!granted) {
+[Common sendError:name code:@"NO_PERMISSION"];         } else {
+dispatch_async(dispatch_get_main_queue(), ^{                 [self
+captureImage];             });         }     }]; }  -
+(void)checkAndCapture {     AVAuthorizationStatus status =
+[AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
+switch (status) {         case AVAuthorizationStatusAuthorized:
+[self captureImage];             break;         case
+AVAuthorizationStatusDenied:         case
+AVAuthorizationStatusRestricted:             [Common sendError:name
+code:@"NO_PERMISSION"];             break;         case
+AVAuthorizationStatusNotDetermined:             [self
+requestPermission];             break;         default:
+[Common sendError:name code:@"IMAGE_ERROR"];             break;     }
+}  - (void)captureImage {     UIImagePickerController *picker =
+[[UIImagePickerController alloc] init];     picker.delegate = self;
+picker.sourceType = UIImagePickerControllerSourceTypeCamera;
+picker.allowsEditing = NO;     picker.showsCameraControls = YES;
+[UnityGetGLViewController() presentViewController:picker animated:YES
+completion:nil]; }  @end  static Images *images = NULL;  extern "C" {
+void imagesPick() {     if (images == NULL) {         images =
+[[Images alloc] init];     }     UIImagePickerController *picker =
+[[UIImagePickerController alloc] init];     picker.delegate = images;
+if ([UIImagePickerController isSourceTypeAvailable:UIImagePickerContro
+llerSourceTypeSavedPhotosAlbum]) {         picker.sourceType =
+UIImagePickerControllerSourceTypeSavedPhotosAlbum;     } else {
+picker.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
+}     picker.allowsEditing = NO;     [UnityGetGLViewController()
+presentViewController:picker animated:YES completion:nil]; }   void
+imagesCapture() {     if (images == NULL) {         images = [[Images
+alloc] init];     }     [images checkAndCapture]; }   void
+imagesSave(const char *filePath) {     if (images == NULL) {
+images = [[Images alloc] init];     }     [images
+saveToLibrary:[NSString stringWithUTF8String:filePath]]; }  void
+imagesSettings(){     [[UIApplication sharedApplication]
+openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]
+options:@{} completionHandler:nil]; }  }     Тут плагин наследуется от
+UIViewController и указываются делегаты для ImagePicker'а и
+навигатора. Метод didFinishPickingMediaWithInfo возвращает все нужные
+нам данные. Там мы определяем, что если изображение с камеры, то
+необходимо получить его угол поворота, если из галереи то по-умолчанию
+нормализуем ориентацию. И отправляем в Unity путь до картинки и угол.
+Там где вызывается камера сначала проверяются права доступа и если они
+есть, то всё норм, если нет – то ответ (NO_PERMISSION) придёт в Unity,
+который предложит открыть настройки приложения.     Выше я рассказывал
+про класс UnityAppController.mm, в нём описаны все методы из нативного
+AppDelegate: didFinishLaunchingWithOptions,
+didReceiveRemoteNotification, openURL и т.д. Так вот чтобы сделать
+свой плагин и переопределить эти методы, нужно наследоваться от него и
+в конце добавить такую конструкцию:
+IMPL_APP_CONTROLLER_SUBCLASS(Push)   Пример #import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h> #import
+<UserNotifications/UserNotifications.h> #import "UnityAppController.h"
+#import "Common.h"  static NSString *name = @"push";  @interface Push
+: UnityAppController <UNUserNotificationCenterDelegate> -
+(bool)application:(UIApplication *)application
+didFinishLaunchingWithOptions:(NSDictionary *)launchOptions;  -
+(void)application:(UIApplication *)application
+didReceiveLocalNotification:(UILocalNotification *)notification;  -
+(void)application:(UIApplication *)application
+didReceiveRemoteNotification:(NSDictionary *)userInfo;  -
+(void)application:(UIApplication *)application
+didRegisterForRemoteNotificationsWithDeviceToken:(NSData
+*)deviceToken;  - (void)application:(UIApplication *)application
+didFailToRegisterForRemoteNotificationsWithError:(NSError *)error;  -
+(void)userNotificationCenter:(UNUserNotificationCenter *)center
+didReceiveNotificationResponse:(UNNotificationResponse *)response
+withCompletionHandler:(void (^)())completionHandler;  -
+(void)userNotificationCenter:(UNUserNotificationCenter *)center
+willPresentNotification:(UNNotification *)notification
+withCompletionHandler:(void (^)(UNNotificationPresentationOptions
+options))completionHandler;  - (void)application:(UIApplication
+*)application didReceiveRemoteNotification:(NSDictionary *)userInfo
+fetchCompletionHandler:(void
+(^)(UIBackgroundFetchResult))completionHandler; @end  @implementation
+Push  - (void)userNotificationCenter:(UNUserNotificationCenter
+*)center willPresentNotification:(UNNotification *)notification
+withCompletionHandler:(void (^)(UNNotificationPresentationOptions
+options))completionHandler {     ... }  -
+(void)userNotificationCenter:(UNUserNotificationCenter *)center
+didReceiveNotificationResponse:(UNNotificationResponse *)response
+withCompletionHandler:(void (^)())completionHandler {     ... }  ...
+- (bool)application:(UIApplication *)application
+didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {     ...
+return [super application:application
+didFinishLaunchingWithOptions:launchOptions]; }  @end   extern "C" {
+...      }  IMPL_APP_CONTROLLER_SUBCLASS(Push)     Все плагины имеют
+расширение *.mm или отдельно, заголовки и реализация: *.h и *.m. Кроме
+того, вам ничего не мешает сделать свою скомпилированную библиотеку-
+плагин. В Xcode при создании проекта выбираете Static Library, пишите
+плагин и делаете билд. Как и все iOS плагины, надо будет закинуть в
+папку Plugins/iOS.   Как-то так. Это наверно самое основное, что
+необходимо знать чтобы сделать плагин под iOS. Т.е. алгоритм примерно
+такой: хотите сделать определение геолокации -> читаете мануал, как
+это сделать на Obj-c или Swift -> создаёте шаблон плагина и заголовки
+-> добавляете внутрянку, запросы на доступ и коллбеки -> профит.
+Чуть не забыл упомянуть про External Dependency Manager for Unity.
+Этот пакет автоматически загрузит все необходимые зависимые библиотеки
+для Android и подсы (cocoapod) для iOS. Для этого в папке Editor нужно
+создать XML файл и указать используемые библиотеки. Пример есть на
+Github или репозитории проекта.   На Github я обновил репозиторий с
+исходниками всей этой системы, тремя плагинами и примером.    Ну и не
+забываем, отключать сервисы когда они уже не нужны и очищать все
+созданные контроллеры и объекты в плагинах :)

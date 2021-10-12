@@ -1,0 +1,62 @@
+Автор: dbudim
+Дата: 2021-09-21T12:52:06.000Z
+Название: Java 17: Pattern Matching for switch
+Теги: Программирование *, Java *, API *
+Текст:
+14-го сентября состоялась презентация Apple, в этот же день произошло
+не менее важное событие - релиз Java 17. Среди новых фич подъехал
+паттерн матчинг для switch в preview моде JEP 406.История началась с
+того, что в jdk 16 расширили instanceof оператор, который теперь может
+принимать type pattern и выполнять матчинг по паттерну. Это маленькое
+изменение позволило упростить типичную конструкцию с проверкой на тип
+и последующее приведение.// before if (o instanceof String) {
+String s = (String)o;     ... use s ... }  // after if (o instanceof
+String s) {     ... use s ... }Обычно проверка производится на
+совпадение среди нескольких типов и пример показывает насколько код
+далек от идеала.static String formatter(Object o) {     String
+formatted = "unknown";     if (o instanceof Integer i) {
+formatted = String.format("int %d", i);     } else if (o instanceof
+Long l) {         formatted = String.format("long %d", l);     } else
+if (o instanceof Double d) {         formatted = String.format("double
+%f", d);     } else if (o instanceof String s) {         formatted =
+String.format("String %s", s);     }     return formatted; }Для таких
+операций идеально подходил бы switch, но в силу ограниченности
+поддержки типов и сравнения только на соответствие константному
+значению, приходится использовать цепочку if else.Разработчики
+подумали над ситуацией и добавили ряд улучшений:возможность работы с
+любым типомпроверка на соответствие паттерну в case возможность
+обрабатывать null значения через встроенный caseТеперь предыдущий код
+выглядит так:static String formatterPatternSwitch(Object o) {
+return switch (o) {         case Integer i -> String.format("int %d",
+i);         case Long l    -> String.format("long %d", l);
+case Double d  -> String.format("double %f", d);         case String s
+-> String.format("String %s", s);         default        ->
+o.toString();     }; }Зачастую, после совпадения типа, нужно делать
+дополнительные проверки и описывать их внутри, что может приводить к
+раздуванию кода:static void test(Object o) {         switch (o) {
+case Integer i:                 if (i.intValue() > 100) { ... }
+if (i.intValue() > 3 && i.intValue() < 7) { ... }             .......
+}     }Для покрытия таких кейсов были введены 2 новых вида
+паттернов:guarded patterns в формате type pattern && boolean
+expression, которые позволяют дополнять матчинг по типу boolean
+выражениемparenthesized patterns, которые позволяют избегать
+неочевидности при формировании логики из нескольких booleanstatic void
+test(Object o) {         switch (o) {             case Integer i &&
+i.intValue() > 100 -> { ...}             case (Integer i &&
+i.intValue() > 3) && (i.intValue() < 7) -> { ...}
+.......         }     }Обработка nullТрадиционно, switch выбрасывал
+NullPointerException если проверяемый объект был null. Проверку
+необходимо было реализовывать за пределами блока.static void
+testFooBar(String s) {     if (s == null) {
+System.out.println("oops!");         return;     }     switch (s) {
+case "Foo", "Bar" -> System.out.println("Great");         default
+-> System.out.println("Ok");     } }Это имело смысл в рамках
+ограниченной поддержки типов. Но, так как теперь switch работает с
+любым типом, а case поддерживают паттерны, разработчики добавили
+total type pattern, с помощью которого можно обработать ситуацию с
+null. static void testFooBar(String s) {     switch (s) {         case
+null         -> System.out.println("Oops");         case "Foo", "Bar"
+-> System.out.println("Great");         default           ->
+System.out.println("Ok");     } }Планы на будущееподдержка примитивных
+типовgeneral классы смогут объявлять deconstruction паттерны для
+указания как они могут быть сматченыподдержка AND and OR паттернов

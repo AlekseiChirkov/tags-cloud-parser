@@ -1,0 +1,112 @@
+Автор: dbudim
+Дата: 2021-09-29T11:02:57.000Z
+Название: Java 17: Foreign Functions & Memory API
+Теги: Программирование *, Java *, API *
+Текст:
+На дворе Java 17, а значит пора разобрать еще один интересный JEP, а
+именно JEP 412: Foreign Function & Memory API, который является
+переосмыслением двух предыдущих: Foreign-Memory Access API и Foreign
+Linker API.История тянется еще с JDK 14 и по прежнему находится в
+инкубаторе, поэтому не забываем добавить -add-modules
+jdk.incubator.foreign для запуска.Новый API дает возможность
+взаимодействовать с кодом и данными вне Java runtime. Теперь JVM может
+эффективно работать с нативными библиотеками и внешней памятью.
+Альтернатива JNI имеет улучшенную производительность и стабильность, а
+также возможность работать с разными видами памяти на разных
+платформах.Function & Memory API предоставляют классы и интерфейсы
+для:выделения внешней памяти MemorySegment, MemoryAddress,
+SegmentAllocatorуправления памятью и доступа к ней MemoryLayout,
+MemoryHandles, MemoryAccessуправления жизненным циклом ресурсов
+ResourceScopeвызова внешних функций SymbolLookup, CLinkerMemory
+SegmentsMemory Segments это абстракции, которые представляют участки
+памяти. Они связаны как пространственными, так и временными
+ограничениями. Пространственные ограничения гарантируют что действия с
+сегментом не затронут память за его границами, а временные - что
+операции не смогут происходить после закрытия области
+ресурсов.Сегменты могут быть нескольких типов:Native segments -
+выделены с нуля в нативной памятиMapped segments - врапперы смапленой
+памятиArray or buffer segments - врапперы существующих java массивов
+или буфферовMemorySegment nativeSegment = MemorySegment
+.allocateNative(100, ResourceScope.newImplicitScope());  MemorySegment
+mappedSegment = MemorySegment
+.mapFile( Path.of("memory.file"),
+0,                                                    200,
+READ_WRITE,
+newImplicitScope() );  MemorySegment arraySegment =
+MemorySegment.ofArray(new int[100]);  MemorySegment bufferSegment =
+MemorySegment.ofByteBuffer(ByteBuffer.allocateDirect(100));Memory
+LayoutsMemoryLayout используются для декларативного описания сегментов
+памяти и дают возможность определить разбивку на элементы.value
+layouts - описывают разметку со значениями базовых типов, таких как
+целочисленные и с плавающей точкойpadding layouts - используют в
+основном для выравнивания и представляют участки памяти, которые стоит
+игнорировать.На примере ниже, sequence memory layout, который создает
+поочередно повторяющийся 32-битный layout 25 раз.SequenceLayout
+intArrayLayout = MemoryLayout.sequenceLayout(25,
+MemoryLayout.valueLayout(32, ByteOrder.nativeOrder())); Resource
+scopesЗа жизненный цикл ресурсов отвечают resource scopes, которые
+бывают explicit (явные) и implicit (неявные):explicit resource scopes,
+такие как, newConfinedScope() и  newSharedScope() поддерживают
+детерминированное высвобождение ресурсов и могут быть явно закрыты
+методом close()implicit resource scopes, например, newImplicitScope()
+не могут быть закрыты явно и вызов close() повлечет за собой эксепшн.
+Ресурсы освобождаются только после того  как инстанс скоупа станет
+недоступен.try (ResourceScope scope =
+ResourceScope.newConfinedScope()) {       var mappedSegment =
+MemorySegment.mapFile(Path.of("my.file"), 0, 100000,
+FileChannel.MapMode.READ_WRITE, scope);          var nativeSegment =
+MemorySegment.allocateNative(100, scope); } Скоупы ресурсов также
+можно разделить на: thread-confined, которые поддерживают строгое
+замыкание на поток и shared, с которыми могут взаимодействовать
+несколько потоков.Segment allocatorsАллокаторы предоставляют методы
+для выделения и инициализации участков памяти. Интерфейс
+SegmentAllocator содержит фабричные методы для создания часто
+используемых аллокаторов и удобные методы для создания сегментов из
+примитивов и массивов.Создадим аллокатор, выделим память и
+инициализируем массивом:try (ResourceScope scope =
+ResourceScope.newConfinedScope()) {     SegmentAllocator allocator =
+SegmentAllocator.arenaAllocator(scope);     for (int i = 0 ; i < 100 ;
+i++) {                                         MemorySegment s =
+allocator
+.allocateArray(C_INT, new int[] { 1, 2, 3 });         ...     }
+... } Looking up foreign functionsВызов внешних функций невозможен без
+загрузки нативных библиотек. В JNI эта цель достигалась при помощи
+System::loadLibrary и System::load методов. Библиотеки загруженные
+таким способом всегда связаны с класслоадером.В FFM API механизм
+загрузки остался прежним. Но новый API позволяет находить адрес
+идентификаторов в загруженной библиотеке при помощи SymbolLookup,
+вызвать который можно двумя путями:SymbolLookup::loaderLookup
+возвращает реализацию, которая ищет идентификаторы во всех
+библиотеках, загруженных текущим класслоадеромCLinker::systemLookup
+возвращает platform-dependent реализацию, которая ищет идентификаторы
+в стандартной C библиотекеSymbolLookup::lookup(String) находит по
+имени метод в нативной библиотеке и возвращает MemoryAddress, который
+указывает на точку входа функции.Для примера загрузим OpenGL
+библиотеку и найдем glGetString метод:System.loadLibrary("GL");
+SymbolLookup loaderLookup  = SymbolLookup.loaderLookup();
+MemoryAddress clangVersion =
+loaderLookup.lookup("glGetString").get();Linking Java code to foreign
+functionsИнтерфейс CLinker описывает взаимодействие Java с нативным
+кодом. Основной фокус на отношениях Java и С, но концепт интерфейса
+подходит для поддержки других языков в будущем. Абстракция
+поддерживает downcalls и upcalls.downcalls - вызывают нативные функции
+из Java кода как простой MethodHandle. Принимают в параметры
+MemoryAddress, полученный через lookup, MethodType, который описывает
+сигнатуру клиента и FunctionDescriptor по сути описывающий сигнатуру
+внешней функции.upcalls - позволяют конвертировать существующий
+MethodHandle (который может ссылаться на обычный Java метод) в
+MemorySegment который может будет передан в нативную функцию как
+указатель.Для примера вызовем функцию  size_t strlen(const char *s);
+из С библиотеки:MethodHandle strlen =
+CLinker.getInstance().downcallHandle(
+CLinker.systemLookup().lookup("strlen").get(),
+MethodType.methodType(long.class, MemoryAddress.class),
+FunctionDescriptor.of(C_LONG, C_POINTER) );  MemorySegment str =
+CLinker.toCString("Hello", newImplicitScope()); long len =
+strlen.invokeExact(str.address());  // 5 SummaryНовый API для работы с
+нативными библиотеками это серьезных шаг в сторону безопасности таких
+операций. Много сценариев, которые требовали использование JNI, теперь
+могут решены при помощи FFM API.В статье сделан краткий обзор ключевых
+моментов модуля jdk.incubator.foreign, основанный на JEP 412 и
+Javadocs 17-й версии. Думаю стоит присмотреться к новым
+возможностям.Ждем выхода Foreign Function & Memory API из инкубатора.

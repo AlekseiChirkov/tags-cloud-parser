@@ -1,0 +1,153 @@
+Автор: RekGRpth
+Дата: 2021-10-08T04:54:01.000Z
+Название: Рецепты github shell action
+Теги: GitHub
+Текст:
+Для приготовления github shell action нам понадобится githubВ гитхабе
+действия можно написать тремя способами:на JavaScriptв docker
+контейнерев интерпретаторе shellЯ выбрал последний и самый
+непопулярный способ, потому, что скрипты в интерпретаторе shell можно
+использовать не только в действиях гитхаба, но и нетрудно
+преобразовать, например, в сборочные линии гитлаба.К сожалению,
+полномочий встроенного ключа github_token не всегда хватает для
+выполнения необходимых действий, поэтому в первую очередь надо создать
+персональный ключ доступа с ограниченным скоупом public_repo и
+добавить его в секреты (скажем, под именем PUBLIC_REPO_ACCESS_TOKEN) в
+каждом своём репозитории.Гитхаб действия будем запускать в ubuntu
+виртуалке или контейнере, что не столь важно, а важно то, что там уже
+установлены все необходимые программы. Т.к. при запуске действия
+гитхаб не клонирует репозиторий с текущим действием, то первым
+действием логично было бы сделать как раз это клонирование. Конечно, в
+гитхаб действиях уже есть стандартный инструмент для этого, но он
+написан на JavaScripte и выполняется в node.js, но мы-то делаем shell-
+действия! Итак,1. Действие клонирования репозиторияИли git clone shell
+actionДля передачи параметров в действия обычно используют inputs, но
+т.к. мы будем делать shell-действия, то в них параметры передаются в
+переменных окружения, поэтому вместо inputs и преобразования их в
+переменные окружения, сразу будем использовать только переменные
+окружения.action.ymlname: git clone shell action # название действия
+description: git clone shell action # описание действия author:
+RekGRpth # автор действия runs: # запуски   using: composite #
+используя композитные действия   steps: # шаги     - run:
+"${GITHUB_ACTION_PATH}/action.sh" # запустить скрипт       shell: sh #
+в интерпретаторе shaction.sh#!/bin/sh  # показываем, что будем
+запускать # а также, выходим при ошибках # а также, считаем ошибкой
+отсутствие заданных переменных окружения # (что эмулирует
+обязательность параметров действия) set -eux # клонируем с прогрессом
+только одну ветку git clone --progress --single-branch \
+# которую можно задать (необязательным) параметром-переменной     #
+(по-умолчанию - текущая ветка при выполнении действия)
+--branch "${INPUTS_BRANCH:-${GITHUB_REF##*/}}" \     # указываем
+пользователя репозитория     # а в качестве пароля - гитхаб токен
+# и в конце собственно сам репозиторий     "https://${GITHUB_REPOSITOR
+Y_OWNER}:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" .
+Используем действие так:.github/workflows/action.yml... on: # когда
+запускать действие         ... jobs: # работы   job: # работа     env:
+# через переменные окружения         # передаём секрет в качестве
+токена       GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_ACCESS_TOKEN }}
+runs-on: ubuntu-latest # запускаем в ubuntu     steps: # шаги
+# клонируем текущий репозиторий       - uses: rekgrpth/git-clone-
+shell-action@v1                         ...Но, чтобы использовать
+действие - его сначала надо опубликовать на маркетплейсе гитхаба. К
+сожалению, гитхаб не предоставляет инструмента для автоматизации
+этого, поэтому публиковать в маркетплейсе приходится каждый раз
+вручную. Зато, можно автоматизировать публикацию релиза:2. Действие
+публикации релизаИли github publish action shell actionaction.yml
+точно такой-же, только название и описание - другие, а вот
+action.sh#!/bin/sh  set -eux # с помощью программки гитхаб API
+(которая уже установлена в виртуалке/контейнере ubuntu) # сначала
+удаляем старый тег релиза репозитория с заданным тегом # (по-умолчанию
+- это текущая ветка) hub api --method DELETE "repos/${GITHUB_REPOSITOR
+Y}/git/refs/tags/${INPUTS_TAG:-${GITHUB_REF##*/}}" | jq . # затем
+вычисляем идентификатор старого релиза RELEASE_ID="$(hub api --method
+GET "repos/${GITHUB_REPOSITORY}/releases/tags/${INPUTS_TAG:-${GITHUB_R
+EF##*/}}" | jq .id)" # и удаляем старый релиз hub api --method DELETE
+"repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" | jq . # и,
+наконец, публикуем новый релиз hub api --method POST
+"repos/${GITHUB_REPOSITORY}/releases" --field
+"tag_name=${INPUTS_TAG:-${GITHUB_REF##*/}}" --field
+"target_commitish=${INPUTS_TAG:-${GITHUB_REF##*/}}" | jq . Используем
+действие так:.github/workflows/action.yml... on:         ... jobs:
+job:     runs-on: ubuntu-latest     steps:       - env:
+# передаём токен           GITHUB_TOKEN: ${{ github.token }}         #
+публекуем релиз         uses: rekgrpth/github-publish-action-shell-
+action@v13. Действие ежегодного обновления лицензииИли update license
+year shell actionaction.sh#!/bin/sh  set -eux # заменяем последний год
+(или добавляем его если нет) sed -Ei "s|^([Cc]opyright.+)
+([0-9]{4})([-]?)([0-9]{4}?) (.+)$|\1 \2-$(date "+%Y") \5|g" \
+"${INPUTS_LICENSE:-LICENSE}" # в лицензионном файле # задаём почту git
+config --local user.email "${INPUTS_EMAIL:-actions@github.com}" # и
+имя git config --local user.name "${INPUTS_NAME:-update license year}"
+# комиттим git commit --message "update license year" --all # и пушим
+git push --progressИспользуем действие
+так:.github/workflows/action.yml... on:   schedule: # запускаем по
+крону     - cron: '0 0 1 1 *' # каждый год jobs:   job:     env:
+GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_ACCESS_TOKEN }}     runs-on:
+ubuntu-latest     steps:         # сначала клонируем репозиторий
+- uses: rekgrpth/git-clone-shell-action@v1       # а потом обновляем в
+нём лицензию       - uses: rekgrpth/update-license-year-shell-
+action@v14. Действие обновления клонированного репозиторияИли git
+fetch upstream merge push shell actionaction.sh#!/bin/sh  set -eux #
+добавляем родительский репозиторий # (по-умолчанию с дефолтной веткой)
+git remote add --fetch --track "${INPUTS_BRANCH:-${GITHUB_REF##*/}}" \
+# (по-умолчанию - с гитхаба, но можно задать и с гитлаба или ещё
+откуда)                 upstream
+"${INPUTS_URL:-${GITHUB_SERVER_URL}}/${INPUTS_REPOSITORY}.git" #
+задаём почту     git config --local user.email
+"${INPUTS_EMAIL:-actions@github.com}" # и имя git config --local
+user.name "${INPUTS_NAME:-git merge upstream}" # мержим git merge
+--allow-unrelated-histories
+"upstream/${INPUTS_BRANCH:-${GITHUB_REF##*/}}" # и пушим git push
+--progressИспользуем действие так:.github/workflows/action.yml... on:
+schedule:     - cron: '0 0 * * *' # каждый день jobs:   job:     env:
+GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_ACCESS_TOKEN }}     runs-on:
+ubuntu-latest     steps:         # клонируем репозиторий       - uses:
+rekgrpth/git-clone-shell-action@v1       - env:                 #
+задаём родительский репозиторий           INPUTS_REPOSITORY:
+gawkextlib/code           # и откуда его брать           INPUTS_URL:
+git://git.code.sf.net/p         # обновляем наш репозиторий
+uses: rekgrpth/git-fetch-upstream-merge-push-shell-action@v1Тут надо
+сказать, что если в репозитории ничего не обновляется 60 дней, то
+гитхаб отключает такие действия по крону. Можно, наверное, написать
+действие по включению действий, а может, и нет...5. Дейсвие запуска
+другого действия в другом репозиторииИли github repository dispatch
+shell actionaction.sh#!/bin/sh  set -eux # с помощью гитхаб API
+запускаем другое действие в другом репозитории # (по-умолчанию, тип
+события - это текущая ветка) echo "{\"event_type\":\"${INPUTS_EVENT_TY
+PE:-${GITHUB_REF##*/}}\",\"client_payload\":${INPUTS_CLIENT_PAYLOAD}}"
+\                 | hub api
+"repos/${INPUTS_REPOSITORY:-${GITHUB_REPOSITORY}}/dispatches" --input
+-Используем действие так:.github/workflows/action.yml... on:
+... jobs:   jon:     runs-on: ubuntu-latest     steps:       - env:
+GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_ACCESS_TOKEN }}           #
+задаём сообщение           INPUTS_CLIENT_PAYLOAD: '{"repository":${{
+toJson(github.event.repository.name) }}}'           # тип события
+INPUTS_EVENT_TYPE: latest           # и репозиторий
+INPUTS_REPOSITORY: ${{ github.repository_owner }}/${{ matrix.repo }}
+# запускаем другое действие в другом репозитории         uses:
+rekgrpth/github-repository-dispatch-shell-action@v1     strategy: # с
+помощью стратегии       matrix: # одновременно запускаем         repo:
+# на несколкьих репозиториях:           - repo1           - repo2
+- repo36. Действие сборки и публикации докер-образаИли docker login
+build push shell actionaction.sh#!/bin/sh  set -eux export
+DOCKER_BUILDKIT=1 # используем новый сборщик # генерируем название
+образа REGISTRY_USERNAME_IMAGE_TAG="$(echo "${INPUTS_REGISTRY:-ghcr.io
+}/${INPUTS_USERNAME:-${GITHUB_REPOSITORY_OWNER}}/${INPUTS_IMAGE:-${GIT
+HUB_REPOSITORY##*/}}:${INPUTS_TAG:-${GITHUB_REF##*/}}" | tr
+'[:upper:]' '[:lower:]')" # логигимся в докер echo
+"${INPUTS_PASSWORD:-${GITHUB_TOKEN}}" | docker login --username
+"${INPUTS_USERNAME:-${GITHUB_REPOSITORY_OWNER}}" --password-stdin
+"${INPUTS_REGISTRY:-ghcr.io}" # собираем образ docker build
+--progress=plain --tag "${REGISTRY_USERNAME_IMAGE_TAG}" . # и
+публикуем docker push "${REGISTRY_USERNAME_IMAGE_TAG}"Используем
+действие так:.github/workflows/action.yml... on:         ... jobs:
+job:     concurrency: # если одновременно запущено несколько дейсвий
+cancel-in-progress: true # отменяем все старые       group: ${{
+github.ref }} # группируя по ветке     env:       GITHUB_TOKEN: ${{
+github.token }}     # задаём название работы     name: ${{
+github.event.client_payload.repository }} ${{ github.event_name }} ${{
+github.event.branch }}     runs-on: ubuntu-latest     steps:         #
+клонируем репозиторий       - uses: rekgrpth/git-clone-shell-action@v1
+# собираем и публикуем образ       - uses: rekgrpth/docker-login-
+build-push-shell-action@v1       # релизим       - uses:
+rekgrpth/github-publish-action-shell-action@v1

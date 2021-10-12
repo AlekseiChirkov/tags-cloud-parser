@@ -1,0 +1,192 @@
+Автор: Katsuba
+Дата: 2021-10-07T09:15:58.000Z
+Название: Как мутировать код в Angular-схематиках и не поседеть
+Теги: Блог компании TINKOFF, JavaScript *, Angular *, TypeScript *
+Текст:
+Чтобы использовать Angular CLI на полную, разработчики должны знать,
+что такое схематики. Например, команды ng add, ng update и ng generate
+используют схематики для добавления, обновления и настройки библиотек
+и кодогенерации в приложениях. Во время выполнения схематика вы
+получаете доступ к файловой системе и можете мутировать исходный код
+приложения так, как вам нужно. «Но, чтобы мутировать код, нужно
+работать с AST, а это сложно», — возможно, скажете вы, и будете
+правы!В этой статье расскажу, как мы пытаемся упростить работу с AST и
+сделать написание схематиков обыденным. А еще покажу, что так же
+просто можно работать с AST не только в Angular-проектах, а
+практически в любом проекте на JavaScript/TypeScript. Что такое
+схематикТехнически схематик — это функция, которая принимает два
+аргумента на вход: специфичные для схематика опции и контекст, который
+используется для логирования и несет в себе утилитарные
+функции.Функция возвращает тип Rule. Давайте посмотрим на него
+внимательнее:type Rule = (tree: Tree, context: SchematicContext) =>
+Tree | Observable<Tree> | Rule | Promise<void | Rule> | void;Из
+определения типа понятно, что Rule может быть как синхронным, так и
+асинхронным. И, как бонус, мы можем вернуть Observable. Из типа Rule
+остался только один неизвестный интерфейс — Tree. Tree — это
+виртуальная абстракция для работы с файловой системой, изменения в
+которой накладываются на реальную файловую систему.Каждая команда ng,
+которая использует схематики, имеет собственные настройки, но в итоге
+все сводится именно к вызову вышеописанной функции.Зачем нужен
+схематикМы широко используем схематики по целому ряду
+причин.Выполнение миграций при обновлении библиотек. В основном
+используется при мажорных изменениях и помогает разработчикам более
+просто мигрировать. Сам Angular всегда использует миграции для
+переезда между версиями. Мы даже контрибьютили в RenovateBot, чтобы у
+пользователей была возможность запускать миграции при автоматическом
+обновлении зависимостей.Настройка библиотек при их добавлении в
+проект. Позволяет сразу подготовить приложение к использованию:
+добавить импорт в нужный модуль, заинжектить дефолтные конфиги или
+внести изменения в процесс сборки.Кодогенерация. Быстрое создание
+скелетов библиотек, приложений, компонентов, директив, etc. Например,
+схематики позволяют в одну команду создать лейзи роут вашего
+приложения со всеми нужными базовыми конфигами. Мы широко используем
+эту возможность не только для добавления и генерации кода новых фичей,
+но и для миграции кодовой базы на другой функционал. Каждый пункт
+можно развернуть в достаточно большой список кейсов, но оставим это на
+откуп вашей фантазии и комментариям.По итогу можно сказать, что
+написание схематиков неплохо экономит время пользователей. Но…Есть
+подвохВ какой-то момент мы осознали, что на создание схематика
+потратили больше ресурсов, чем планировали. Хотя задача заключалась в
+добавлении одного импорта модуля в главный модуль приложения при
+миграции.Проблема была в том, что мы решили работать с AST для
+мутаций. Но это не так просто разработчику, который большую часть
+времени работает с сущностями Angular и версткой.Например, команда
+Angular использует typescript API в миграциях. Но как часто вы
+сталкиваетесь с программным использованием пакета typescript? Как
+часто вы оперируете нодами из TS-компилятора, чтобы добавить пару
+новых проперти в объект или элемента в массив?Ниже — пример функции,
+которая добавляет данные в метаданные модуля (оригинал). Осторожно:
+код приведен для примера, не советую напрягаться и пытаться понять,
+что в нем происходит!export function addSymbolToNgModuleMetadata(
+source: ts.SourceFile,   ngModulePath: string,   metadataField:
+string,   symbolName: string,   importPath: string | null = null, ):
+Change[] {   const nodes = getDecoratorMetadata(source, 'NgModule',
+'@angular/core');   let node: any = nodes[0];  // tslint:disable-
+line:no-any    // Find the decorator declaration.   if (!node) {
+return [];   }    // Get all the children property assignment of
+object literals.   const matchingProperties = getMetadataField(
+node as ts.ObjectLiteralExpression,     metadataField,   );    // Get
+the last node of the array literal.   if (!matchingProperties) {
+return [];   }   if (matchingProperties.length == 0) {     // We
+haven't found the field in the metadata declaration. Insert a new
+field.     const expr = node as ts.ObjectLiteralExpression;     let
+position: number;     let toInsert: string;     if
+(expr.properties.length == 0) {       position = expr.getEnd() - 1;
+toInsert = `  ${metadataField}: [${symbolName}]\\\\n`;     } else {
+node = expr.properties[expr.properties.length - 1];       position =
+node.getEnd();       // Get the indentation of the last element, if
+any.       const text = node.getFullText(source);       const matches
+= text.match(/^\\\\r?\\\\n\\\\s*/);       if (matches &&
+matches.length > 0) {         toInsert =
+`,${matches[0]}${metadataField}: [${symbolName}]`;       } else {
+toInsert = `, ${metadataField}: [${symbolName}]`;       }     }     if
+(importPath !== null) {       return [         new
+InsertChange(ngModulePath, position, toInsert),
+insertImport(source, ngModulePath, symbolName.replace(/\\\\..*$/, ''),
+importPath),       ];     } else {       return [new
+InsertChange(ngModulePath, position, toInsert)];     }   }   const
+assignment = matchingProperties[0] as ts.PropertyAssignment;    // If
+it's not an array, nothing we can do really.   if
+(assignment.initializer.kind !== ts.SyntaxKind.ArrayLiteralExpression)
+{     return [];   }    const arrLiteral = assignment.initializer as
+ts.ArrayLiteralExpression;   if (arrLiteral.elements.length == 0) {
+// Forward the property.     node = arrLiteral;   } else {     node =
+arrLiteral.elements;   }    if (!node) {     // tslint:disable-next-
+line: no-console     console.error('No app module found. Please add
+your new class to your component.');      return [];   }    if
+(Array.isArray(node)) {     const nodeArray = node as {} as
+Array<ts.Node>;     const symbolsArray = nodeArray.map(node =>
+node.getText());     if (symbolsArray.includes(symbolName)) {
+return [];     }      node = node[node.length - 1];   }    let
+toInsert: string;   let position = node.getEnd();   if (node.kind ==
+ts.SyntaxKind.ObjectLiteralExpression) {     // We haven't found the
+field in the metadata declaration. Insert a new     // field.
+const expr = node as ts.ObjectLiteralExpression;     if
+(expr.properties.length == 0) {       position = expr.getEnd() - 1;
+toInsert = `  ${symbolName}\\\\n`;     } else {       // Get the
+indentation of the last element, if any.       const text =
+node.getFullText(source);       if (text.match(/^\\\\r?\\\\r?\\\\n/))
+{         toInsert =
+`,${text.match(/^\\\\r?\\\\n\\\\s*/)[0]}${symbolName}`;       } else {
+toInsert = `, ${symbolName}`;       }     }   } else if (node.kind ==
+ts.SyntaxKind.ArrayLiteralExpression) {     // We found the field but
+it's empty. Insert it just before the `]`.     position--;
+toInsert = `${symbolName}`;   } else {     // Get the indentation of
+the last element, if any.     const text = node.getFullText(source);
+if (text.match(/^\\\\r?\\\\n/)) {       toInsert =
+`,${text.match(/^\\\\r?\\\\n(\\\\r?)\\\\s*/)[0]}${symbolName}`;     }
+else {       toInsert = `, ${symbolName}`;     }   }   if (importPath
+!== null) {     return [       new InsertChange(ngModulePath,
+position, toInsert),       insertImport(source, ngModulePath,
+symbolName.replace(/\\\\..*$/, ''), importPath),     ];   }    return
+[new InsertChange(ngModulePath, position, toInsert)]; }Выглядит
+совершенно не вдохновляюще. Поэтому мы решили создать верхнеуровневую
+библиотеку, которая позволяет писать схематики намного проще.ng-morphВ
+основе библиотеки лежит ts-morph. По сути, ts-morph — это обертка над
+компилятором typescript, которая упрощает работу с AST.Представляю
+вашему вниманию ng-morph. Это набор утилит, который позволит вам
+писать схематики намного проще и быстрее. Чтобы не быть голословным,
+предлагаю сразу рассмотреть несколько примеров с его
+использованием.Задача № 1. Добавить импорт модуля SomeModule в
+корневой модуль приложения.Решение.const rule: Rule = (tree: Tree,
+context: SchematicContext): void => {
+setActiveProject(createProject(tree));    const appModule =
+getMainModule('src/main.ts');    addImportToNgModule(appModule,
+'SomeModule');    addImports(appModule.getFilePath(),
+{moduleSpecifier: '@some/package', namedExports: ['SomeModule']})
+saveActiveProject(); } Рассмотрим решение построчно:Создаем проект ng-
+morph и делаем его активным. Это важно, так как все утилитарные
+функции работают именно в контексте активного проекта. Под проектом
+нужно понимать класс, который дает API к файловой системе, компилятору
+и т. д.По точке входа приложения находим главный модуль
+приложения.Добавляем в импорты найденного модуля новый.Добавляем
+импорт модуля в файл, где расположен корневой модуль.Сохраняем
+проект.Теперь сравните это решение с функцией выше из исходников
+Angular. Если вы будете использовать ng-morph, скорее всего, вам не
+придется писать что-то подобное.Задача № 2. В проекте неожиданно
+меняется стиль написания имени для enum на uppercase.Решение. Логичные
+вопросы: при чем здесь ng-morph? Ведь мы говорим про схематики,
+неужели нужно настраивать и писать схематики только для того, чтобы
+переименовать энамы?Все верно. Схематики кажутся слишком сложными для
+переименования энамов. Но все же давайте посмотрим, что нам может
+предложить ng-morph:setActiveProject(createProject(new
+NgMorphTree('/')));  const enums = getEnums('/**/*.ts');
+editEnums(enums, ({name}) => ({name: name.toUpperCase()}))Создаем
+проект. Тут есть важное отличие: скрипт не завернут в функцию
+схематика и аргумент tree создается вручную с помощью класса
+NgMorphHost.Ищем все enum в проекте.Переименовываем все enum.На этом
+примере мы видим, что ng-morph умеет работать и вне функций
+схематиков! Да, мы используем ng-morph не только в схематиках и не
+только в Angular-проектах. Что еще умеет ng-
+moprh?СоздаватьcreateImports('/src/some.ts', [   {     namedImports:
+['CoreModule'],     moduleSpecifier: '@org/core',     isTypeOnly:
+true,   } ]); Искатьconst imports = getImports('src/**/*.ts', {
+moduleSpecifier: '@org/*', });ИзменятьeditImports(imports,
+({moduleSpecifier}) => ({   moduleSpecifier:
+moduleSpecifier.replace('@org', '@new-org')
+})УдалятьremoveImports(imports)Почти по каждой сущности в TS есть свой
+набор функций: get*, edit*, add*, remove*. Например, getClass,
+removeConstrucor, addDecorator. Начали появляться утилитарные функции
+для работы со специфичными для Angular кейсами:getBootstrapFn —
+функция, возвращающая CallExpression.getMainModule — функция, которая
+возвращает декларацию главного модуля.Куча утилитарных функций по
+изменению метаданных сущностей Angular: addDeclarationToNgModule,
+addProviderToDirective и т. д.ng-morph также содержит утилиты для
+работы с json. Например, для работы с зависимостями в
+package.json:addPackageJsonDependency(tree, {   name: '@package/name',
+version: '~2.0.0',   type: NodeDependencyType.Dev });Но если нужна
+более низкоуровневая работы, всегда можно поработать с ts-morph API, а
+из него провалиться еще ниже — в API самого typescript.Вместо
+заключенияНа данный момент roadmap не существует. Мы достаточно быстро
+реализовали то, чего нам не хватало, и решили показать это сообществу.
+И, естественно, хочется развивать инструмент дальше.Тем не менее
+список фич первой необходимости все же есть:Высокоуровневая работа с
+шаблонами.Высокоуровневая работа со стилями.Наращивание тулинга по
+работе с сущностями Angular.И мы будем рады, если сообщество Angular
+поможет нам это сделать!Ссылки, которые вы так ждалиРепозиторий с
+кодом:GitHub - TinkoffCreditSystems/ng-morph: Code mutations in
+schematics were never easier than now.github.comСайт с документацией и
+примерами:ng-morphtinkoffcreditsystems.github.ioУже используют ng-
+morphИз известных мне — наша дружественная и лучшая библиотека
+компонентов для Angular:GitHub - TinkoffCreditSystems/taiga-ui:
+Angular UI Kit and components library for awesome peoplegithub.com

@@ -1,0 +1,175 @@
+Автор: yungd1plomat
+Дата: 2021-10-03T10:41:15.000Z
+Название: C#: Автоматизация Android без посредников (adb)
+Теги: Разработка под Android *, C# *, Тестирование мобильных приложений *
+Текст:
+Всем приветНе давно понадобилось автоматизировать одно приложение.Мне
+не хотелось использовать какие то посредники по типу Appium, во-
+первых, ресурсы были ограничены, на одном компьютере нужно было
+заставить работать 3-4 эмулятора, во-вторых с adb работать не так уж и
+трудно, в-третьих я наткнулся на библиотеку SharpAdbClient, в которой
+были уже реализованы базовые функции, но самых важных мне не хватало,
+поэтому пришлось дописать их самому.Я подумал почему бы не сделать
+библиотеку с расширенным функционалом, поэтому в этой статье будет
+обзор на библиотеку AdvancedSharpAdbClient.УстановкаВы можете
+установить библиотеку через nuget, либо через package manager:PM>
+Install-Package AdvancedSharpAdbClientТак же проект доступен на
+githubИнициализацияДля работы библиотеки понадобится adb.exe.Я
+использовал эмулятор Nox,где adb идёт вместе с приложением и находится
+по пути Nox\bin\adb.exe.Первым делом запустим серверusing System;
+using AdvancedSharpAdbClient;  namespace AdbTest {     class Program
+{          static void Main(string[] args)         {             if
+(!AdbServer.Instance.GetStatus().IsRunning)             {
+AdbServer server = new AdbServer();                 StartServerResult
+result = server.StartServer(@"F:\Nox\bin\adb.exe", false);
+if (result != StartServerResult.Started)                 {
+Console.WriteLine("Can't start adb server");
+return;                 }             }         }     } } Далее нам
+необходимо создать новый клиент и подключиться к устройствуusing
+System; using System.Linq; using AdvancedSharpAdbClient;  namespace
+AdbTest {     class Program     {         static AdvancedAdbClient
+client;          static DeviceData device;          static void
+Main(string[] args)         {             if
+(!AdbServer.Instance.GetStatus().IsRunning)             {
+AdbServer server = new AdbServer();                 StartServerResult
+result = server.StartServer(@"F:\Nox\bin\adb.exe", false);
+if (result != StartServerResult.Started)                 {
+Console.WriteLine("Can't start adb server");
+return;                 }             }             client = new
+AdvancedAdbClient();             client.Connect("127.0.0.1:62001"); //
+Ip Nox'а             device = client.GetDevices().FirstOrDefault(); //
+Выбираем девайс из подключенных             if (device == null)
+{                 Console.WriteLine("Can't connect to device");
+return;             }         }     } } Тут я покажу вам лайфхак, как
+можно автоматически получать Ip эмуляторов.Это пригодится при работе с
+несколькими эмуляторами одновременно(многопоточность).Рассмотрим на
+примере Nox'a, у которого каждый порт начинается с 620,
+например:127.0.0.1:62001127.0.0.1:62025127.0.0.1:62040Для поиска можно
+воспользоваться утилитой netstat, которая слушает активные порты и
+подключенияПолучение IP для нескольких эмуляторовstatic List<string>
+deviceports = new List<string>();  static string GetIP() {     while
+(true)     {         Process[] processes =
+Process.GetProcessesByName("NoxVMHandle");         foreach (Process
+process in processes)         {             ProcessStartInfo startInfo
+= new ProcessStartInfo("cmd", "/c netstat -a -n -o | find \"" +
+process.Id + "\" | find \"127.0.0.1\" | find \"620\"");
+startInfo.UseShellExecute = false;
+startInfo.CreateNoWindow = true;
+startInfo.RedirectStandardOutput = true;              var proc = new
+Process();             proc.StartInfo = startInfo;
+proc.Start();             proc.WaitForExit();
+MatchCollection matches =
+Regex.Matches(proc.StandardOutput.ReadToEnd(),
+"(?<=127.0.0.1:)62.*?(?= )");             foreach (Match match in
+matches)             {                 if (match.Value != "" &&
+!deviceports.Contains(match.Value))                 {
+deviceports.Add(match.Value);                     return "127.0.0.1:"
++ match.Value;                 }             }         }     } }Так
+же, если вы хотите работать в многопотоке, в каждом потоке необходимо
+создавать новый AdvancedAdbClient для стабильной работы.Пример
+многопоточной работыstatic ConcurrentQueue<string> deviceports = new
+ConcurrentQueue<string>(); // Используем потокобезопасный список
+static object locker = new object();  static string GetIP() {
+while (true)     {         Process[] processes =
+Process.GetProcessesByName("NoxVMHandle");         foreach (Process
+process in processes)         {             ProcessStartInfo startInfo
+= new ProcessStartInfo("cmd", "/c netstat -a -n -o | find \"" +
+process.Id + "\" | find \"127.0.0.1\" | find \"620\"");
+startInfo.UseShellExecute = false;
+startInfo.CreateNoWindow = true;
+startInfo.RedirectStandardOutput = true;              var proc = new
+Process();             proc.StartInfo = startInfo;
+proc.Start();             proc.WaitForExit();
+MatchCollection matches =
+Regex.Matches(proc.StandardOutput.ReadToEnd(),
+"(?<=127.0.0.1:)62.*?(?= )");             foreach (Match match in
+matches)             {                 if (match.Value != "" &&
+!deviceports.Contains(match.Value))                 {
+deviceports.Enqueue(match.Value);                     return
+"127.0.0.1:" + match.Value;                 }             }         }
+} }  static void Main(string[] args) {     GetIP();     if
+(!AdbServer.Instance.GetStatus().IsRunning)     {         AdbServer
+server = new AdbServer();         StartServerResult result =
+server.StartServer(@"F:\Nox\bin\adb.exe", false);         if (result
+!= StartServerResult.Started)         {
+Console.WriteLine("Can't start adb server");             return;
+}     }     // Перед запуском необходимо добавить в Multi Drive 3
+эмулятора     for (int i = 0; i < 3; i++) // Запускаем три эмулятора
+{         new Thread(() =>         {             Process process = new
+Process();             process.StartInfo.FileName =
+@"F:\Nox\bin\Nox.exe";             process.StartInfo.Arguments =
+$"-clone:Nox_{i}"; // Запускаем i-тый эмулятор из Multi-Drive
+process.Start();             AdvancedAdbClient client = new
+AdvancedAdbClient();             lock (locker) // Во избежании ошибок
+{                 client.Connect(GetIP()); // Ip Nox'а             }
+DeviceData device = client.GetDevices().FirstOrDefault();
+if (device == null)             {
+Console.WriteLine("Can't connect to device");                 return;
+}         }).Start();     } }АвтоматизацияПоиск элементаДля поиска
+элемента используется метод FindElement и FindElementsstatic
+AdvancedAdbClient client;  static DeviceData device;  static void
+Main(string[] args) {     client = new AdvancedAdbClient();
+client.Connect("127.0.0.1:62001");     device =
+client.GetDevices().FirstOrDefault();     Element el =
+client.FindElement(device, "//node[@text='Login']"); }Можно указать
+время ожидания элемента (по умолчанию его нету)Element el =
+client.FindElement(device, "//node[@text='Login']",
+TimeSpan.FromSeconds(5));Element[] els = client.FindElements(device,
+"//node[@resource-id='Login']", TimeSpan.FromSeconds(5));Получение
+атрибута элементаКаждый элемент содержит свои аттрибуты, для получения
+необходимо обратиться к полю attributesstatic void Main(string[] args)
+{     ...     Element el = client.FindElement(device,
+"//node[@resource-id='Login']", TimeSpan.FromSeconds(3));     string
+eltext = el.attributes["text"];     string bounds =
+el.attributes["bounds"];     ... }Клик по элементуВы можете кликнуть
+по координатам на экранеstatic void Main(string[] args) {     ...
+client.Click(device, 600, 600); // Click on the coordinates (600;600)
+... }Либо же по найденному элементуstatic void Main(string[] args) {
+...     Element el = client.FindElement(device,
+"//node[@text='Login']", TimeSpan.FromSeconds(3));     el.Click();//
+Click on element by xpath //node[@text='Login']     ...
+}СвайпAdvancedSharpAdbClient позволяет свайпнуть от одного элемента к
+другомуstatic void Main(string[] args) {     ...     Element first =
+client.FindElement(device, "//node[@text='Login']");     Element
+second = client.FindElement(device, "//node[@text='Password']");
+client.Swipe(device, first, second, 100); // Swipe 100 ms     ... }И
+так же по координатамstatic void Main(string[] args) {     ...
+device = client.GetDevices().FirstOrDefault();
+client.Swipe(device, 600, 1000, 600, 500, 100); // Swipe from
+(600;1000) to (600;500) on 100 ms     ... }Ввод текстаТекст может быть
+абсолютно любым, но учтите, что adb не поддерживает кириллицу.static
+void Main(string[] args) {     ...     client.SendText(device,
+"text"); // Элемент должен быть в фокусе     ... }Так же можно
+автоматически фокусироваться на элементе (кликать, а потом вводить
+текст)static void Main(string[] args) {     ...
+client.FindElement(device, "//node[@resource-
+id='Login']").SendText("text"); // Автоматически фокусируется     ...
+} Очистка поля вводаДля очистки поля ввода необходимо указать
+максимальное количество символов в полеstatic void Main(string[] args)
+{     ...     client.ClearInput(device, 25); // The second argument is
+to specify the maximum number of characters to be erased     ...
+}Автоматически определять длинну текста (может работать
+неправильно)static void Main(string[] args) {     ...
+client.FindElement(device, "//node[@resource-
+id='Login']").ClearInput(); // Get element text attribute and remove
+text length symbols     ... }Отправка нажатия клавиши (keyevent)Список
+эвентов вы можете посмотреть тутstatic void Main(string[] args) {
+...     client.SendKeyEvent(device, "KEYCODE_TAB");     ... }Команды
+устройстваВсе команды устройства вы можете посмотреть на страничке
+Github, здесь я покажу лишь 2 главных метода.Установка apkstatic void
+Main(string[] args) {     ...     PackageManager manager = new
+PackageManager(client, device);
+manager.InstallPackage(@"C:\Users\me\Documents\mypackage.apk",
+reinstall: false);     manager.UninstallPackage("com.android.app");
+... }Запуск приложенийstatic void Main(string[] args) {     ...
+client.StartApp(device, "com.android.app");     client.StopApp(device,
+"com.android.app"); // force-stop     ... }Важные
+ссылкиAdvancedSharpAdbClient - основная библиотекаSharpAdbClient -
+была взята за основу, является форком madbmadb - портированная версия
+ddmlib с Javaddmlib - оригинальная библиотека для работы с adbP.SЯ не
+являюсь противником посредников, типа Appium, просто эти фреймворки
+больше больше подходят для тестирования приложений, а не
+автоматизации.Я являюсь только начинающим разработчиком, поэтому прошу
+строго не судить правильность. кодаЕсли у вас появились какие либо
+вопросы, пишите мне на почту.Это моя первая статья на Habr, поэтому
+заранее извиняюсь за косяки.

@@ -1,0 +1,233 @@
+Автор: savondaria
+Дата: 2021-09-29T07:00:02.000Z
+Название: Кастомный API для маршрутизации звонков: зачем и как
+Теги: Блог компании Flowwow, API *, Бизнес-модели, Облачные сервисы
+Текст:
+Все сервисы стремительно уходят в digital — мобильные приложения, чат-
+боты и онлайн-чаты с поддержкой. У маркетплейса Flowwow они тоже есть,
+однако телефоном до сих пор пользуются. В день мы получаем около 90
+звонков — для их обработки нецелесообразно содержать отдельный штат
+операторов, но и отказываться от этого канала связи мы не хотим.Чтобы
+наши операторы поддержки, работающие по четыре человека в смену,
+смогли взять на себя звонки плюсом к тысячам сообщений в почте и
+чатах, нужна грамотная автоматизация. Мы написали Flowwow API для
+телефонии, чтобы соединять клиентов напрямую с магазинами-
+исполнителями по всему миру и брать только те обращения, где без наших
+экспертов не обойтись.В этой статье пройдем пути звонящего в
+зависимости от того, кто он и какой у него запрос. (кат)Мы собрали
+свой сценарий на платформе Voximplant и настроили его с нашими
+внутренними системами.Кто может позвонить:клиент с активным
+заказом;клиент с новым заказом. Или это могут быть наши коллеги из
+магазина-партнера, про такой сценарий тоже расскажем.Для начала
+приветствиеПоздороваться и объяснить, куда клиент попал, — стандартная
+история. Пока мы маршрутизируем звонок, вот что происходит на
+бэкстейдже:/**  * Класс со сценариями  * */ class FlowwowScenario {
+/**      * Создание объекта и инициализация сценариев от входных
+данных      * */     constructor(data = {}, incomingCall) {
+//Данные из api flowwow         this.data = data;         //Входящий
+звонок         this.call = incomingCall;         //Объект с api
+this.api = new FlowwowAPI();         this.api.phone =
+this.call.callerid();         //Очередь активных звонков
+this.callQueue = [];         //Очередь событий по времени
+this._timers = [];         //Храним состояние, кому сейчас
+перенаправляется звонок         this._state  = '';         //Ссылка на
+запись звонка         this._record = '';         //Активный сценарий
+this._scenario = '';         //Кто ответил         this._respondent =
+'';           //При сбрасывании звонка скидываем всё очереди на звонок
+this.call.addEventListener(CallEvents.Disconnected, e => {
+this.cleanTimers();             this.dropAllCalls();         });Теперь
+посмотрим подробнее сценарии для каждого типа пользователя.Определяем
+звонящего: клиент с активным заказомПосле приветствия нам нужно
+понять, кто наш пользователь? В данном сценарии мы получаем звонок от
+клиента с уже существующим заказом:_orderScenario() {         let api
+= this.api;         let user = this.data.order.user;
+this.api.sendMessageInSlack(`Звонок от ${user.name}
+${this.call.callerid()} по заказу
+${FlowwowAPI.getOrderLink(this.data.order.id)}`, 'order');
+this.call.handleTones(true);
+this.call.addEventListener(CallEvents.ToneReceived, e => {
+this.call.removeEventListener(CallEvents.ToneReceived, null);
+this.cleanTimers();             this.call.handleTones(false);
+switch (e.tone) {                 case '1':
+this.pressButtonOne();                     break;                 case
+'2':                     this.pressButtonTwo();
+break;                 default:
+this.api.sendMessageInSlack(`Клиент зачем-то нажал другую кнопку`);
+break;             }         });         //Проигрываем приветствие
+this.call.startPlayback(getSound('FW1'));         let nextSound =
+setTimeout(() =>После приветствия для клиента с активным заказом
+включается запись, где он попадает на развилку — можно связаться
+напрямую с магазином, в котором был сделан этот заказ, или обратиться
+в службу поддержки Flowwow:{             //Проигрываем обращение к
+пользователю с активным заказом
+this.call.startPlayback(getSound('FW3'));         }, 28000);
+this._timers.push(nextSound);     }Допустим, клиенту хочется узнать,
+что там с заказом. Для этого он нажимает кнопку с номером 1 на экране
+pressButtonOne() и переключается напрямую к магазину-
+партнеру.pressButtonOne() {         let shop = this.data.order.shop;
+let link = FlowwowAPI.getShopLink(shop.id);Тут важно, чтобы магазин
+был на связи. Если звонок происходит уже во внерабочее время или
+коллеги не отвечают в течение 15 секунд, то запрос перехватим мы в
+службе поддержки Flowwow:// Если магазин открыт (рабочее время)
+if(shop.is_opened){             this.callShop();          ///
+Объявляем о переключении на магазин
+this.call.startPlayback(getSound('FW6'));               var playSound8
+= setTimeout(() => {                         /// Называем имя клиента
+и заказ                 this.call.startPlayback(getSound('FW8'));
+}, 4000);             this._timers.push(playSound8);               var
+playSoundDouble8 = setTimeout(() => {             /// Называем имя
+клиента и заказ
+this.call.startPlayback(getSound('FW8'));             }, 14000);
+this._timers.push(playSoundDouble8);Время в 15 секунд истекло, поэтому
+забираем заявку мы — в офис или на колл-центр: var playSound4 =
+setTimeout(() => {              /// Включаем запись о переводе на
+службу поддержки
+this.call.startPlayback(getSound('FW4'));             }, 24000);
+this._timers.push(playSound4);                var playSoundTwo8 =
+setTimeout(() => {
+this.api.sendMessageInSlack(`Исполнитель(${shop.name}
+${shop.shop_phone} ${link} ${shop.city}) не ответил - перевод на
+офис`);                 this.call.startPlayback(getSound('FW8'));
+this.callFlowwow();             }, 32000);
+this._timers.push(playSoundTwo8);               var tryCallCallCenter
+= setTimeout(() => {                 if(this._isReportingToday()) {
+this.api.sendMessageInSlack('Офис не ответил - перевод на кц');
+}                 this.callCallCenter();             }, 42000);
+this._timers.push(tryCallCallCenter);         } else {
+this.call.startPlayback(getSound('FW5'));
+this.callCallCenter();         }     }Колл-центр на аутсорсе в данном
+случае – это просто страховка, чтобы не оставить клиента без ответа,
+даже если все менеджеры в офисе заняты. Отдельная история, как устроен
+перевод заявки напрямую в магазин или колл-центр Flowwow. Понять, куда
+ушел запрос, нам поможет функция _noticeAboutWhoAnswer_call(phones) {
+}       _noticeAboutWhoAnswer(phoneReceiver)     {         let api =
+this.api;         let msg = '';         if (this._state == SHOP) {
+let shop = this.data.order.shop;             let link =
+FlowwowAPI.getShopLink(shop.id);             this._respondent = link;
+msg = `На звонок ответил ${this._state} ${link} ${shop.city}
+${phoneReceiver}`;             api.sendMessageInSlack(msg);Если
+магазин не отвечает (как мы говорили, причины две — внерабочее время
+или просто невозможность ответить на звонок в данный момент), то
+происходит переключение заявки на офис Flowwow:} else {
+api.log(phoneReceiver)                 .then(data => {
+let answerData = JSON.parse(data.text);                     let msg =
+'';                     if (answerData.result.error == 0) {
+this._respondent = answerData.result.manager_name;
+msg = this._state == OFFICE                             ? `На звонок
+ответила ${answerData.result.manager_name} (${phoneReceiver})`
+: `На звонок номер звонящего ответил ${answerData.result.manager_name}
+(${phoneReceiver})`;                     } else {
+msg = `${answerData.result.description}`                     }
+api.sendMessageInSlack(msg);                 })
+.catch(err => {                     Logger.write('Api error');
+});         } }Звонок принят, и нам отвечает менеджер офиса. Теперь
+нужно обнулить счетчик 15 секунд:_callStart(e) {
+this.cleanTimers();           let api = this.api;         let
+incomingCall = this.call;         let outCall =
+this.dropAllCalls(e.call.number());         let time = 0;И
+зафиксировать все данные по заказу — имя пользователя, номер заказа и
+имя менеджера:this._noticeAboutWhoAnswer(e.call.number());
+if (this._isOrderScenario() && this._state == SHOP) {             let
+order_id = this.data.order.id.split('').join(' ');             let
+user_name = this.data.order.user.name;             outCall.say(
+`Вам звонит клиент ${user_name} Флаувау. Заказ ${order_id}`,
+Language.RU_RUSSIAN_FEMALE,                 {
+rate: 'slow',                 }             );             time =
+9000;         }
+outCall.addEventListener(CallEvents.TransferComplete, function (e) {
+let apiTransfer = new FlowwowAPI();
+apiTransfer.log(e.call.number())                 .then(data => {
+let answerData = JSON.parse(data.text);                     let msg =
+'';                     if (answerData.result.error == 0) {
+this._respondent = answerData.result.manager_name;
+msg = `Звонок перенаправлен на ${answerData.result.manager_name}`
+} else {                         msg =
+`${answerData.result.description}`                     }
+apiTransfer.sendMessageInSlack(msg);                 })
+.catch(err => {                     Logger.write('Api error');
+});           });Соединение пользователей происходит несколькими
+методами:VoxEngine.sendMediaBetween(incomingCall, outCall);
+VoxEngine.easyProcess(incomingCall, outCall);
+VoxEngine.addEventListener(AppEvents.Terminating, () => {
+recorder.stop();                 this._sendCallRecord();
+});               outCall.addEventListener(CallEvents.Disconnected, ()
+=> {                 incomingCall.hangup();
+outCall.hangup();             });         }, time);     }На этом пути
+все: клиент позвонил по текущему заказу, выбрал возможность
+соединиться с магазином напрямую, и если не удалось до него
+дозвониться, то все равно получил ответ — в офисе Flowwow или колл-
+центре.Вернемся на развилку, когда обращается клиент по текущему
+заказу. Выбор такой — звонить напрямую в магазин или в поддержку
+Flowwow? Когда у клиента, например, возник спор с магазином, он
+обращается к сотрудникам Flowwow. Нажимаем на экране кнопку с номером
+2 pressButtonTwo()— это запрос в поддержку Flowwow, перенаправляем
+звонок в офис:pressButtonTwo() {
+this.call.startPlayback(getSound('FW7'));
+if(this._isReportingToday()) {
+this.api.sendMessageInSlack('Перевод на офис');         }
+this.callFlowwow();                  var soundFW8 = setTimeout(() => {
+this.call.startPlayback(getSound('FW8'));         }, 4000);
+this._timers.push(soundFW8);           var soundFW8Two = setTimeout(()
+=> {             this.call.startPlayback(getSound('FW8'));         },
+14000);         this._timers.push(soundFW8Two);           var
+soundFW8Three = setTimeout(() => {
+this.call.startPlayback(getSound('FW8'));         }, 24000);
+this._timers.push(soundFW8Three);Прошло 15 секунд и нет ответа? Тогда
+берем запрос в колл-центр.var callCallCenter = setTimeout(() => {
+this.call.handleTones(false);             if(this._isReportingToday())
+{                 this.api.sendMessageInSlack('Перевод на кц');
+}             this.callCallCenter();         }, 34000);
+this._timers.push(callCallCenter);     }Еще один вариант звонка от
+клиента: создание нового заказаВ этом случае мы проверяем, что у
+пользователя нет активных заказов, и после записи приветствия сразу
+переключаем звонок на офис Flowwow:_otherScenario() {         let data
+= this.data;         let msg = '';         if (!data.unknown) {
+let link = '';             if
+(data.user.hasOwnProperty('orders_link')) {                 link =
+FlowwowAPI.slackLink(data.user.orders_link, 'все заказы пользователя
+');             }             msg = `Звонок без заказа
+${data.user.name} ${this.call.callerid()} ${link}`;         } else {
+msg = `Звонок без заказа ${this.call.callerid()}`;         }
+this.api.sendMessageInSlack(msg, 'other');           //Проигрываем
+запись приветствия         this.call.startPlayback(getSound('FW1'));
+var tryCallFlowwow = setTimeout(() => {
+this.call.startPlayback(getSound('FW8'));             // Переводим
+звонок на офис             this.callFlowwow();         }, 28000);
+this._timers.push(tryCallFlowwow);Так, 15 секунд истекло. Значит,
+переключаем заявку на колл-центр:var tryCallCallCenter = setTimeout(()
+=> {             // Переводим звонок на call center
+this.callCallCenter();         }, 38000);
+this._timers.push(tryCallCallCenter);     }Если звонит магазин-
+партнер, что в этом случае? Мы узнаем магазин по номеру телефона и
+коллеги услышат запись, в которой мы попросим их перейти в более
+оперативный канал связи — чат поддержки на сайте или в мобильном
+приложении. Поскольку взаимодействие с каждым партнером длится годами,
+важно хранить всю историю общения в текстовом виде. Кроме того, иногда
+вопрос не удается решить при первом обращении, тогда удобнее вернуться
+с ответом к чату, чем дополнительно фиксировать в CRM, с каким
+вопросом звонил партнер.Так сработает в коде:_shopScenario() {
+//++++++++++++         Logger.write('Logger: shop scenario start');
+let api  = this.api;         let shop = this.data.shop;         let
+call = this.call.callerid();         if(this._isReportingToday()) {
+api.sendMessageInSlack(`Звонок из магазина номер ${call} id
+${FlowwowAPI.getShopLink(shop.id)} город ${shop.city}`, 'shop');
+}         //Проигрываем запись для магазина-партнера
+this.call.startPlayback(getSound('FW2'));
+this.call.addEventListener(CallEvents.PlaybackFinished, call => {
+this.call.hangup();         });     }Все статусы автоматически падают
+в один из чатов саппорта в Slack’е, чтобы команда могла оперативно
+среагировать, если что-то пошло не по плану. В эти чаты также
+стекаются репорты по всем остальным каналам с автоматическим
+распределением тикетов по сотрудникам. Наша внутренняя хелпдеск-
+система устроена так, чтобы каждый менеджер видел только тикеты,
+назначенные ему. Получив сообщение, менеджер по поддержке видит номер
+и статус заказа, название магазина-исполнителя, адрес получателя и
+все, что нужно, чтобы быстро разобраться, в чем дело.Мы рассказали о
+нескольких сценариях, которые придумали для приема звонков в Flowwow.
+Возможно, наш опыт станет для кого-то примером, что автоматизация
+полезна не только при тысячах звонков, но и при сравнительно маленьких
+объемах обращений.И еще лайфхак: занимаясь любой автоматизацией, мы
+отталкиваемся от проблем тех, кто в этом процессе участвует. Так,
+именно менеджеры саппорта на 80% выступают в роли заказчиков своей
+системы: объясняют, как им будет удобнее работать, и передают фидбек
+команде разработчиков.

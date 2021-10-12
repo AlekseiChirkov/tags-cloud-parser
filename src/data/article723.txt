@@ -1,0 +1,17 @@
+Автор: m31
+Дата: 2021-09-24T13:01:54.000Z
+Название: Видеозапись серии вебинаров The A-Z of Data — блок MLOps
+Теги: Big Data *, Машинное обучение *, Конференции, DevOps *, Искусственный
+интеллект
+Текст:
+Приветствую всех!На протяжении последних нескольких месяцев,
+мы командой Data Phoenix, провели ряд вебинаров посвященных MLOps
+в рамках серии «The A-Z of Data».Сегодня я хочу поделиться всеми
+видеозаписями прошедших вебинаров, а также пригласить на предстоящий,
+который будет посвящен MLOps инструменту — Pachyderm. Также буду
+благодарен за пожелания в комментариях тем, на которые вам было бы
+интересно послушать предстоящие вебинары.Вебинар «Introduction
+to MLOps»Вебинар «Monitoring ML Models in Production»Вебинар
+«Deploying deep learning models with Kubernetes and Kubeflow»Вебинар
+«Re-usable pipelines for ML projects with DVC»Вебинар «From research
+to product with Hydrosphere»

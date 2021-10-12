@@ -1,0 +1,112 @@
+Автор: FAZIC
+Дата: 2021-10-07T20:19:30.000Z
+Название: The Significance Manager в Unreal Engine 4
+Теги: Разработка игр *, Unreal Engine *
+Текст:
+В одной из предыдущих статей я затронул тему Significance Manager.
+Сейчас же хочу подробнее его рассмотреть его настройки и интеграцию в
+ваш проект.Significance Manager - единая структура, которая
+предоставляет возможность, написать гибкий, специфический код, для
+оценки и расстановки приоритетов объектов. На основе полученных
+данных, появляется возможность изменять поведение системы, например
+отключать системы частиц\звуки, уменьшать частоту тика, изменять лоды
+и т.д.Самая простая идея реализации в том, что из PlayerController мы
+передаем положение и поворот камеры игрока, во все зарегистрированные
+в Significance Manager актеры и уже в них обрабатываем и делаем
+изменение для оптимизации, например Tick, LOD,URO и т.д.Теперь
+перейдем непосредственно к настройке этой прекрасной тулзы, в первую
+очередь необходимо включить плагин(по дефолту он включенный).Если
+возникает необходимость, мы можем создать свой класс для менеджера и
+определить его в
+DefaultEngine.ini:[/Script/SignificanceManager.SignificanceManager] Si
+gnificanceManagerClassName=/Script/DemoProject.DemoSignificanceManager
+UpdateФункция Update необходима для оценки важности каждого
+зарегистрированного объекта в менеджере, относительно трансформа
+некоторого объекта. Для клиента, отлично подойдет использовать камеру
+в контроллере. Напишем код, который будет в менеджер передавать
+положение камеры и сделаем его только для игрока(IsLocalController()).
+Код в DemoPlayerController.h  public:         virtual void Tick(float
+DeltaTime) override;  private:         TWeakObjectPtr<class
+USignificanceManager> SignificanceManagerPtr;  .cpp #include
+"SignificanceManager.h"  void ADemoPlayerController::Tick(float
+DeltaTime) {         Super::Tick(DeltaTime);            if
+(!IsLocalController()) return;          UWorld* WorldPtr = GetWorld();
+if (!WorldPtr) return;          if (!SignificanceManagerPtr.IsValid())
+SignificanceManagerPtr = FSignificanceManagerModule::Get(WorldPtr);
+if (SignificanceManagerPtr.IsValid())         {
+FVector ViewLocation;                 FRotator ViewRotation;
+GetPlayerViewPoint(ViewLocation, ViewRotation);
+TArray<FTransform> Viewpoints;
+Viewpoints.Emplace(ViewRotation, ViewLocation, FVector::OneVector);
+SignificanceManagerPtr.Get()->Update(Viewpoints);         }
+}FSignificanceFunction и FPostSignificanceFunctionЗа любую обработку
+объекта отвечают два типа функций:FSignificanceFunction - Основная
+оценочная функция, в которой создается алгоритм для распределения
+важности. Она принимает UObject и трансформ объекта и возвращает float
+результат. На каждый Update функция будет вызываться один раз и
+выдавать наиболее высокое значение(Изменить сортировку можно создав
+наследника менеджера). Каждый зарегистрированный объект должен быть
+связан с этой функцией.FPostSignificanceFunction - Функция для
+обработки полученного значения важности. Принимает, старое и новое
+значение(если bFinal == true, то новое значение будет равно единице).
+Signification Manager будет вызывать эту функцию в зависимости от
+настроек объекта при регистрации.None - функция не будет
+вызыватьсяConcurrent - функция будет вызвана сразу после оценки
+важности. Функции должны быть потокобезопасными, так как они
+выполняются параллельно друг другу.Sequential - функция будет
+вызываться сразу после того как все объекты были
+оценены.RegisterObject / UnregisterObjectКаждые UObject, можно
+зарегистрировать в Significance Manager, тем самым добавив его в
+обработчик менеджера. Все объекты будут сгруппированы и обработаны на
+основе указанного тэга при создании. Во время регистрации, первая
+оценка будет создана на основе последнего Update менеджера.
+Регистрация непосредственно в AActor class.h #include
+"SignificanceManager.h"  protected:     virtual void BeginPlay()
+override;      // Significance Manager implementation     float
+SignficanceFunction(USignificanceManager::FManagedObjectInfo*
+ObjectInfo, const FTransform& Viewpoint);     void
+PostSignficanceFunction(USignificanceManager::FManagedObjectInfo*
+ObjectInfo, float OldSignificance, float Significance, bool bFinal);
+.cpp void ADemoActor::BeginPlay() {     Super::BeginPlay();     if
+(IsNetMode(NM_DedicatedServer)) return;      USignificanceManager*
+SignificanceManager = FSignificanceManagerModule::Get(GetWorld());
+if (!SignificanceManager) return;      //Создаем 2 лямбда функции для
+FSignificanceFunction и FPostSignificanceFunction     auto
+Significance = [&](USignificanceManager::FManagedObjectInfo*
+ObjectInfo, const FTransform& Viewpoint) -> float     {         return
+SignficanceFunction(ObjectInfo, Viewpoint);     };      auto
+PostSignificance = [&](USignificanceManager::FManagedObjectInfo*
+ObjectInfo, float OldSignificance, float Significance, bool bFinal)
+{         PostSignficanceFunction(ObjectInfo, OldSignificance,
+Significance, bFinal);     };      //Регистрируем наш объект в
+Significance Manager     SignificanceManager->RegisterObject(this,
+TEXT("Cube"), Significance,
+USignificanceManager::EPostSignificanceType::Sequential,
+PostSignificance); }  void ADemoActor::EndPlay(const
+EEndPlayReason::Type Reason) {     Super::EndPlay(Reason);      auto
+WorldPtr = GetWorld();     if (!WorldPtr) return;      // Убираем
+объект из SignificanceManager     //Так же можно использовать
+UnregisterAll(FName(TEXT("Cube")));     //Для удаления всех по тэгу
+if (auto SignificanceManager =
+FSignificanceManagerModule::Get(WorldPtr))
+SignificanceManager->Unregister(this); }  float ADemoActor::Signficanc
+eFunction(USignificanceManager::FManagedObjectInfo* ObjectInfo, const
+FTransform& Viewpoint) {     if (ObjectInfo->GetTag() == TEXT("Cube"))
+{         ADemoActor* Actor =
+CastChecked<ADemoActor>(ObjectInfo->GetObject());         const float
+Distance = (Actor->GetActorLocation() -
+Viewpoint.GetLocation()).Size();          if (Distance >= 2000.f)
+return 2.f;         if (Distance >= 1000.f) return 1.f;     }
+return 0.f; }  void ADemoActor::PostSignficanceFunction(USignificanceM
+anager::FManagedObjectInfo* ObjectInfo, float OldSignificance, float
+Significance, bool bFinal) {     if (ObjectInfo->GetTag() ==
+TEXT("Cube"))     {         if (Significance >= 2.f)         {
+SetActorTickInterval(0.25f);         }         else if (Significance
+>= 1.f)         {             SetActorTickInterval(0.1f);         }
+else         {             SetActorTickInterval(0.f);         }     }
+}ЗаключениеВот таким весьма не сложным способом, вы сможете добавить
+немного больше оптимизации вашему проекту. Без особых проблем изменяя
+тики, возможность перемещения только видимых объектов, даже просто
+использовать чтобы скрывать объекты(culling) или тени, или воплотить
+любые другие ваши идеи.А на этом я с вами прощаюсь. Всем спасибо за
+внимание и да прибудет с вами сила знаний.

@@ -1,0 +1,141 @@
+Автор: Ramapriya
+Дата: 2021-09-28T10:27:03.000Z
+Название: Прикручиваем Twig к Битрикс, или ещё одна попытка скрестить ежа с ужом
+Теги: PHP *, Symfony *, 1С-Битрикс
+Текст:
+Минутка самоиронии вместо дисклеймера:Являясь битрикс-разработчиком, я
+всё же вынужден признать, что данная система, к сожалению, имеет свои
+изъяны, перечислять которые я, конечно же, не буду, ибо негоже кусать
+руку, которая тебя кормитРано или поздно, каждый пэхапешник, пишущий
+на битриксе, начинает задумываться о том, как бы его улучшить, чтобы и
+всякие стандарты можно было соблюдать, и современные инструменты
+разработки использовать, да и костылей чтобы поменьше было, хотя без
+последних, конечно, совсем никак не получается.И вот в один прекрасный
+момент, попробовав Blade и Twig, я задумался о том, как бы какой-
+нибудь шаблонизатор к битре прикрутить.К счастью, в подобных мыслях я
+был не одинок, и рунет выдал несколько результатов по подключению
+шаблонизаторов, в том числе, и в официальной документации. Однако ни
+одно решение меня не устроило по тем или иным причинам - что-то уже не
+поддерживается, где-то кодировка не та, где-то код уже устарел.Также
+удручал тот факт, что шаблонизатор можно использовать только в
+компонентах, хотя это уже лучше, чем ничего.В итоге, перелопатив
+(почти) всю информацию по этому поводу, я решил создать своё решение
+(почему никто не удивлён?). Сначала была идея запилить модуль, но
+потом решил использовать composer-пакет.Это было небольшое вступление,
+теперь непосредственно к сути.Регистрация расширенияВ курсе
+"Разработчик Bitrix Framework" есть отдельный урок, описывающий
+подключение шаблонизатора. Как обычно, нужно использовать init.php -
+объявить глобальную переменную, зарегистрировать функцию обработчик.
+Но мы все знаем, к чему приводит привычка юзать init.php - в один
+прекрасный момент ты его открываешь и понимаешь, что так дальше жить
+нельзя. Собственно, поэтому и родилась идея вынести всю логику в
+отдельный класс (которая так же не является чем-то новым).Я решил
+попробовать использовать статический метод нового класса вместо
+глобальной функции-обработчика, но оказалось, что в данном случае
+перестают работать теги и функции внутри шаблона. Также вскрылась
+проблема с добавлением кастомных расширений - не будут же разработчики
+править файлы в папке vendor.В итоге взор был обращён в сторону
+событий, но т.к. опыта создания собственных событий у меня не было, то
+в силу собственной лени я решил не заморачиваться и взять компонент
+EventDispatcher от Symfony.Однако совсем уходить от битриксовых
+событий я не стал, т.к. именно с их помощью и происходит та работа,
+которую все рекомендуют выносить в init.php.Таким образом, в init.php
+всё обошлось двумя строчками кода:require_once dirname(__DIR__, 2) .
+'/vendor/autoload.php';
+StayFuneral\BitrixTwig\Template\Engine::register();Данная функция
+регистрирует обработчик события OnPageStart:$eventManager =
+EventManager::getInstance(); $eventManager->addEventHandler('main',
+'OnPageStart', [TwigEvents::class, 'OnPageStart']);А обработчик в свою
+очередь регистрирует ту самую глобальную переменную
+$arCustomTemplateEngines:namespace StayFuneral\BitrixTwig\Events;
+class TwigEvents {     public static function OnPageStart()     {
+global $arCustomTemplateEngines;
+$arCustomTemplateEngines['twig'] = [             'templateExt' =>
+['twig', 'html.twig'],             'function' => 'renderTwigTemplate'
+];     } }Вывод на экранВ самой функции создаётся экземпляр диспетчера
+событий, который передаётся в основной класс библиотеки, и происходит
+отрисовка:use StayFuneral\BitrixTwig\Template\Engine; use
+Symfony\Component\EventDispatcher\EventDispatcher;
+if(!function_exists('renderTwigTemplate')) {      function
+renderTwigTemplate($templateFile, $arResult, $arParams,
+$arLangMessages, $templateFolder, $parentTemplateFolder,
+CBitrixComponentTemplate $template)     {         $dispatcher = new
+EventDispatcher();          $engine = new Engine($dispatcher);
+$engine->addComponentEpilog($templateFolder, $template); //
+добавляется component_epilog.php          echo
+$engine->render($templateFile, $arResult, $arParams, $arLangMessages,
+$templateFolder, $parentTemplateFolder, $template);     }
+}ВнутренностиДавайте посмотрим, что происходит под капотом основного
+классаПри инициализации в конструктор передаётся инстанс диспетчера
+событий, объявляются несколько важных объектов, и добавляются
+обработчики события:             public function
+__construct(EventDispatcher $dispatcher)     {
+$this->setRequest();         $this->setLoader();
+$this->setTwig();          $this->setDispatcher($dispatcher);
+$this->dispatchEvents();     }                  protected function
+setRequest(): void     {         $this->request =
+Context::getCurrent()->getRequest();     }      protected function
+setLoader(): void     {         $this->loader = new
+FilesystemLoader(Application::getDocumentRoot());     }      protected
+function setTwig(): void     {         $this->twig = new
+Environment($this->loader, $this->getEnvOptions());     }Сам же метод
+render особой сложностью не блещет:public function
+render($templateFile, $arResult, $arParams, $arLangMessages,
+$templateFolder, $parentTemplateFolder, CBitrixComponentTemplate
+$template): string     {         $this->twig->addExtension(new
+DefaultExtension());          $renderOptions =
+$this->getRenderOptions($arResult, $arParams, $arLangMessages,
+$template, $templateFolder, $parentTemplateFolder);          return
+$this->twig->render($templateFile, $renderOptions);     }Для удобства
+я вынес параметры в отдельные методы, поэтому если кому будет
+интересно, посмотрите потом на гитхабе.Обработка событийОтдельно стоит
+остановиться на диспетчере событий. Логично, что регистрировать
+расширения нужно до отрисовки шаблона, поэтому и событие было названо
+соответственно - twig.before_renderРанее, как вы помните, мы добавили
+в базу таблицу twig_subscribers, в которую нужно добавлять подписчиков
+события, а также создали класс TwigRenderEvent, который это событие и
+генерирует:namespace StayFuneral\BitrixTwig\Events;  use
+Symfony\Contracts\EventDispatcher\Event; use Twig\Environment;  class
+TwigRenderEvent extends Event {     public const EVENT_NAME =
+'twig.before_render';      protected Environment $twig;      public
+function __construct(Environment &$twig)     {         $this->twig =
+$twig;     }      /**      * @return Environment      */     public
+function getTwig(): Environment     {         return $this->twig;
+} }Подписчик должен реализовывать интерфейс
+Symfony\Component\EventDispatcher\EventSubscriberInterface и содержать
+минимум 2 метода - статический getSubscribedEvents() и сам обработчик
+(в нашем случае onBeforeRenderTwig, принимающий на входе
+вышеупомянутый TwigRenderEvent) и добавляющий расширение:namespace
+StayFuneral\Event;  use StayFuneral\BitrixTwig\Events\TwigRenderEvent;
+use StayFuneral\Extensions\CustomExtension; use
+Symfony\Component\EventDispatcher\EventSubscriberInterface;  class
+TwigRenderSubscriber implements EventSubscriberInterface {      /**
+* @inheritDoc      */     public static function getSubscribedEvents()
+{         return [             TwigRenderEvent::EVENT_NAME =>
+'onBeforeRenderTwig'         ];     }      /**      * Добавление
+кастомных расширений в шаблон      *      * @param TwigRenderEvent
+$event      */     public function onBeforeRenderTwig(TwigRenderEvent
+$event)     {         $event->getTwig()->addExtension(new
+CustomExtension());     } }Добавление расширенийДля того, чтобы
+добавить расширение в таблицу, нужно вызвать метод addSubscriber и
+передать в него наш класс:use
+StayFuneral\BitrixTwig\Entites\TwigSubscribersTable; use
+StayFuneral\Event\TwigRenderSubscriber;
+TwigSubscribersTable::addSubscriber(TwigRenderSubscriber::class);По
+умолчанию в библиотеке доступны пока только 2 расширения:getMessage -
+то же самое, что Bitrix\Main\Localization\Loc::getMessage($phrase,
+$replace)showComponent - вывод компонента, параметры и очерёдность
+аналогична основному методуВ итогеА в итоге всё, что я только что
+описал, можно посмотреть на гитхабе или скачать в свой проект с
+помощью композера:composer require stayfuneral/bitrix-twig-engineВ
+планах - написание модуля (для тех, кто хочет делать всё нажатием
+одной кнопки в админке), возможно ещё какие-то улучшения.Ну и
+напоследок, как принято в научных кругах, список литературы, которая
+так или иначе повлияла на создание данной библиотеки:Bitrix BladeИгра
+шаблонов. Как примирить Битрикс со сторонним шаблонизатором
+выводаИспользование шаблонизатора Twig в 1С-БитриксДружим Битрикс и
+TwigВсем спасибо за внимание.PS: Специально для тех, кто хочет
+написать что-то про недостатки битрикса - пишите их в других местах,
+потому что, во-первых, они и так всем известны, а во-вторых, ваше
+мнение никому не интересно. Это же относится и ко всем любителям
+выискивать недостатки везде и во всём.

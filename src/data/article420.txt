@@ -1,0 +1,145 @@
+Автор: vladislavK777
+Дата: 2021-09-30T09:46:00.000Z
+Название: Что такое библиотека Pebble Templates и зачем она нужна?
+Теги: Блог компании Ростелеком, Java *, SQL *, Kotlin *
+Текст:
+ПредысторияЭта статья будет полезной, если вам часто приходится искать
+более новые и изощренные решения в процессе реализации фичи. Мне,
+например, нужно было применить динамические фильтры к выборке из БД.
+При этом их нужно было использовать не в одном месте, а, например, в
+блоке WITH. Реализация через JPA Specification выглядела довольно
+сложно, а возможно, оказалась бы вообще невыполнимой. Даже при
+помощи JPA Repository потребовалось бы много лишних операций,
+маппингов и слияний. «Без паники», — сказал мой тимлид, полез в
+браузер, словно волшебник в карман за эликсиром, и достал
+оттуда ссылку на неприметную библиотеку Pebble Templates, которая
+оказалась довольно удобной для реализации необходимой фичи. Изучив
+реализацию, я понял, что она представляет собой шаблоны с переменными,
+куда в дальнейшем подставляются нужные данные. Поначалу может
+показаться, что библиотека подходит исключительно для фронта, но в
+итоге оказалось, что наоборот.«А почему бы и нет?», — подумал я и
+взялся за решение. Особенно заманчивым оказалось то, что отпала
+необходимость писать свою реализацию замены переменных на значения,
+обработку данных и так далее. Это позволило избежать ошибок, десятка
+строк лишнего кода и сэкономило массу времени. Зачем изобретать
+колесо, если жизнь сама дает в руки велосипед? И да, данная библиотека
+работает под Spring Boot, что было как нельзя кстати.Посмотрим более
+подробноПодключить библиотеку в проект очень
+просто — через Maven или Gradle. С сайта берем актуальную версию, на
+данный момент это версия 3.1.5Maven<dependency>      
+<groupId>io.pebbletemplates</groupId>       <artifactId>pebble-spring-
+boot-starter</artifactId>       <version>3.1.5</version>
+</dependency>Gradleimplementation("io.pebbletemplates:pebble-spring-
+boot-starter:3.1.5")Поддержка AutoConfiguration - это прекрасно: можно
+сконфигурировать в application.yml или application.properties под свои
+нужды. Для настройки доступно десяток параметров, про них можно
+почитать подробнее на официальном сайте, в разделе Spring Boot
+IntegrationНо есть два параметра, о которых стоит упомянуть
+сейчас:pebble.prefix: где хранятся шаблоны. По
+умолчанию /templates/pebble.suffix: формат файлов шаблона. По
+умолчание он .pebbleСами же переменные обернуты в двойные фигурные
+скобки и выглядят так - {{ name }}Как это всё готовить?Очень просто.
+Для начала создаем Spring Boot проект, подключаем библиотеку, по
+примеру выше.Вторым шагом будет добавление параметров
+в application.yml(в моем случае). Я буду хранить файл .sql в
+каталоге sqlpebble:   prefix: /sql/   suffix: .sqlВ
+каталоге resources создаем необходимый каталог, в моем случае
+это sqlСтруктура resourcesСтруктура resourcesПока все идет прекрасно.
+Что же дальше? А дальше создать необходимо сам шаблон.Создаем в
+каталоге нужный файл формата, который вы указали в параметре suffix, в
+моем случае это .sqlФайл шаблона в каталогеФайл шаблона в
+каталогеselect f.* from foo f where {{ filter }}Так как это всего-
+навсего пример для демонстрации и понимания, то не будем его усложнять
+лишней логикой. В реалиях шаблоны могут быть намного сложнее.Пример из
+реальной реализацииwith sla_ticket as (              select tt.id as
+ticketId        from  tickets tt        {{ actual_task_filter }}
+where tt.ticket_type = 1 and tt.curator_uuid notnull {{ filter }})
+select              u.name as author_name,        u.id as author_id,
+count(tt1.id) as amount_of_tt,
+round((count(tt1.id)*100)::decimal /((select count (*) from
+sla_ticket))::decimal,2) as percent  from              tickets tt1
+join sla_ticket st on tt1.id = st.ticketId                  join users
+u on tt1.author_uuid = u.id                  where tt1.start_time < {{
+filter_date }}  group by u.name, u.id  order by u.name {{ limit_offset
+}}Как видим, тут необходимо применять несколько фильтров к разным
+кускам запроса.Шаблон готов, перейдем к реализации. Я
+использую Kotlin, но вы можете писать на любом удобном вам языке.Для
+начала необходимо составить Map с переменными шаблона и их значениями,
+которые в дальнейшем будут подставлены в итоговый запрос. Реализация
+очень проста: ключом будет имя переменной, значением - ее значение. В
+ключ filter, положили данные f.count = 10.@Component open class
+FilterContextForSqlBuilder {     open fun filterContextBuild():
+Map<String, Any> {         val filterContext = mutableMapOf<String,
+Any>()         filterContext["filter"] = "f.count = 10"
+return filterContext     } }По желанию можно убрать весь текстовый
+контекст в константы, чтобы код был красивее и читабельнее. Я привык к
+чистому коду.const val SQL_TEMPLATE_FILE_NAME = "sql_example" const
+val SQL_CONTEXT_FILTER_NAME = "filter" const val SQL_CONDITION =
+"f.count = 10" const val SQL_TEMPLATE_STRING_FORMAT = "select
+f.id\nfrom foo f\nwhere {{ filter }}"Теперь наш класс выглядит
+так@Component open class FilterContextForSqlBuilder {     open fun
+filterContextBuild(): Map<String, Any> {         val filterContext =
+mutableMapOf<String, Any>()
+filterContext[SQL_CONTEXT_FILTER_NAME] = SQL_CONDITION         return
+filterContext     } }Далее реализуем сервис, где будет происходить вся
+"магия".Я реализовал в примере два метода. В первом шаблон берется
+из resources. Во втором шаблон берется в виде строки, это полезно,
+если, например, шаблоны хранятся в БД, это могут быть шаблоны
+различных нотификаций.В первую очередь необходимо заинжектить главный
+класс библиотеки - PebbleEngine. При помощи данного класса получим
+шаблон типа PebbleTemplate через вызов метода
+getTemplate: pebbleEngine.getTemplate("имя_шаблона").В качестве
+параметра передаем имя шаблона без расширения, в моем случае
+это sql_example.Далее получаем Map с параметрами, вызвав метод
+компонента, который реализовали ранее
+- filterContextForSqlBuilder.filterContextBuild(). После создаем
+объект типа Writer, с которым в дальнейшем и нужно будет
+работать.Последний шаг — запись в write готового
+шаблона sqlTemplate.evaluate(writer, filterContext).Код
+сервиса@Service open class PebbleTemplateService(     private var
+pebbleEngine: PebbleEngine,     private val
+filterContextForSqlBuilder: FilterContextForSqlBuilder ) {     open
+fun prepareSqlTemplate(): String {         val sqlTemplate =
+pebbleEngine.getTemplate(SQL_TEMPLATE_FILE_NAME)         val
+filterContext = filterContextForSqlBuilder.filterContextBuild()
+val writer: Writer = StringWriter()
+sqlTemplate.evaluate(writer, filterContext)         return
+writer.toString() // or JDBC call     }  open fun
+prepareSqlTemplateFromString(): String {     pebbleEngine =
+Builder().loader(StringLoader()).build()     val sqlTemplate =
+pebbleEngine.getTemplate(SQL_TEMPLATE_STRING_FORMAT)     val
+filterContext = filterContextForSqlBuilder.filterContextBuild()
+val writer: Writer = StringWriter()     sqlTemplate.evaluate(writer,
+filterContext)     return writer.toString() // or JDBC call         }
+} Далее уже заполненный значениями шаблон можно, например,
+использовать как запрос к БД или отправить в качестве тела письма
+по email.Для загрузки шаблона не из resources, нужно
+реализовать pebbleEngine кастомным образом через вcтроенный
+билдер: PebbleEngine.Builder().loader(StringLoader()).build()Остальные
+действия остаются точно такими же. Более подробно можно так же
+почитать на официальном сайте.Важно помнить, что не стоит вызывать
+методы с готовыми фильтрами с фронта, иначе можно получить много
+неприятных проблем, например, бесконтрольное заполнение шаблона. Лучше
+всего воспользоваться маппингом на стороне бэка.Например, модель
+фильтра с фронта:{     "curatorId": 123456 }На выходе маппинга
+получим curatorId = 123456, это выражение уже можно добавлять в
+мапу filterContext["curator"] = "curatorId = 123456".Перейдем к
+тестамРеализация простого теста на вызов
+сервиса:@EnableAutoConfiguration @SpringBootTest(classes =
+[PebbleTemplateService::class, FilterContextForSqlBuilder::class])
+class PebbleTemplateServiceTest {     @Autowired     private lateinit
+var pebbleTemplateService: PebbleTemplateService @Test fun
+testSqlTemplate() {     isTrue("select f.*\nfrom foo f\nwhere f.count
+= 10" == pebbleTemplateService.prepareSqlTemplate(), "") } @Test fun
+testSqlTemplateFromString() {     isTrue("select f.id\nfrom foo
+f\nwhere f.count = 10" ==
+pebbleTemplateService.prepareSqlTemplateFromString(), "")         }
+}Вызов первого метода сервиса вернул готовый sql запрос. Как видно из
+результата, вместо filter подставилось ожидаемое условие:select f.*
+from foo f where f.count = 10При вызове второго метода, где шаблон
+получался из строковой константы "select f.id\nfrom foo f\nwhere {{
+filter }}" также можно видеть, что в результате мы получили ожидаемый
+запрос:select f.id from foo f where f.count = 10Как итог: я сэкономил
+нервы, время и строки кода. Эта библиотека может быть действительно
+полезной, особенно если ее правильно приготовить. Пример проекта
+на github

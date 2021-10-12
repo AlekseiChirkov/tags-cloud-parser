@@ -1,0 +1,121 @@
+Автор: motoroller95
+Дата: 2021-09-26T18:12:37.000Z
+Название: Сколько мы переплачиваем за сервера используя Ruby on Rails
+Теги: Ruby *, Ruby on Rails *, Параллельное программирование *
+Текст:
+В прошлой статье я разбирался с тем как работает GIL, а сегодня меня
+захватила идея узнать насколько дорого обходится этот GIL для кода,
+который исполняется у нас на бэкенде. Для этого я решил пропатчить MRI
+и добавить пару переменных, в которых буду засекать сколько времени
+поток реально выполнял код, а сколько ничего не делал и ждал пока ему
+удастся завладеть локом. Для теста была использована кастомная сборка
+Ruby 2.7.4 (флаги компиляции не изменены, только добавлен новый код),
+Rails 6.1.4.1 с puma 5.5 в качестве апп сервера с 1 инстансом и 5ю
+тредами (по умолчанию). Все это дело запускалось на моем ноутбуке HP с
+4 ядрами и 8GB RAM, а также на google cloud в регионе us-central2 с
+инстансом e2-medium (2 vCPU, 4 GB memory). Результаты между локальной
+машиной и облаком в процентном соотношении примерно равны. Для
+измерения только рабочих воркеров пумы я еще и ее запатчил, чтобы
+достучаться до ее тред пула. В качестве приложения я создал 2
+эндпоинта: один для статистики, а другой рабочийclass
+TestingController < ApplicationController   def stats     threads =
+$puma_thread_poll.workers.map do       {          running:
+_1.running_time,         wait_gvl: _1.wait_gvl_time,
+gvl_vs_running: (_1.wait_gvl_time / _1.running_time * 100).round(2),
+}.tap(&:clear_timings)     end      avg_gvl_vs_running = threads.sum {
+_1[:gvl_vs_running] } / threads.size      render json: {
+avg_gvl_vs_running: avg_gvl_vs_running, threads: threads }   end
+def do_work     # имитирую бурную деятельность с походами в базу и
+сериализацией     # жсона     50.times { User.last }     10.times {
+make_user }      render json: User.last(25).map(&:as_json)   end
+def make_user     User.create!(email: "#{SecureRandom.hex}@mail.ru",
+username: SecureRandom.hex, country_code: "RU", logins_count:
+rand(10..150))   end end Методика измерения внутри руби такая: любой
+поток, перед тем как сможет выполняться, должен взять GIL, а после
+того как исчерпает свое время, он должен его вернуть. Таким образом я
+буду замерять 2 промежутка: непосредственно время захвата лока, а так
+же время между захватом и освобождением. Код не особо интересен, но
+вдруг кому-то надо...Да, да, код картинками, можете начинать хейтить,
+но так прощеКогда все было приготовлено я 10 раз дернул рабочий
+эндпоинт руками, чтобы пума подняла все свои воркеры. Время ответа
+вполне себе приемлимое (выбрал средний результат)Completed 200 OK in
+91ms (Views: 1.3ms | ActiveRecord: 18.6ms | Allocations: 36166) Затем
+пошел глянул стату{    "avg_gvl_vs_running":"16.09%",    "threads":[
+{          "running":423187434.0,          "wait_gvl":14709976.0,
+"gvl_vs_running":"3.48%"       },       {
+"running":494142788.0,          "wait_gvl":1916580.0,
+"gvl_vs_running":"0.39%"       },       {
+"running":1263953814.0,          "wait_gvl":35301242.0,
+"gvl_vs_running":"2.79%"       },       {
+"running":19586474.0,          "wait_gvl":10783870.0,
+"gvl_vs_running":"55.06%"       },       {
+"running":17937350.0,          "wait_gvl":3359780.0,
+"gvl_vs_running":"18.73%"       }    ] }Ух ты! Всего лишь 16 процентов
+времени, что работал воркер, было потрачено впустую! Как вам такое,
+хейтеры руби? Кажется, гил не такая уж и большая проблема. Для
+верности нужно провести небольшое нагрузочное тестирование. ab -n 500
+-c 4 http://192.168.100.9:3000/testing/do_work ... Concurrency Level:
+4 Time taken for tests:   31.135 seconds Complete requests:      500
+Failed requests:        0    (Connect: 0, Receive: 0, Length: 0,
+Exceptions: 0) Total transferred:      1645986 bytes HTML transferred:
+1142366 bytes Requests per second:    16.06 [#/sec] (mean) Time per
+request:       249.082 [ms] (mean) Time per request:       62.270 [ms]
+(mean, across all concurrent requests) Transfer rate:          51.63
+[Kbytes/sec] received  Connection Times (ms)               min
+mean[+/-sd] median   max Connect:        4   10   5.6      9      45
+Processing:   106  238  87.7    209     633 Waiting:      105  236
+87.9    207     632 Total:        115  248  88.4    219     644
+Percentage of the requests served within a certain time (ms)   50%
+219   66%    233   75%    254   80%    290   90%    362   95%    491
+98%    519   99%    546  100%    644 (longest request)Ага, тут уже
+среднее время ответа более 200мс, что довольно таки много, интересно
+что же там в статистике... {    "avg_gvl_vs_running":"94.936%",
+"threads":[       {          "running":810864938.0,
+"wait_gvl":714257002.0,          "gvl_vs_running":"88.09%"       },
+{          "running":1022361816.0,          "wait_gvl":881835262.0,
+"gvl_vs_running":"86.25%"       },       {
+"running":687098840.0,          "wait_gvl":728491848.0,
+"gvl_vs_running":"106.02%"       },       {
+"running":706853620.0,          "wait_gvl":696489552.0,
+"gvl_vs_running":"98.53%"       },       {
+"running":601701804.0,          "wait_gvl":576366940.0,
+"gvl_vs_running":"95.79%"       }    ] }Вот это поворот! 94%!!! А это
+еще не максимум, там и болше 100 было. Таким образом при нагрузке чуть
+более чем 18 рпс из-за гила ответ от сервера увеличивается чуть более
+чем в 2 раза!!! и если убрать гил, то для обработки того же количества
+клиентов нужно будет в 2 раза меньше воркеров. Что ж, выводы делать не
+буду, просто оставлю это здесь. PS: Я не гуру, возможно моя методика
+подсчета не верна, но мне она кажется логичной. С исправлениями прошу
+в комментарии. UPD: Выражаю благодарность Aquahawk за то, что дал мне
+понять, что 18 рпс это супермало, в виду определенных причин для свего
+домашнего компа и мелкого гугл клауда я думал что 18 рпс это норм. А
+ошибка была банальна: запускал сервер в девелопмент режиме, он пишет
+кучу логов в консоль, после запуска в продакшн режиме я получил
+результаты получшеab -n 500 -c 4
+http://192.168.100.9:3000/testing/do_work ... Concurrency Level:
+4 Time taken for tests:   7.435 seconds Complete requests:      500
+Failed requests:        0    (Connect: 0, Receive: 0, Length: 0,
+Exceptions: 0) Total transferred:      904000 bytes HTML transferred:
+817500 bytes Requests per second:    67.25 [#/sec] (mean) Time per
+request:       59.480 [ms] (mean) Time per request:       14.870 [ms]
+(mean, across all concurrent requests) Transfer rate:          118.74
+[Kbytes/sec] received  Connection Times (ms)               min
+mean[+/-sd] median   max Connect:        4   22 101.5     11    1305
+Processing:    15   37  15.4     35     194 Waiting:       15   35
+14.7     33     191 Total:         21   59 102.7     47    1329
+Percentage of the requests served within a certain time (ms)   50%
+47   66%     50   75%     53   80%     55   90%     61   95%     69
+98%    178   99%    247  100%   1329 (longest request)С локалхоста
+удалось выжать 327 рпс. Так же стоит отметить что в продакшн моде
+расход на гил упал до 60% (но иногда там проскакивает больше ста){
+"avg_gvl_vs_running":57.06,    "threads":[       {
+"running":421967344.0,          "wait_gvl":210011148.0,
+"gvl_vs_running":49.77       },       {
+"running":357689510.0,          "wait_gvl":184854136.0,
+"gvl_vs_running":51.68       },       {
+"running":191738150.0,          "wait_gvl":148564240.0,
+"gvl_vs_running":77.48       },       {
+"running":348492592.0,          "wait_gvl":186578158.0,
+"gvl_vs_running":53.54       },       {
+"running":357769938.0,          "wait_gvl":188994538.0,
+"gvl_vs_running":52.83       }    ] }

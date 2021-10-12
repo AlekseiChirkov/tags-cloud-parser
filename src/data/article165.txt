@@ -1,0 +1,223 @@
+Автор: SubarYan
+Дата: 2021-10-05T18:13:30.000Z
+Название: MastermindCMS2 – Теги
+Теги: CMS *, Разработка веб-сайтов *, Развитие стартапа, Подготовка
+технической документации *
+Текст:
+Эта статья продолжение статьи MastremindCMS2 - Как начать?. В ней я
+рассказывал как установить и настроить community-версию "безголовой"
+MastermindCMS2.В этой статье речь пойдет о специальных тегах, которые
+вы можете использовать для сборки динамических шаблонов в
+MastermindCMS2. За свою карьеру программиста я видел множество разных
+технологий и фреймворков от гигантов индустрии, таких как Oracle,
+Microsoft, IBM и т. п. Но в каждом из них было какое-то неудобство. А
+конкретнее у них у всех было одно общее, это необходимость
+реализовывать серверную логику чтобы можно было использовать ее в
+шаблонах. И это мне сильно не нравилось, приходилось делать одну и ту
+же работу из проекта в проект.Один из таких подходов разнесения логики
+был паттерн программирования MVVM(Model-View-ViewModel). Его активно
+продвигали во фреймворках для C#. Структурно с точки зрения разнесения
+логики, я считаю этот паттерн самым удобным.Когда я поставил задачу
+себе разработать удобный фреймворк для работы, то у меня в голове был
+только один концепт реализации. Который содержал в основе именно MVVM,
+но я не считал, что это то, что я хочу получить в итоге. Так как
+проблема написания серверной логики оставалась открытой. И я поставил
+себе задачу спроектировать фреймворк так чтобы не нужно было каждый
+раз писать бэк для очередного проекта. Ведь грубо говоря, мы с вами
+коллеги, решаем одни и те же задачи для разных проектов. Авторизация,
+управление каталогом продуктов, отправка писем по электронной почте,
+чаты и прочая энтерпрайз муть. Соответственно опираясь на эти задачи,
+я начал думать, что нужно сделать чтобы напрямую оперировать с этим на
+бэке. В результате я решил писать логику парсинга шаблонов на беке, а
+фронтенд часть делать гибкой и независимой.Первым шагом я продумал
+маршрутизацию для обработки HTTP-запросов. Основной задачей было
+сделать обработку GET-запроса и при этом достать шаблон, где уже будет
+логика, состоящая из кастомных тегов, которые динамически соберут
+валидный HTML и отдадут его назад.Основой для проектирования тегов я
+выбрал самые частые задачи, которые приходиться решать программисту
+разрабатывая пользовательский интерфейс. К частым задачам в
+проектировании пользовательского интерфейса я отношу следующие
+задачи:Разбиение визуальных блоков на компоненты, и подключение их на
+страницыПолучение данных со сторонних микро-сервисов и отображение их
+на страницеИтеративное отображение данныхОтображения одиночных
+объектов из базы данныхЛогические операции и отрисовка данных на
+основе выполнения условия отображенияОтображение данных в виде
+дереваРасширение возможностей отображения выпадающего списка на основе
+HTML-элемента selectОтображение текстовых данных напрямую из базы
+данныхИ в итоге я получил 8 специальных тегов которые решают
+вышеописанные задачи. А теперь по порядку я расскажу на примере этих
+задач как можно проектировать страницы с использованием тегов
+фреймворка MastermindCMS2.Подключение фрагментаРазработка фронтенд-
+приложения на MastermindCMS2 не отличается ничем от принципов
+разработки на других фреймворках. Фронтенд часть полностью автономна,
+и вам не нужно собирать приложение для того чтобы бекенд-логика
+заработала у вас в приложении. Вот несколько шагов демонстрирующих
+принципы разработки на нашей headless-cms.<msm:fragment>- тег
+предназначен для использования внешних фрагментов HTML-кода для
+подключения их на страницы.Для начала создадим новый файл.Создание
+нового HTML-файлаСкопируем все содержимое страницы в новый
+файлКопирование HTMLДалее мы удалим некоторые части HTML, для того
+чтобы их перенести отдельно во внешние фрагменты.Убираем навигационное
+меню и основную часть страницыОбратимся к документации на сайте
+MastermindCMS2. Для примера мы используем <msm:fragment>Описание MSM
+Fragment Tag<msm:fragment id="navbar"
+path="admin/components/navbar.html"/>  - этот код вам нужно добавить
+на страницуСоздаем новый файл для фрагмента.Перенос HTML для
+навигационной панели в отдельный файлПодключаем созданный нами
+фрагмент на страницу.Подключение фрагмента HTML на страницуЗапросы на
+внешний REST API <msm:rest>- тег предназначен для выполнения запроса
+на внешний ресурс, который доступен по REST API и возвращает данные в
+виде JSON.Пример запроса который получает ответ в виде объектаПример
+запроса который получает ответ в виде массиваИсходный код:    <div
+class="container">         <h1>Star Wars Ships</h1>         <ul
+id="starWarsRestApiWrapper1" class="container">             <msm:rest
+id="starWarsRestApi"
+endpoint="https://swapi.dev/api/starships/9/?format=json"
+request="{}" method="GET" item-name="ship">
+<msm:template><li>${ship|name}</li></msm:template>
+</msm:rest>         </ul>         <h1>Locations</h1>         <ul
+id="locationsApiWrapper2" class="container">             <msm:rest
+id="locationsApi"
+endpoint="https://ghibliapi.herokuapp.com/locations"
+request="{}" method="GET" item-name="loc">
+<msm:template><li>${loc|value.name}</li></msm:template>
+</msm:rest>         </ul>     </div>Итерирование - цикл
+foreachmsm:foreach - тег позволяет сделать итерацию по элементам и
+отобразить их как повторяющийся HTML-элемент, который определен во
+вложенном теге msm:template.Пример использования тега ForeachВид
+объектов в базе данныхИсходный код:<form>     <div class="form-group">
+<label for="inputFirstName">First Name</label>         <input
+type="text" class="form-control" name="firstName" id="inputFirstName"
+autocomplete="off" placeholder="First Name">     </div>     <div
+class="form-group">         <label for="inputLastName">Last
+Name</label>         <input type="text" class="form-control"
+name="lastName" id="inputLastName" autocomplete="off"
+placeholder="Last Name">     </div>     <div class="form-group form-
+check">         <input type="checkbox" class="form-check-input"
+name="status" value="false" id="checkStatus">         <label
+class="form-check-label" for="checkStatus">Check me out</label>
+</div>     <button type="button" class="btn btn-primary"
+onclick="app.addDocumentAndRender('foo','custom-
+users',this)">Submit</button> </form>  <div id="userListWrapper"
+class="row gx-lg-5">     <msm:foreach id="userList"
+database="foo"                  collection="custom-users"
+filter="{}"                  mode="DATABASE"                  item-
+name="user">         <msm:empty>             <p>No users</p>
+</msm:empty>         <msm:template>             <div class="col-lg-6
+col-xxl-4 mb-5">                 <div class="card bg-light border-0
+h-100">                     <div class="card-body text-center p-4
+p-lg-5 pt-0 pt-lg-0">                         <div class="feature bg-
+primary bg-gradient text-white rounded-3 mb-4 mt-n4"><i class="bi bi-
+collection"></i></div>                         <h2 class="fs-4 fw-
+bold">${user|firstName} ${user|lastName}</h2>
+<p class="mb-0">${user|_id}</p>                     </div>
+</div>             </div>         </msm:template>     </msm:foreach>
+</div>Отображение объектов - элемент blockmsm:block - тег позволяет
+выводить объект на основе определенного HTML-элемента внутри
+вложенного тега msm:template.В этом примере видно как входящий
+параметр от внешнего тега может быть использован на внутренних
+тегах:<div id="userBlockWrapper">     <msm:block id="userBlock"
+value="{  fullName: '${user|firstName} ${user|lastName}', movie :
+'Last Hope'}"                item-name="usr">
+<msm:template><h6 style="text-align:center">${usr|fullName} -
+${usr|movie}</h6></msm:template>     </msm:block> </div>Исходный
+код:<div id="userListWrapper" class="row gx-lg-5">     <msm:foreach
+id="userList"                  database="foo"
+collection="custom-users"                  filter="{}"
+mode="DATABASE"                  item-name="user">         <msm:empty>
+<p>No users</p>         </msm:empty>         <msm:template>
+<div class="col-lg-6 col-xxl-4 mb-5">                 <div class="card
+bg-light border-0 h-100">                     <div class="card-body
+text-center p-4 p-lg-5 pt-0 pt-lg-0">                         <div
+class="feature bg-primary bg-gradient text-white rounded-3 mb-4
+mt-n4"><i class="bi bi-collection"></i></div>
+<h2 class="fs-4 fw-bold">${user|firstName} ${user|lastName}</h2>
+<p class="mb-0">${user|_id}</p>                     </div>
+<div id="userBlockWrapper">                         <msm:block
+id="userBlock"                                    value="{  fullName:
+'${user|firstName} ${user|lastName}', movie : 'Last Hope'}"
+item-name="usr">                             <msm:template><h6
+style="text-align:center">${usr|fullName} -
+${usr|movie}</h6></msm:template>                         </msm:block>
+</div>                 </div>             </div>
+</msm:template>     </msm:foreach> </div>Логический оператор
+"если"msm:if - тег позволяет выводить объект на основе условия,
+которое будет проверяться в атрибуте test.Для примера изменим свойство
+в объектах следующим образом:Пример данных для анализа условияПример
+использования тега msm:ifИсходный код:<div id="userListWrapper"
+class="row gx-lg-5">     <msm:foreach id="userList"
+database="foo"                  collection="custom-users"
+filter="{}"                  mode="DATABASE"                  item-
+name="user">         <msm:empty>             <p>No users</p>
+</msm:empty>         <msm:template>             <div class="col-lg-6
+col-xxl-4 mb-5">                 <div class="card bg-light border-0
+h-100">                     <div class="card-body text-center p-4
+p-lg-5 pt-0 pt-lg-0">                         <div class="feature bg-
+primary bg-gradient text-white rounded-3 mb-4 mt-n4"><i class="bi bi-
+collection"></i></div>                         <h2 class="fs-4 fw-
+bold">${user|firstName} ${user|lastName}</h2>
+<p class="mb-0">${user|_id}</p>                     </div>
+<div id="showUserBlockWrapper">                         <msm:if
+id="showUserBlock" test="${user|status}">
+<div id="userBlockWrapper">                                 <msm:block
+id="userBlock"                                            value="{
+fullName: '${user|firstName} ${user|lastName}', movie : 'Last Hope'}"
+item-name="usr">                                     <msm:template><h6
+style="text-align:center">${usr|fullName} -
+${usr|movie}</h6></msm:template>
+</msm:block>                             </div>
+</msm:if>                     </div>                 </div>
+</div>         </msm:template>     </msm:foreach> </div>Отображение
+элемента в виде дереваmsm:tree - тег позволяет выполнить итерацию по
+элементам и отобразить их в виде древовидной HTML-структуры. Каждый
+вложенный элемент, имеющий подэлементы, должен содержать свойство
+children для отображения в виде элемента вложенного поддерева. Элемент
+для элемента итерации определяется во вложенном теге
+msm:template.Исходный код:<div class="dd" id="product-groups-tree">
+<msm:tree id="productGroups"               database="msm2-application"
+collection="categories"               filter="{}"
+mode="DATABASE" item-name="cat">         <msm:template>
+<ol class="dd-list">                 <li class="dd-item dd3-item"
+data-id="${cat|id}" data-name="${cat|name}">                     <div
+class="dd-handle dd3-handle"></div>                     <div
+class="dd3-content">                         <a href="#product-
+group/view/${cat|id}" class="truncate">${cat|name}</a>
+</div>                     <a class="dd3-right-handle modal-trigger"
+href="#remove-pgroup-dialog" data-item-id="${cat|id}"></a>
+</li>             </ol>         </msm:template>     </msm:tree>
+</div>Выпадающий списокmsm:select - тег выполняет рендеринг для на
+основе определения HTML-шаблона во вложенном теге msm:template в
+качестве дочернего элемента.Исходный код:<div id="selectTagWrapper"
+class="root">     <msm:select id="selectTag"
+database="foo"                 collection="custom-users"
+filter="{}"                 selected="Darth"
+mode="DATABASE" item-name="option" class="select-file-types">
+<msm:template><option class="item" value="${option|firstName}"
+${option|selected}>${option|firstName}
+${option|lastName}</option></msm:template>     </msm:select>
+</div>Получение текстовых значений из базы данных msm:text - тег
+позволяет отображать свойства объекта в виде текста, который
+определяется согласно шаблону объявленному внутри.<div
+id="textTagWrapper">     <msm:text id="textTag"
+bean="dummyBean"               function="getDummyUser"
+scope="PROTOTYPE"               mode="BEAN" item-name="emp">
+${emp|name} - ${emp|age}     </msm:text> </div>ЗаключениеВсе 8
+специальных тегов были рассмотрены в статье с примерами. Я пострарался
+максимально подробно рассказать как все-таки это работает. В следующей
+статье я расскажу как использовать эти теги в связке с JavaScript-
+частью от данной технологии. Дата-байдинг, роутинг уже реализованы на
+уровне фреймворка, поэтому вам не придется писать тонны JS чтобы
+сделать интеграции с базой данных, и вам не нужно писать бэкенд часть
+для REST API. Основные все инструменты уже реализованы в
+фреймворке.Как обычно напишу планы на развитие данной технолгии. Я
+думаю основной задачей для меня сейчас, стоит задача это создание
+маркетплейса для всех программистов, которые смогут там продавать свой
+модули и шаблоны написанные на этом фреймворке. Я делюсь этой
+информацией тут, потому-что я хочу чтобы рутинная разработка веб-
+приложений превратилась в искусство шаблонизации. Где вы можете
+собрать в короткие сроки сложные платформы с поиском и интеграциями
+как простой конструктор LEGO.Я делюсь с вами прежде своим
+инструментом, который мне сейчас позволяет работать быстрее и
+эффективнее. Но без вас я не смогу сделать это. И это хоть на грамм,
+на капельку сделает нашу жизнь программиста проще.Спасибо что дочитали
+мою статью до конца, продолжение следует...

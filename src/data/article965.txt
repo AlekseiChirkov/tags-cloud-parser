@@ -1,0 +1,170 @@
+Автор: MaxRokatansky
+Дата: 2021-09-20T13:11:31.000Z
+Название: Hibernate Proxy — для чего используются и как получить исходный объект
+Теги: Блог компании OTUS, Программирование *, Java *
+Текст:
+Hibernate использует прокси-объекты для реализации ленивой загрузки
+(lazy load) связей "к-одному". Их также можно использовать для
+улучшения производительности некоторых операций записи. Упоминания
+прокси-объектов вы могли встречать при отладке или в логах. Имя класса
+прокси состоит из имени класса сущности и суффикса, который зависит от
+версии Hibernate и библиотеки для работы с байт-кодом, которую
+использует Hibernate.11:17:03,697  INFO TestSample:80 -
+com.thorben.janssen.sample.model.ChessPlayer$HibernateProxy$W2cPgEkQВ
+этой статье рассмотрим, как определить, является ли объект прокси,
+поговорим о распространенной проблеме при работе с ними, и о том, как
+инициализировать его поля и получить оригинальный объект (unproxy).Как
+Hibernate генерирует проксиHibernate генерирует класс для прокси как
+подкласс вашей сущности. Начиная с Hibernate 5.3 для его генерации
+используется Byte Buddy. В более старых версиях использовался
+Javassist и CGLIB.Сгенерированный прокси перехватывает все вызовы
+методов и проверяет, был ли инициализирован проксируемый объект. При
+необходимости перед выполнением перехваченного метода выполняется
+запрос к базе данных для инициализации сущности. Если это происходит
+без активной Hibernate Session, то бросается исключение
+LazyInitializationException.Как получить прокси-объектПрежде чем я
+покажу вам, как инициализировать и депроксировать прокси-объект
+давайте посмотрим на два наиболее распространенных случая, когда вы
+встретите прокси.Проксированные lazy-ассоциации "к-одному"По умолчанию
+значение FetchType всех ассоциаций "к-одному" равно EAGER. Это
+означает, что Hibernate должен получить связанный объект сразу при
+загрузке сущности. Вы можете изменить это поведение, установив в
+аннотации @OneToOne или @ManyToOne значение FetchType.LAZY для
+атрибута fetch.@Entity public class ChessGame {       @ManyToOne(fetch
+= FetchType.LAZY)     private ChessPlayer playerWhite;
+@ManyToOne(fetch = FetchType.LAZY)     private ChessPlayer
+playerBlack;           ... }Используя ленивую загрузку для ассоциаций
+"к-одному" вы создаете проблему вашему persistence-провайдеру. Теперь
+он должен придумать, как узнать, что ваш код хочет использовать
+ассоциацию и получить связанный объект из базы данных. Для ассоциаций
+"ко-многим" Hibernate решает эту проблему, инициализируя атрибут
+собственными реализациями коллекций. Но это не работает для ассоциаций
+"к-одному". Hibernate не требует от ваших сущностей реализации каких-
+либо интерфейсов, которые потом он мог бы имплементировать. Тогда
+остается два варианта:Добавить некоторый код в get-
+метод илиСгенерировать прокси-класс, являющийся подклассом вашей
+сущности.Первый вариант требует изменения байткода. Это тема для
+другой статьи, подробнее об этом я расскажу в онлайн-тренинге
+Hibernate Performance Tuning. В этой статье мы сконцентрируемся на
+генерации прокси.Получение прокси для инициализации ассоциацииМожно
+получить прокси для сущности, вызвав метод getReference у
+EntityManager или Hibernate Session. В результате возвращается объект,
+который можно использовать для ассоциации "к-одному" при создании или
+изменении сущности.// get a proxy ChessTournament chessTournament =
+em.getReference(ChessTournament.class, tournamentId);   ChessGame
+chessGame = new ChessGame(); chessGame.setRound(2);
+chessGame.setTournament(chessTournament); em.persist(chessGame);Как вы
+можете видеть из нижеприведенного лога Hibernate, вызов метода
+getReference не инициирует запрос к базе данных. Hibernate создает
+экземпляр прокси-объекта и устанавливает значение только для
+первичного ключа. Выполнение запроса откладывается до вызова геттера
+или сеттера для любого поля, не являющегося первичным
+ключом.11:11:53,506 DEBUG SQL:144 - select nextval
+('hibernate_sequence') 11:11:53,509 DEBUG SQL:144 - insert into
+ChessGame (chessTournament_id, date, playerBlack_id, playerWhite_id,
+round, version, id) values (?, ?, ?, ?, ?, ?, ?)Как определить прокси-
+объектЧасто LazyInitializationException дает вам понять, что вы
+работаете с прокси. Hibernate бросает это исключение, если вы
+обращаетесь к геттеру или к любому полю, кроме первичного ключа,
+неинициализированного прокси-объекта.11:19:54,433 ERROR TestSample:142
+- org.hibernate.LazyInitializationException: could not initialize
+proxy [com.thorben.janssen.sample.model.ChessPlayer#101] - no
+SessionДля определения является объект прокси или нет проверьте,
+реализует ли он HibernateProxy. HibernateProxy — это один из маркерных
+интерфейсов Hibernate. Если вы также хотите проверить, инициализирован
+ли прокси, то можно использовать статический метод isInitialized
+класса Hibernate.В примере ниже я использую обе проверки для атрибута
+playerWhite, который представляет собой lazy-ассоциацию
+"к-одному".ChessGame chessGame = em.find(ChessGame.class,
+this.chessGame.getId());   assertThat(chessGame.getPlayerWhite()).isIn
+stanceOf(HibernateProxy.class);
+assertFalse(Hibernate.isInitialized(chessGame.getPlayerWhite()));Как
+инициализировать проксиСамый простой и наиболее часто используемый
+подход для инициализации прокси-объекта заключается в вызове геттера
+или сеттера атрибута, не являющегося первичным ключом. Hibernate
+проверяет, инициализирован ли прокси, и если нет, то выполняет SQL-
+запрос, который извлекает сущность перед вызовом вашего геттера или
+сеттера.ChessGame chessGame = em.find(ChessGame.class,
+this.chessGame.getId());
+log.info(chessGame.getPlayerWhite().getClass().getName());
+log.info("==== Test Assertions ===="); assertThat(chessGame.getPlayerW
+hite().getFirstName()).isEqualTo(player1.getFirstName());Атрибут
+playerWhite сущности ChessGame моделирует lazy-ассоциацию "к-одному".
+Как видно из лога, Hibernate инициализировал его сгенерированным
+прокси-объектом. И когда позднее у этого объекта вызывается метод
+getFirstName(), Hibernate выполняет дополнительный SQL-запрос для
+инициализации прокси.11:49:41,984 DEBUG SQL:144 - select
+chessgame0_.id as id1_0_0_, chessgame0_.chessTournament_id as
+chesstou5_0_0_, chessgame0_.date as date2_0_0_,
+chessgame0_.playerBlack_id as playerbl6_0_0_,
+chessgame0_.playerWhite_id as playerwh7_0_0_, chessgame0_.round as
+round3_0_0_, chessgame0_.version as version4_0_0_ from ChessGame
+chessgame0_ where chessgame0_.id=? 11:49:42,006  INFO TestSample:122 -
+com.thorben.janssen.sample.model.ChessPlayer$HibernateProxy$dWs3SOcI
+11:49:42,006  INFO TestSample:126 - ==== Test Assertions ====
+11:49:42,006 DEBUG SQL:144 - select chessplaye0_.id as id1_1_0_,
+chessplaye0_.birthDate as birthdat2_1_0_, chessplaye0_.firstName as
+firstnam3_1_0_, chessplaye0_.lastName as lastname4_1_0_,
+chessplaye0_.version as version5_1_0_, gameswhite1_.playerWhite_id as
+playerwh7_0_1_, gameswhite1_.id as id1_0_1_, gameswhite1_.id as
+id1_0_2_, gameswhite1_.chessTournament_id as chesstou5_0_2_,
+gameswhite1_.date as date2_0_2_, gameswhite1_.playerBlack_id as
+playerbl6_0_2_, gameswhite1_.playerWhite_id as playerwh7_0_2_,
+gameswhite1_.round as round3_0_2_, gameswhite1_.version as
+version4_0_2_ from ChessPlayer chessplaye0_ left outer join ChessGame
+gameswhite1_ on chessplaye0_.id=gameswhite1_.playerWhite_id where
+chessplaye0_.id=?Вместо вызова геттера можно использовать статический
+метод initialize класса Hibernate. Но если вы сразу знаете, что будете
+использовать в своем коде lazy-ассоциацию, я рекомендую
+инициализировать ее в том же запросе, который извлекает сущность. О
+вариантах инициализации я писал в статье 5 вариантов инициализации
+lazy-ассоциаций.Hibernate.initialize(chessGame.getPlayerWhite());Как
+получить исходную сущность из проксиДо Hibernate 5.2.10 получение
+исходного объекта из прокси требовало небольшого количества кода.
+Сначала нужно было привести объект к HibernateProxy, чтобы получить
+доступ к LazyInitializer, а затем использовать его для получения
+объекта.ChessPlayer playerWhite = chessGame.getPlayerWhite();
+ChessPlayer unproxiedPlayer; if(playerWhite instanceof HibernateProxy)
+{     HibernateProxy hibernateProxy = (HibernateProxy) playerWhite;
+LazyInitializer initializer =
+hibernateProxy.getHibernateLazyInitializer();     unproxiedPlayer =
+(ChessPlayer) initializer.getImplementation(); }С версии 5.2.10 ту же
+функциональность предоставляет статический метод unproxy класса
+Hibernate, что значительно упрощает работу.ChessPlayer unproxiedPlayer
+= Hibernate.unproxy(playerWhite, ChessPlayer.class);Проблема при
+работе с проксиКак я объяснял ранее, Hibernate генерирует прокси-
+объект, который является подклассом вашего класса сущности. Это может
+стать проблемой, если ваша ассоциация "к-одному" ссылается на
+суперкласс в иерархии наследования. В этом случае Hibernate генерирует
+другой подкласс этого суперкласса, и вы не сможете легко привести его
+к своему подклассу.Давайте рассмотрим это на примере. Сущность
+ChessGame определяет lazy-ассоциацию к сущности ChessTournament. А
+объект ChessSwissTournament является подклассом объекта
+ChessTournament.Когда я загружаю объект ChessGame, ссылающийся на
+ChessSwissTournament, Hibernate инициализирует атрибут tournament с
+помощью прокси-объекта, который является подклассом сущности
+ChessTournament и реализует HibernateProxy. Но это не экземпляр
+ChessSwissTournament.ChessGame chessGame = em.find(ChessGame.class,
+newChessGame.getId()); assertThat(chessGame.getTournament()).isInstanc
+eOf(ChessTournament.class); assertThat(chessGame.getTournament()).isNo
+tInstanceOf(ChessSwissTournament.class); assertThat(chessGame.getTourn
+ament()).isInstanceOf(HibernateProxy.class);РезюмеHibernate использует
+сгенерированные прокси-классы для поддержки ленивой загрузки
+ассоциаций "к-одному", и вы можете использовать их для инициализации
+ассоциаций к другим сущностям. Как только вы вызываете геттер или
+сеттер для поля, не являющегося первичным ключом, Hibernate выполняет
+SQL-запрос для получения связанной сущности.Прокси-класс является
+подклассом вашей сущности и реализует интерфейс HibernateProxy. Это
+позволяет вам использовать прокси-объект почти так же, как и объект
+сущности, но с двумя ограничениями:Если вы хотите инициализировать
+прокси-объект, вам нужно делать это с активной сессией Hibernate
+Session. В противном случае Hibernate выбросит исключение
+LazyInitializationException.Если у вас есть lazy-ассоциация "к-одному"
+к суперклассу в иерархии наследования, то вы не сможете привести
+прокси-объект в какому-либо из ваших подклассов. Сначала вам нужно
+получить оригинальную сущность через unproxy.Материал подготовлен в
+рамках курса «Java Developer. Professional». Всех желающих приглашаем
+на открытый урок «Telegram bot для получения курса валют». На занятии
+создадим пользовательский интерфейс, для этого мы сделаем Telegram
+bot-а. Через него конечный пользователь сможет получать курс валют.
+>> РЕГИСТРАЦИЯ

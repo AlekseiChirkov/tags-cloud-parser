@@ -1,0 +1,187 @@
+Автор: kmoseenk
+Дата: 2021-09-21T14:16:58.000Z
+Название: Android RecyclerView с использованием котлиновских sealed классов
+Теги: Блог компании OTUS, Программирование *, Разработка под Android *
+Текст:
+RecyclerView — это один из самых лучших инструментов для отображения
+больших списков на Android. Как разработчики, вы, скорее всего
+понимаете о чем я говорю. У нас есть много дополнительных фич, таких
+как шаблоны вью холдеров, сложная анимация, Diff-Utils колбек для
+повышения производительности и т. д. Такие приложения, как WhatsApp и
+Gmail, используют RecyclerView для отображения бесконечного количества
+сообщений.Одна из важнейших фич RecyclerView, которые я использую, —
+это типы представлений (view types). В RecyclerView мы можем
+отобразить несколько типов представлений. Раньше разработчики делали
+это с помощью флага типа представления в модели списка, который
+возвращали в функции getViewType адаптера RecyclerView.Почему sealed
+классы Kotlin?После появления Kotlin для разработки приложений под
+Android наши подходы к реализации кода кардинально изменились. То есть
+такие фичи, как расширения, почти заменили потребность в поддержании
+базовых классов для компонентов Android. Делегаты Kotlin внесли
+изменения в нашу работу с сеттерами и геттерами.Теперь пришло время
+обновлений в работе адаптера RecyclerView. Sealed классы из Kotlin
+оказывают значительное влияние на управление состояниями. Подробнее
+прочитать об этом вы можете в этой статье. Вдохновившись этой статьей,
+я хочу показать вам реализацию типов представлений в RecyclerView с
+использованием sealed классов. Мы постараемся развить сравнение
+случайных чисел или лейаутов до типов классов. Если вы фанат Kotlin, я
+уверен, что вам понравится эта реализация.Создание sealed классов в
+KotlinПервое, что нам нужно сделать при этом подходе — это создать все
+классы данных, которые мы намерены использовать в адаптере, а затем
+необходимо связать их в sealed классе. Давайте создадим группу классов
+данных:data class FeedItem(val title: String,                     val
+desp : String,                     val businessName : String,
+...)  data class PromotionItem(val title: String,
+val desp : String,                          val image : String) data
+class RatingCardItem(val title: String,                          val
+desp : String,                          val link : String,
+val button_tittle : String) data class LoadingStateItem(val isLoading:
+Boolean,                           val isRetry : Boolean,
+val error_message : String)Это несколько классов данных, которые я
+хотел отобразить в списке, основываясь на данных с серверов. Вы можете
+создать столько классов данных, сколько захотите. Этот подход хорошо
+масштабируется.То, что мы можем работать с состояниями загрузки,
+хедерами, футерами и многим другое без написания дополнительных
+классов — это одно из крутых преимуществ данного метода. Вы скоро
+узнаете, как это сделать. Следующим шагом является создание sealed
+классов, содержащих все необходимые классы данных:sealed class
+UIModel{ class FeedyModel(val feedItem: FeedItem) : UIModel()  class
+PromotionModel(val promotionItem: PromotionItem) : UIModel()  class
+RatingCardModel(val ratingCardItem : RatingCardItem) : UIModel()
+class LoadingModel(val loadingStateItem : LoadingStateItem) :
+UIModel()  }Sealed класс с пользовательскими моделями Как я упоминал
+ранее, мы можем без дополнительных сложностей добавлять хидеры и
+футеры из RecyclerView, используя объект Kotlin:sealed class UIModel{
+object Header : UIModel()  object Footer : UIModel()  class
+FeedyModel(val feedItem: FeedItem) : UIModel()  class
+PromotionModel(val promotionItem: PromotionItem) : UIModel()  class
+RatingCardModel(val ratingCardItem : RatingCardItem) : UIModel()
+class LoadingModel(val loadingStateItem : LoadingStateItem) :
+UIModel()  }Sealed класс с хидером и футеромНа этом этапе
+заканчивается реализация нашего sealed класса.Создание адаптера
+RecyclerViewПосле того, как мы разобрались с sealed классом, пришло
+время создать адаптер RecyclerView с UIModel списком. Это простой
+RecyclerView, но с sealed классом arraylist:class FeedAdapter(context:
+Context) :     RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+private var arrayList : ArrayList&lt;UIModel&gt; = ArrayList()  fun
+submitData(list : ArrayList&lt;UIModel&gt;){     arrayList.clear()
+arrayList.addAll(list) }  override fun getItemCount(): Int =
+arrayList.size  override fun getItemViewType(position: Int): Int {
+return super.getItemViewType(position) }  override fun
+onCreateViewHolder(parent: ViewGroup, viewType: Int):
+RecyclerView.ViewHolder {     TODO("not implemented") //To change body
+of created functions use File | Settings | File Templates. }  override
+fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+TODO("not implemented") //To change body of created functions use File
+| Settings | File Templates. }  }В приведенном выше коде показана
+базовая реализация адаптера  RecyclerView без какой-либо логики sealed
+классов. Как можно заметить, мы объявили sealed классы arraylist
+(UIModel). Следующим шагом является возврат соответствующего типа
+представления на основе позиции:override fun getItemViewType(position:
+Int) = when (arrayList[position]) {     is UIModel.FeedyModel ->
+R.layout.adapter_feed     is UIModel.PromotionModel ->
+R.layout.adapter_promotion     is UIModel.RatingCardModel ->
+R.layout.adapter_rating     is UIModel.LoadingModel ->
+R.layout.adapter_loading     is UIModel.Header ->
+R.layout.adapter_header     is UIModel.Footer ->
+R.layout.adapter_footor     null -> throw
+IllegalStateException("Unknown view") }Сравнение модели sealed класса
+для получения типа представленияТеперь, когда мы успешно вернули
+правильный лейаут на основе модели sealed класса, нам нужно создать
+соответствующий ViewHolder в функции onCreateViewHolder на основе
+viewtype:override fun onCreateViewHolder(parent: ViewGroup, viewType:
+Int): RecyclerView.ViewHolder {     val layoutInflater =
+LayoutInflater.from(parent.context)     val v =
+layoutInflater.inflate(viewType, parent, false)     return when
+(viewType) {         R.layout.adapter_feed -> FeedViewHolder(v)
+R.layout.adapter_promotion -> PromotionalCardViweHolder(v)
+R.layout.adapter_rating -> RatingCardViweHolder(v)
+R.layout.adapter_header -> HeaderViweHolder(v)
+R.layout.adapter_footor -> FootorViweHolder(v)         else ->
+LoadingViewholder(v)     } }Создание вью холдера с учетом типа
+представления из sealed классовПоследний шаг — обновить вью холдер на
+основе текущих данных элемента, чтобы адаптер мог отображать данные в
+пользовательском интерфейсе. Поскольку у адаптера есть несколько
+представлений, мы должны классифицировать тип, а затем вызвать
+соответствующий ViewHolder:override fun onBindViewHolder(holder:
+RecyclerView.ViewHolder, position: Int) {     val item =
+arrayList[position]     when (holder) {         is FeedViewHolder ->
+holder.onBindView(item as UIModel.FeedyModel)         is
+PromotionalCardViweHolder -> holder.onBindView(item as
+UIModel.PromotionModel         is RatingCardViweHolder ->
+holder.onBindView(item as UIModel.RatingCardModel)         is
+HeaderViweHolder -> holder.onBindView(item as UIModel.Header)
+        is FootorViweHolder -> holder.onBindView(item as
+UIModel.Footer)         is LoadingViewholder -> holder.onBindView(item
+as UIModel.LoadingModel)     } }После объединения всех частей кода, он
+выглядит так:class FeedAdapter(context: Context) :
+RecyclerView.Adapter<RecyclerView.ViewHolder>() { private var
+arrayList : ArrayList&lt;UIModel&gt; = ArrayList()  fun
+submitData(list : ArrayList&lt;UIModel&gt;){     arrayList.clear()
+arrayList.addAll(list) }  override fun getItemCount(): Int =
+arrayList.size  override fun getItemViewType(position: Int) = when
+(arrayList[position]) {     is UIModel.FeedyModel -&gt;
+R.layout.adapter_feed     is UIModel.PromotionModel -&gt;
+R.layout.adapter_promotion     is UIModel.RatingCardModel -&gt;
+R.layout.adapter_rating     is UIModel.LoadingModel -&gt;
+R.layout.adapter_loading     is UIModel.Header -&gt;
+R.layout.adapter_header     is UIModel.Footer -&gt;
+R.layout.adapter_footor     null -&gt; throw
+IllegalStateException("Unknown view") }  override fun
+onCreateViewHolder(parent: ViewGroup, viewType: Int):
+RecyclerView.ViewHolder {     val layoutInflater =
+LayoutInflater.from(parent.context)     val v =
+layoutInflater.inflate(viewType, parent, false)     return when
+(viewType) {         R.layout.adapter_feed -&gt; FeedViewHolder(v)
+R.layout.adapter_promotion -&gt; PromotionalCardViweHolder(v)
+R.layout.adapter_rating -&gt; RatingCardViweHolder(v)
+R.layout.adapter_header -&gt; HeaderViweHolder(v)
+R.layout.adapter_footor -&gt; FootorViweHolder(v)         else -&gt;
+LoadingViewholder(v)     } }  override fun onBindViewHolder(holder:
+RecyclerView.ViewHolder, position: Int) {      val item =
+arrayList[position]     when (holder) {         is FeedViewHolder
+-&gt; holder.onBindView(item as UIModel.FeedyModel)         is
+PromotionalCardViweHolder -&gt; holder.onBindView(item as
+UIModel.PromotionModel)         is RatingCardViweHolder -&gt;
+holder.onBindView(item as UIModel.RatingCardModel)         is
+HeaderViweHolder -&gt; holder.onBindView(item as UIModel.Header)
+is FootorViweHolder -&gt; holder.onBindView(item as UIModel.Footer)
+is LoadingViewholder -&gt; holder.onBindView(item as
+UIModel.LoadingModel)     }  }  }Финальная версия адаптераНа этом
+этапе мы закончили. Мы реализовали все необходимое. Вы можете создать
+инстанс адаптера в Activity/Fragment и присвоить его RecyclerView. Как
+только вы получите данные, вам нужно вызвать функцию submitData с
+ArrayList <UIModel>:lateinit var adapter: FeedAdapter fun
+assignAdapter(){   adapter = FeedAdapter(this)
+categories_recyclerView?.adapter = adapter
+feedViewModel.scope.launch {
+feedViewModel.getFeed().collectLatest {
+adapter.submitData(it)       }   } }Публикация данных в адаптер
+RecyclerViewDiffCallback«DiffUtil — это вспомогательный класс, который
+может вычислять разницу между двумя списками и выводить список
+операций обновления, который преобразует первый список во второй». —
+Android DeveloperРеализация diffcallback не является обязательной, но
+она повысит производительность, если вы работаете с большими наборами
+данных. Итак, чтобы реализовать difCallback в нашем адаптере, нам
+нужно различать модели и сравнивать нужные переменные:companion object
+{     object diffCallback : DiffUtil.ItemCallback<UIModel>() {
+override fun areItemsTheSame(oldItem: UIModel, newItem: UIModel):
+Boolean {                val isSameRepoItem = oldItem is
+UIModel.FeedyModel                 &amp;&amp; newItem is
+UIModel.FeedyModel                 &amp;&amp;
+oldItem.feedItem.businessName == newItem.feedItem.businessName
+val isSameSeparatorItem = oldItem is UIModel.PromotionModel
+&amp;&amp; newItem is UIModel.PromotionModel
+&amp;&amp; oldItem.promotionItem.title == newItem.promotionItem.title
+return isSameRepoItem || isSameSeparatorItem     }        override fun
+areContentsTheSame(oldItem: UIModel, newItem: UIModel) = oldItem ==
+newItem    }  }Реализация diffCallbackОна похожа на стандартную
+реализацию diffCallback, но нам необходимо разделять типы. Создав ее,
+свяжите ее с адаптером в конструкторе.Это все. Надеюсь, эта статья
+была для вас полезной. Спасибо за внимание!Материал подготовлен в
+рамках специализации «Android Developer». Всех желающих приглашаем на
+двухдневный онлайн-интенсив «Делаем мобильную мини-игру за 2 дня». За
+2 дня вы сделаете мобильную версию PopIt на языке Kotlin. В приложении
+будет простая анимация, звук хлопка, вибрация, таймер как
+соревновательный элемент. Интенсив подойдет для тех, кто хочет
+попробовать себя в роли Android-разработчика.  >> РЕГИСТРАЦИЯ

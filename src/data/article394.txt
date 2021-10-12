@@ -1,0 +1,283 @@
+Автор: wayvy
+Дата: 2021-09-30T14:01:03.000Z
+Название: Создание мини-игры «Шкатулка» с помощью JS + CSS
+Теги: Блог компании KTS, JavaScript *, Разработка игр *, ReactJS *
+Текст:
+Привет! Меня зовут Сергей, я фронтенд-разработчик отдела спецпроектов
+KTS. Наш отдел занимается разработкой веб-приложений для
+промокампаний. Год назад перед нами встала задача: сделать игру-квест
+с диалогами, 360-панорамой, drag-n-drop, звуками и мини-играми.В этой
+статье расскажу про последнюю часть: как сделать мини-игру со звуками
+с помощью react, styled-components, mobx и howler.Надеюсь, материал
+будет полезен начинающим реактивным разработчикам.Что будет в
+статье:ПравилаСоздаем игровое поле. 12 шаговСоздаем вращение для
+блоков. 10 шаговРеализуем анимацию вращения. 10 шаговСоздаем звуки. 3
+шагаЗаключение1 — ПравилаМы имеем 12 блоков, 3 из которых уникальные.
+Уникальные блоки необходимо установить в нужные позиции. Игровое поле
+поделено на 3 круга по 6 блоков, которые вращаются по часовой
+стрелке.Блоки нарисуем с помощью абсолютного позиционирования, для
+анимации вращения нарисуем оверлей. Основные блоки на время вращения
+скроем.2 — Создаем игровое поле. 12 шаговШаг 1. Для начала сделаем
+конфиг игры. Перечислим виды блоков — один обычный и три
+уникальных:export enum BlocksEnum {   regular = "regular",   red =
+"red",   blue = "blue",   green = "green" }Шаг 2. Перечислим
+изображения блоков:export const blocksImages: Record<BlocksEnum,
+string> = {   [BlocksEnum.regular]: require("./img/block-
+regular.png"),   [BlocksEnum.red]: require("./img/block-red.png"),
+[BlocksEnum.blue]: require("./img/block-blue.png"),
+[BlocksEnum.green]: require("./img/block-green.png") };Блоки будем
+хранить в виде массива, где индекс — это позиция блока на игровом
+поле, а значение — вид блока в этой позиции, BlocksEnum:Шаг 4.
+Перечислим индексы позиций, в которые нужно поместить уникальные
+блоки:export enum CorrectEnum {   red = "1",   green = "7",   blue =
+"9" }Шаг 5. Также перечислим, какие виды блоков должны находиться в
+соответствующих индексах:export const correctIndexes:
+Record<CorrectEnum,  BlocksEnum> = {   [CorrectEnum.red]:
+BlocksEnum.red,   [CorrectEnum.green]:  BlocksEnum.green,
+[CorrectEnum.blue]:  BlocksEnum.blue, };Далее при каждом вращении мы
+будем перебирать этот объект и по индексам CorrectEnum сравнивать с
+текущим массивом блоков. Для хранения состояний и логики будем
+использовать MobX. Он позволяет создавать локальное хранилище, или
+стор, и использовать его в нужном компоненте.Само хранилище — обычный
+объект. Вся магия в том, что мы помечаем объекты, которые влияют на
+отображение компонента как наблюдаемые (observable), и делаем
+наблюдаемым сам компонент (observer).Так различные сайд-эффекты не
+будут влиять на перерисовку компонента. Подробнее можно прочитать
+здесь.Шаг 6. Создадим хранилище с методом перемешивания:import {
+makeObservable, observable, action } from "mobx";  export class
+BoxStore {   // будем хранить массив из 12 видов блоков (9 обычных и 3
+уникальные)   blocks: BlocksEnum[] = [];   constructor() {
+makeObservable(this, {       blocks: observable,       isAnimation:
+observable,       rotationIndex: observable,       rotate:
+action.bound,       shuffle: action.bound,       setAnimation:
+action.bound,     });           this.shuffle();   }         shuffle():
+void {     this.blocks = [       ...new
+Array(9).fill(BlocksEnum.regular),       BlocksEnum.red,
+BlocksEnum.blue,       BlocksEnum.green     ].sort(() => Math.random()
+- 0.5);     // перемешиваем еще раз, если хотя бы один уникальный блок
+стоит на нужном месте     if (this.isOneCorrect) {
+this.shuffle();     }   }         get isOneCorrect(): boolean {
+return Object.keys(correctIndexes).some((index) =>
+this.isCorrectIndex(index)     );   }          isCorrectIndex(index:
+number | string): boolean {     return correctIndexes[index] ===
+this.blocks[index];   } }Шаг 7. У нас будет родительский компонент,
+компонент блока и компонент с оверлеем для вращения. Поэтому создадим
+контекст, чтобы иметь доступ к хранилищу в каждом из этих компонентов:
+import { createContext } from 'react'; export const BoxGameContext =
+createContext<BoxStore | null>(null); export const useStore =
+<T>(context: React.Context<T | null>): T => {   const data =
+useContext(context);   if (!data) {     throw new Error("Using store
+outside of context");   }   return data; };Шаг 8. Для абсолютного
+позиционирования нам понадобятся позиции блоков, поэтому опишем массив
+с ними:export type PositionType = [number, number]; export const
+blocksPositions: PositionType[] = [   [11.88, 22.93],   /*…*/ ];Шаг 9.
+Теперь создадим основной React-компонент с игрой. Подключим к нему
+хранилище, пробежимся по массиву с позициями и нарисуем блоки:import *
+as React from 'react'; import { observer } from 'mobx-react';  const
+Box: React.FC = () => {         const [store] = React.useState(() =>
+new BoxStore());         return (                 /* Обернем игру в
+провайдер хранилища,      так он будет доступен в дочерних компонентах
+*/                 <BoxGameContext.Provider value={store}>
+<BoxWrapper>
+{blocksPositions.map((position, i) => (
+<Block                                                 type={store[i]}
+// находим вид блока в этой позиции
+position={position}
+index={i}                                                 key={i}
+/>                                 ))}
+</BoxWrapper>                 </BoxGameContext.Provider>         ); };
+// Теперь рендером управляет MobX export default observer(Box);Шаг 10.
+Для отображения в браузере стилизуем BoxWrapper с помощью styled-
+components.import styled from 'styled-components';  export const
+BoxWrapper = styled.div`   background:
+url(${require(./img/box.jpg).default}) no-repeat center / contain;
+width: 69.7rem;   height: 49rem;   position: absolute;   margin: auto;
+top: 0;   right: 0;   bottom: 0;   left: 0; `;Компонент Block выглядит
+так:import { observer } from 'mobx-react';  export const
+generatePositionStyle = (position: PositionType) => ({   top:
+position[0] + "rem",   left: position[1] + "rem" });  const Block:
+React.FC<Props> = ({ position, type, index }: BlockProps) => {
+const store = useStore(BoxGameContext);         return (
+<BlockImg                         /*
+Абсолютные позиции добавим в inline style,
+чтобы избежать генерации множества css-классов
+(количество позиций умножить на количество видов блоков)
+*/                         style={generatePositionStyle(position)}
+type={type}                 />         ); };  export default
+observer(Block);Шаг 11. Для блока и позиционирования оверлея с
+вращением нам понадобится радиус блока. Добавим его в конфиг:export
+const BLOCK_RADIUS = 3.6;Шаг 12. Стилизуем блок. Из конфига возьмем
+картинку по виду блока и радиус:export const generateCicleStyle =
+(radius: number) => ({   "border-radius": "50%",   width: radius * 2 +
+"rem",   height: radius * 2 + "rem" });  export const BlockImg =
+styled.div<{         type: BlocksEnum; }>`         position: absolute;
+${generateCicleStyle(BLOCK_RADIUS)};         background: url(${(props)
+=> blocksImages[props.type]}) no-repeat center / contain; `;У нас
+получилась заготовка внешнего вида. Теперь давайте вращать!3 — Создаем
+вращение блоков. 10 шаговМы имеем три центральных блока. При нажатии
+на них соседние 6 вращаются по часовой стрелке.Блоки мы храним в
+массиве, поэтому опишем последовательность индексов, в которых
+происходит вращение. При нажатии берем из хранилища вид блока по
+каждому индексу последовательности и меняем его с видом блока со
+следующим индексом.Шаг 1. Перечислим индексы центральных блоков:export
+enum RotationsEnum {   topLeft = "4",   topRight = "5",   bottom = "8"
+}Шаг 2. Добавим метод в хранилище:// 3 круга по 6 блоков export const
+rotations: Record<RotationsEnum, number[]> = {
+[RotationsEnum.topLeft]: [0, 1, 5, 8, 7, 3],
+[RotationsEnum.topRight]: [1, 2, 6, 9, 8, 4],
+[RotationsEnum.bottom]: [4, 5, 9, 11, 10, 7] };Шаг 3. Добавим к
+индексам массив индексов вращения:rotate(clickIndex: number): void {
+if (!rotations[clickIndex]) {                 return;         }
+const blocks = [...this.blocks]; // создаем новый массов видов блоков
+const rotationsMap = rotations[clickIndex]; // берем массив индексов
+вращений         // и перебираем его
+rotationsMap.forEach((rotationIndex: number, index: number) => {
+if (rotationsMap.length - 1 === index) {                         //
+меняем виды блоков по нулевому и последнему индексу вращения
+this.blocks[rotationsMap[0]] = blocks[rotationsMap[rotationsMap.length
+- 1]];                 } else {                         // меняем виды
+блоков по соседним индексам вращения
+this.blocks[rotationsMap[index + 1]] = blocks[rotationIndex];
+}         }); }Шаг 4. Проверяем, является ли этот блок вращающим, и
+вешаем store.rotate к элементу блока:const isRotation =
+rotations[index]; /*…*/ <BlockImg /*…*/         onClick={isRotation  ?
+()  => store.rotate(index) : undefined} />Шаг 5. Осталось добавить
+один геттер с проверкой правильных индексов, и основная логика
+готова:get isCorrect(): boolean {         return
+Object.keys(correctIndexes).every((block) =>
+this.isCorrectIndex(block)         ); }4 — Реализуем анимацию
+вращения. 10 шаговШаг 1. Напомню, пользователь нажимает на центральные
+блоки и тем самым вращает соседние. В хранилище добавим метод,
+меняющий индекс центрального блока: isAnimation = false;
+rotationIndex: number | null = null; setAnimation(value: boolean,
+index?: number): void {         this.isAnimation = value;
+this.rotationIndex = index || null; }Шаг 2. Добавим в конфиг
+длительность анимации:export const ANIMATION_TIME = 500;Шаг 3. Для
+обработки клика создадим функцию в компоненте <Block />:const
+handleRotation = () => {         if (store.isAnimation) {
+return;         }         store.setAnimation(true, index);
+setTimeout(() => {                 store.rotate(index);
+store.setAnimation(false);         }); }Шаг 4. Порядок блоков в
+хранилище изменяется только после анимации. На это время мы скроем
+блоки, которые участвуют в анимации, и нарисуем поверх новые. В
+Block.tsx добавим проверку:const isHide = () => {         if
+(!store.rotationIndex) {                 return false;         }
+const rotationIndexes = rotations[store.rotationIndex];         return
+Object.keys(rotationIndexes)                 .some((key) =>
+rotationIndexes[key] === index); };Шаг 5. Обновим стиль блока:export
+const BlockImg = styled.div<{         /*…*/         isHide?: boolean;
+}>`         /*…*/         display: ${(props) => (props.isHide ? 'none'
+: 'block')}; `;Шаг 6. Положим внутрь компонент-оверлей для ховера и
+анимации:const withRotaionCircle =          isRotation &&
+(!store.rotationIndex || store.rotationIndex === index); <BlockImg
+/*…*/         onClick={isRotation && !store.isCorrect ? handleRotation
+: undefined}         isHide={isHide()}
+withRotaionCircle={withRotaionCircle} >         {withRotaionCircle &&
+(                 <RotationCircle position={position} type={type}
+overlayIndex={index} />         )} </BlockImg>Шаг 7. Добавим в конфиг
+угол поворота, радиус оверлея и смещение оверлея относительно
+центрального блока:export const ROTATION_ANGLE = 360 / 6; // 6 блоков
+в круге export const ROTATION_CIRCLE_RADIUS = 12.7; // радиус оверлея
+с анимациейШаг 8. Оверлей является дочерним элементом обычного блока,
+поэтому по умолчанию он позиционируется по верхнему левому краю
+родительского элемента. Чтобы выровнять оверлей по центру с
+родительским блоком, нужно найти разность половин их ширин и сдвинуть
+оверлей вверх и влево на эту разность. У нас как раз есть
+радиусы:export const ROTATION_CIRCLE_SHIFT = ROTATION_CIRCLE_RADIUS -
+BLOCK_RADIUS;Шаг 9. Создадим компонент RotationCircle:const
+RotationCircle: React.FC<Props> = ({ position, type, index }:
+BlockProps) => {         const store =
+React.useContext(BoxGameContext);         const getPosition =
+(inCirclePosition: PositionType): PositionType => {
+return [                         inCirclePosition[0] - position[0] +
+ROTATION_CIRCLE_SHIFT,                         inCirclePosition[1] -
+position[1] + ROTATION_CIRCLE_SHIFT,     ];         };         const
+rotate = store.isAnimation && store.rotationIndex === index;
+return (                 /*                          Рисуем оверлей
+для вращающихся блоков                         Так как основные блоки
+на время анимации будут скрыты,                         будем рисовать
+временные блоки для анимации внутри оверлея                 */
+<RotationCircleWrapper
+$rotate={store.isAnimation && store.rotationIndex === index}
+isCorrect={store.isCorrect}                 >
+{Object.keys(rotations[index]).map((rotationBlockIndex, i) => {
+// Проходимся по индексам вращений - рисуем блоки, которые будут
+вращаться                                 const block =
+rotations[index][rotationBlockIndex];
+const blockPosition = getPosition(blocksPositions[block]);
+return (                                         <BlockImg
+position={blockPosition}
+type={store.blocks[block]}
+key={i}
+$rotate={isRotate}                                         />
+);                         })}                         {/* Рисуем
+центральный блок */}                         <BlockImg
+position={getPosition(position)}
+type={type}                                 isRotation
+$rotate={rotate}                         />
+</RotationCircleWrapper>         ); };  export default
+observer(RotationCircle);Шаг 10. Стилизуем оверлей
+RotationCircleWrapper:import styled, { css } from 'styled-components';
+export const RotationCircleWrapper = styled.div<{   $rotate: boolean;
+isCorrect: boolean; }>`   position: absolute;   z-index: 1;   opacity:
+0;   transform: rotate(0);   will-change: transform, opacity;
+background: url(${require('./img/rotation-circle.svg').default}) no-
+repeat     center / contain;
+${generateCicleStyle(ROTATION_CIRCLE_RADIUS)}   left:
+-${ROTATION_CIRCLE_SHIFT}rem;   top: -${ROTATION_CIRCLE_SHIFT}rem;
+/*      Отключаем события для оверлея, фактически мы будем кликать на
+основной блок    */   pointer-events: none;    /* Переход для ховера
+*/   transition: opacity 0.2s linear;    /* Активируем mixin в момент
+вращения */   ${(props) => props.$rotate && rotationCircleMixin};
+/* Скрываем оверлей, когда головоломка решена */   display: ${(props)
+=> (props.isCorrect ? 'none' : 'block')}; `;  const
+rotationCircleMixin = css`   transition: transform ${ANIMATION_TIME}ms
+linear;   transform: rotate(${ROTATION_ANGLE}deg);   opacity: 1;
+`;Внешний вид готов:5 — Создаем звуки. 3 шагаНо какая игра без звуков?
+Они должны быть даже в мини-игре. Поэтому создадим аудиоконтроллер.Для
+работы с аудио мы будем использовать Howler. Эта библиотека
+поддерживает аудиоконтексты для большинства браузеров, имеет большие
+возможности для управления воспроизведением и делает за нас множество
+низкоуровневой работы.Шаг 1. Перечислим наши звуки:export enum
+AudioEnum {     boxRotate,     boxOpened, }  export const AUDIOS:
+Record<AudioEnum, HowlOptions> = {   [AudioEnum.boxRotate]: {     src:
+require('./sounds/box-rotate.mp3').default,   },
+[AudioEnum.boxOpened]: {     src: require('./sounds/box-
+opened.mp3').default,   }, }Шаг 2. Реализуем предзагрузку файлов и
+воспроизведение:export class AudioController {   audios:
+Partial<Record<AudioEnum, Howl>> = {};          // в момент загрузки
+будем передавать массив ключей нужных звуков   async preload(audios:
+AudioEnum[]): Promise<unknown> {     const loadAudio = (key:
+AudioEnum) =>       new Promise<void>((res) => {
+this.addAudio(key);         const onLoad = () => res();
+this.audios[key]?.on("load", onLoad);
+this.audios[key]?.on("loaderror", onLoad);
+this.audios[key]?.load();       });     return
+Promise.all(audios.map(loadAudio));   }    addAudio(key: AudioEnum,
+audio?: HowlOptions): void {     if (!(key in this.audios)) {
+this.audios[key] = new Howl(audio || AUDIOS[key]);     }   }    play =
+(key: AudioEnum): Howl | null => {     if (!(key in this.audios)) {
+this.addAudio(key);     }     const audio = this.audios[key];     if
+(audio) {       audio.play();       return audio;     }     return
+null;   }; }Шаг 3. Добавим контроллер в наше хранилище:export class
+BoxStore {   /*...*/   audioController = new AudioController();
+/*...*/ }Теперь мы можем создать эффекты для аудио в компоненте <Box
+/>. Первый эффект выполнит предзагрузку звуков во время монтирования
+компонента, второй воспроизведет звук открытия шкатулки при
+решении:React.useEffect(() => {   store.audioController.preload([
+AudioEnum.boxOpened,     AudioEnum.boxRotate,   ]); }, []);
+React.useEffect(() => {         if (store.isCorrect) {
+store.audioController.play(AudioEnum.boxOpened);         } },
+[store.isCorrect]);По клику в компоненте <Block /> будем
+воспроизводить звук вращения:const handleRotation = () => {
+/*...*/     store.audioController.play(AudioEnum.boxRotate);
+/*...*/ }6 — ЗаключениеДобавим сообщение в <Box /> о решенной
+головоломке:  <BoxWrapper>     /*...*/     {store.isCorrect &&
+<Success>Try not. Do, or do not. There is no try.</Success>}
+/*...*/   </BoxWrapper>export const Success = styled.div`   position:
+absolute;   width: 100%;   text-align: center;   top: 1rem;   font-
+size: 3rem;   background: green;   color: white; `;Шкатулка
+готова:Готовый код лежит здесь.Поиграть можно здесь.Надеюсь, статья
+была интересной и полезной. Буду рад комментариям и советам по
+оптимизации.В следующий раз расскажу, как сделать панораму на Three.js
+с кучей изображений, звуков и текста и не потеряться.До встречи!

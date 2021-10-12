@@ -1,0 +1,299 @@
+Автор: olegtsss
+Дата: 2021-09-20T09:00:01.000Z
+Название: Мой MikroTik – моя цифровая крепость (часть 4)
+Теги: Блог компании RUVDS.com, Информационная безопасность *, Сетевые
+технологии *
+Текст:
+Статья является продолжением первой, второй и третьей частей,
+посвящённых организации практической безопасности сетей, построенных
+на оборудовании MikroTik. Ранее были рассмотрены общие рекомендации,
+безопасность уровней L1, L2 и L3, реализация централизованного
+логирования. Настало время поговорить про развёртывание IDS и её
+интеграцию в инфраструктуру RouterOS.  11. Настройка IDS  В качестве
+системы обнаружения вторжений выберем решение с открытым программным
+кодом Suricata. Оно умеет работать со следующими прикладными
+протоколами: http, ftp, smtp, tls, ssh, imap, msn, smb, dce\rpc, dns,
+nfs, ntp, tftp, ikev, krb5 и dhcp. Организуем режим работы
+promiscuous, при котором маршрутизатор будет посылать копии пакетов на
+IDS и фундаментально не влиять на их прохождение. На RouterOS это
+можно сделать двумя способами.    Посредством зеркалирования
+информации, передающейся через конкретный порт роутера (для этого
+необходимо проверить на сайте производителя, умеет ли он так делать).
+Тип имеющейся микросхемы можно посмотреть так:  /interface ethernet
+switch print  Columns: NAME, TYPE, L3-HW-OFFLOADING   #  NAME     TYPE
+L3   0  switch1  QCA-8337  no  Этот вариант подойдёт, если вы
+развернёте Suricata внутри вашего LAN на железе, так как должно быть
+физическое соединение между зеркалируемым портом и его коллектором,
+тогда:  /interface ethernet switch set switch1 mirror-source=ether2
+mirror-target=ether3  Сохранять передающийся трафик можно с помощью
+Tcpdump. Если такой вариант вас не устраивает, тогда рекомендую
+использовать арендованный VDS сервер более мощной конфигурации:
+Для зеркалирования трафика можно использовать встроенное в RouterOS
+программное обеспечение Packet-sniffer:  /tool sniffer set filter-
+interface=WAN filter-stream=yes memory-scroll=no streaming-enabled=yes
+streaming-server=192.168.15.29  Довольно грубое решение. Пакеты
+пересылать, разумеется, нужно по шифрованному VPN туннелю, который
+может быть достаточно узким, и тогда часть пакетов будет теряться. Для
+зеркалирования MikroTik применяет протокол TZSP, трафик будет
+обрамляться служебными заголовками и передаваться UDP пакетами, и тут
+уже без потерь никак. Для более точной настройки можно вместо Packet-
+sniffer использовать Firewall mangle (в примере отбираются пакеты для
+Winbox службы и SSH):  /ip firewall mangle add action=mark-connection
+chain=prerouting comment="Managment connections" \ dst-port=22,8291
+new-connection-mark=\ "Managment connections" passthrough=yes
+protocol=tcp add action=mark-packet chain=output comment="Managment
+packets" \ connection-mark="Managment connections" new-packet-mark=\
+"Managment packets" passthrough=yes add action=sniff-tzsp
+chain=postrouting comment="Sniffer Managments" \ packet-mark="
+Managment packets" sniff-target=192.168.15.29 sniff-target-port=37008
+Firewall mangle подробно изучается на курсе MTCTCE (MikroTik Certified
+Traffic Control Engineer). Скажем только, что гибкость при его
+настройке достаточно высокая, и умелыми руками можно здорово
+дифференцировать пакеты. Сохранять передающийся трафик, конечно, можно
+с помощью Tcpdump, однако наличие служебных заголовков протокола TZSP
+доставляет хлопот:     Для обратного преобразования зеркалируемого
+трафика к первоначальному виду можно использовать программы: Trafr
+(настройка рассмотрена здесь) или Tzsp2pcap:  apt install git libpcap-
+dev screen tcpreplay git clone
+https://github.com/thefloweringash/tzsp2pcap.git make make install
+После этого создаем виртуальный интерфейс, поднимаем для него MTU,
+чтобы пакеты не обрезались (IP адрес 192.168.3.254 выбран случайно):
+ip link add dummy0 type dummy ip link set dummy0 mtu 3000 ip link set
+name eth10 dev dummy0 ip addr add 192.168.3.254/24 dev eth10 ip link
+set eth10 up  В режиме реального времени сервер будет принимать
+зеркалируемый трафик, снимать с него служебные заголовки протокола
+TZSP и ретранслировать его на виртуальный интерфейс eth10:  tzsp2pcap
+-f | tcpreplay-edit --mtu=3000 --mtu-trunc -i eth10 -  Трансмиссию
+привели в порядок, приступим к настройке IDS. С параметрами по
+умолчанию все будет хорошо работать (правила хранятся в
+/etc/suricata/rules/), не забудем только уточнить домашнюю сеть
+(192.168.15.9 – IP адрес роутера в VPN):  apt install suricata vi
+/etc/suricata/suricata.yaml  HOME_NET:
+"[192.168.1.0/24,192.168.15.9/32]" af-packet:   - interface: eth10
+Лог всего трафика, проходящего через Suricata, можно посмотреть так:
+tail -f /var/log/suricata/eve.json  {"timestamp":"2021-08-12T07:17:28.
+408914+0600","flow_id":1497450928422226,"in_iface":"eth10","event_type
+":"dns","src_ip":"10.0.5.174","src_port":50460,"dest_ip":"1.1.1.1","de
+st_port":53,"proto":"UDP","dns":{"type":"query","id":39632,"rrname":"d
+r.habracdn.net","rrtype":"A","tx_id":0}} {"timestamp":"2021-08-12T07:1
+7:28.548078+0600","flow_id":1410381203911063,"in_iface":"eth10","event
+_type":"tls","src_ip":"10.0.5.174","src_port":22443,"dest_ip":"178.248
+.237.68","dest_port":443,"proto":"TCP","tls":{"sni":"habr.com","versio
+n":"TLS 1.3","ja3":{}}}  Лог детектированных угроз лежит здесь
+/var/log/suricata/fast.log. Настало время испытаний.  12. Из IDS в IPS
+IDS расшифровывается как Intrusion Detection System – система
+обнаружения вторжений. IPS (Intrusion Prevention System) – система
+предотвращения вторжений. На текущий момент наша Suricata анализирует
+зеркалируемый на нее трафик и, в случае обнаружения угроз, сохраняет
+их описание в лог. Посмотрим, справляется ли она со своими задачами.
+Попробуем развернуть bruteforce атаку на SSH службу нашего роутера:
+hydra 192.168.15.9 ssh -l admin -P rockyou.txt -s 22 -vv  tail -f
+/var/log/suricata/fast.log -F 08/16/2021-06:57:38.341563  [**]
+[1:2001219:20] ET SCAN Potential SSH Scan [**] [Classification:
+Attempted Information Leak] [Priority: 2] {TCP} 192.168.15.1:37126 ->
+192.168.15.9:22  Как мы видим, угроза была детектирована: «Potential
+SSH Scan». Попробуем выполнить nmap сканирование роутера:  nmap
+192.168.15.9 PORT     STATE SERVICE 22/tcp   open  ssh 53/tcp   open
+domain 80/tcp   open  http 2000/tcp open  cisco-sccp 8291/tcp open
+unknown  Suricata и в этом видит угрозы:  08/17/2021-07:08:38.242647
+[**] [1:2010937:3] ET SCAN Suspicious inbound to mySQL port 3306 [**]
+[Classification: Potentially Bad Traffic] [Priority: 2] {TCP}
+192.168.15.1:38863 -> 192.168.15.9:3306 08/17/2021-07:08:38.799069
+[**] [1:2010936:3] ET SCAN Suspicious inbound to Oracle SQL port 1521
+[**] [Classification: Potentially Bad Traffic] [Priority: 2] {TCP}
+192.168.15.1:38863 -> 192.168.15.9:1521 08/17/2021-07:08:39.617393
+[**] [1:2010939:3] ET SCAN Suspicious inbound to PostgreSQL port 5432
+[**] [Classification: Potentially Bad Traffic] [Priority: 2] {TCP}
+192.168.15.1:38863 -> 192.168.15.9:5432 08/17/2021-07:08:39.761901
+[**] [1:2002911:6] ET SCAN Potential VNC Scan 5900-5920   Теперь наша
+задача обрабатывать получаемый лог, выделять угрозообразующие IP
+адреса и блокировать их на MikroTik-е. Для этого уже существует
+готовое решение: PHP скрипт fast2mikrotik по API добавляет их в /ip
+firewall address-list. Однако у нас он в итоге так и не заработал,
+поэтому далее мы представим вариант собственной реализации. Здесь
+немного отвлечемся от темы. Управлять роутером посредством API это
+очень заманчиво, так как уже имеется готовый PHP класс.    Активируем
+API в RouterOS:  /ip service set api disabled=no  И кидаем на
+маршрутизатор команды, примерно так:  <?php
+require('routeros_api.class.php'); header('Content-Type: text/plain');
+$API = new RouterosAPI();  try {  $API->connect('192.168.15.9',
+'admin', 'verySTRONGpassword!!');  } catch (Exception $e) {
+die('Unable to connect to RouterOS. Error:' . $e);  }  $ARRAY =
+$API->comm("/tool/sniffer/stop");  $API->disconnect(); ?>  Можно,
+конечно, работать через API по SSL, подготовив заранее сертификаты,
+чтобы все было безопасно, но мы решили выполнить интеграцию по-другому
+и пошли своим путем, может, не самым эффективным, но удобным, так как
+отсутствует необходимость запуска и настройки дополнительных сервисов,
+таких как база данных, например. Команды будем передавать примерно
+так, как показано ниже:  sshpass -p verySTRONGpassword!! ssh
+admin@192.168.15.9 /tool sniffer stop  Полный Bash скрипт под
+спойлером.   fast2mikrotik.sh #/bin/sh #Сюда вбиваем IP адрес нашего
+MikroTik MIKROTIK_IP=192.168.15.9 #Логин от него MIKROTIK_USER=admin
+#Пароль: MIKROTIK_PASS=verySTRONGpassword!! #Где лежит лог от Suricata
+LOG=/var/log/suricata/fast.log #Файл, необходимый для работы скрипта
+(будет создан самим скриптом) INLOG_FILE=/root/test_after_parser.log
+declare -A IP_OUR_MASC #IP address 192.168.15.9, получаемый по VPN
+(статический) #IP address 10.0.14.144, получаемый по WAN
+(динамический) #Ниже задаются шаблоны соответствия, по которым будет
+отрабатывать #скрипт при анализе IP адресов из fast.log.
+IP_OUR_MASC[0,1]=10. означает, #что WAN интерфейс получает адрес,
+формата 10.0.0.0/8 IP_OUR_MASC[0,0]=IPS; IP_OUR_MASC[0,1]=10.;
+IP_OUR_MASC[0,2]=12 IP_OUR_MASC[1,0]=OVPN;
+IP_OUR_MASC[1,1]=192.168.15.9; IP_OUR_MASC[1,2]=12 #Имя вашего WAN
+интерфейса в RouterOS, необходим для получения текущего IP адреса
+NAME_WAN_INTERFACE=WAN #IP адрес IDS сервера
+IP_SURICATA_SERVER=192.168.15.29 #Блокировать угрозы будем на 24 часа
+BLOCK_TIMEOUT=24h #Периодичность просмотра лога от Suricata 10 секунд
+SLEEP_TIMEOUT=10 #Имя, создаваемого самим скриптом, address-list-а в
+RouterOS NAME_BLOCK_LIST=Suricata_rules IP_SRC_DEFAULT='IP_OUR'
+#Сообщения с таким содержанием будем игнорировать
+EVENT_NOT_INTEREST='SURICATA TLS invalid handshake message'
+EVENT_NOT_INTEREST2='SURICATA TLS invalid record/traffic' declare -p
+ARRAY > /dev/null  while [ 1 = 1 ]; do         #Проверяем, пустой ли
+лог         STRINGS_IN_LOG_FILE=$(cat $LOG | wc | awk {'print $1'})
+if [ "$STRINGS_IN_LOG_FILE" -lt 1 ]; then                         echo
+"Fastlog is empty, sleep $SLEEP_TIMEOUT second..."
+sleep $SLEEP_TIMEOUT                 else
+#Имеем, что лог не пустой. Начинаем с ним работу
+cat $LOG > $INLOG_FILE                         #Очищаем лог Suricata.
+В этом месте, конечно, можно терять записи, вносимые IDS системой
+#в текущий момент времени, что является допущением текущей реализации
+echo -n '' > $LOG                         #Парсим лог по переменным
+readarray -t ARRAY < $INLOG_FILE                         for LINE in
+"${ARRAY[@]}"; do                                 DATE=$(echo $LINE |
+awk -F " " '{print $1}' | cut -c1-10)
+TIME=$(echo $LINE | awk -F " " '{print $1}' | cut -c12-26)
+EVENT=$(echo $LINE | awk -F '[**]' '{print $3}' | awk '!($2="")' | cut
+-c3- | rev | cut -c 3- | rev)
+CLASS=$(echo $LINE | awk -F '[**]' '{print $5}' | cut -c4- | rev | awk
+'{$1=$2=$3=$4=$5=$6=""; print $0}' | cut -c 8- | rev)
+PRIOR=$(echo $LINE | awk -F '[**]' '{print $5}' | rev | awk {'print
+$5'} | cut -c 2- | rev)
+PROTOCOL=$(echo $LINE | awk -F '[**]' '{print $5}' | rev | awk {'print
+$4'} | cut -c 2- | rev | cut -c 2-)
+IP_SRC=$(echo $LINE | awk -F '[**]' '{print $5}' | rev | awk {'print
+$3'} | rev | cut -d : -f 1)
+IP_SRC_PORT=$(echo $LINE | awk -F '[**]' '{print $5}' | rev | awk
+{'print $3'} | rev | cut -d : -f 2-)
+IP_DST=$(echo $LINE | awk -F '[**]' '{print $5}' | rev | awk {'print
+$1'} | rev | cut -d : -f 1)
+IP_DST_PORT=$(echo $LINE | awk -F '[**]' '{print $5}' | rev | awk
+{'print $1'} | rev | cut -d : -f 2-)
+echo "$DATE $TIME $EVENT $CLASS $PRIOR $PROTOCOL $IP_SRC $IP_SRC_PORT
+$IP_DST $IP_DST_PORT"                          #Проверяем текущую
+строку лога на наличие неинтересного для нас сообщения
+echo -n "$EVENT" | grep "$EVENT_NOT_INTEREST" > /dev/null
+if [ $? = 0 ]; then                                 echo -e "Find
+$EVENT_NOT_INTEREST, do nothing..."                         else
+#Проверяем текущую строку лога на наличие неинтересного для нас
+сообщения                                 echo -n "$EVENT" | grep
+"$EVENT_NOT_INTEREST2" > /dev/null
+if [ $? = 0 ]; then
+echo -e "Find $EVENT_NOT_INTEREST2, do nothing..."
+else                                                 #Проверяем не
+попала ли сама IDS в сработку, так как команды управления будут идти
+по SSH                                                 #и могут быть
+восприняты как брутфорс атака
+if [ x"$IP_SRC" = x"$IP_SURICATA_SERVER" ]; then
+echo -e "Find IP of the Suricata server, do nothing..."
+elif [ x"$IP_DST" = x"$IP_SURICATA_SERVER" ]; then
+echo -e "Find IP of the Suricata server, do nothing..."
+else                                                         #Уточняем
+текущий IP адрес на WAN интерфейсе
+IP_OUR_MASC[0,1]=$(sshpass -p $MIKROTIK_PASS ssh
+$MIKROTIK_USER@$MIKROTIK_IP \
+/ip address print where interface=$NAME_WAN_INTERFACE | grep '/' | awk
+{'print $3'} | rev | cut -d / -f 2- | rev)
+#Проверки для работы скрипта
+IP_SRC_TEST=$(echo $IP_SRC | cut  -c1-${IP_OUR_MASC[0,2]})
+if [ x"$IP_SRC_TEST" = x"${IP_OUR_MASC[0,1]}" ]; then
+IP_SRC=$IP_SRC_DEFAULT
+else
+IP_SRC_TEST=$(echo $IP_SRC | cut  -c1-${IP_OUR_MASC[1,2]})
+if [ x"$IP_SRC_TEST" = x"${IP_OUR_MASC[1,1]}" ]; then
+IP_SRC=$IP_SRC_DEFAULT
+fi                                                                 fi
+#Проверки для работы скрипта
+IP_SRC_TEST=$(echo $IP_DST | cut  -c1-${IP_OUR_MASC[0,2]})
+if [ x"$IP_SRC_TEST" = x"${IP_OUR_MASC[0,1]}" ]; then
+IP_DST=$IP_SRC_DEFAULT
+else
+IP_SRC_TEST=$(echo $IP_DST | cut  -c1-${IP_OUR_MASC[1,2]})
+if [ x"$IP_SRC_TEST" = x"${IP_OUR_MASC[1,1]}" ]; then
+IP_DST=$IP_SRC_DEFAULT
+fi                                                                 fi
+#Находится ли детектированный IP уже в address-list на маршрутизаторе
+if [ x"$IP_SRC" = x'IP_OUR' ]; then
+NUMBER_IN_ADDRESS_LIST=$(sshpass -p $MIKROTIK_PASS ssh
+$MIKROTIK_USER@$MIKROTIK_IP \
+/ip firewall address-list print where list=$NAME_BLOCK_LIST | grep -w
+"Suricata $IP_DST" | awk {'print $1'})
+if [ -z "$NUMBER_IN_ADDRESS_LIST" ]; then
+#Добавляем новую запись в address-list маршрутизатора
+sshpass -p $MIKROTIK_PASS ssh $MIKROTIK_USER@$MIKROTIK_IP \
+/ip firewall address-list add address=$IP_DST timeout=$BLOCK_TIMEOUT \
+comment=\"Suricata $IP_DST:$IP_DST_PORT to $IP_SRC_PORT $PROTOCOL
+priority $PRIOR \### $CLASS \### $EVENT\" list=$NAME_BLOCK_LIST
+else
+#Обновляем таймаут для уже существующей записи
+sshpass -p $MIKROTIK_PASS ssh $MIKROTIK_USER@$MIKROTIK_IP \
+/ip firewall address-list set timeout=$BLOCK_TIMEOUT
+numbers=$NUMBER_IN_ADDRESS_LIST
+fi                                                         else
+#Тоже самое, относительно другой переменной
+NUMBER_IN_ADDRESS_LIST=$(sshpass -p $MIKROTIK_PASS ssh
+$MIKROTIK_USER@$MIKROTIK_IP \
+/ip firewall address-list print where list=$NAME_BLOCK_LIST | grep -w
+"Suricata $IP_SRC" | awk {'print $1'})
+if [ -z "$NUMBER_IN_ADDRESS_LIST" ]; then
+sshpass -p $MIKROTIK_PASS ssh $MIKROTIK_USER@$MIKROTIK_IP \
+/ip firewall address-list add address=$IP_SRC timeout=$BLOCK_TIMEOUT \
+comment=\"Suricata $IP_SRC:$IP_SRC_PORT to $IP_DST_PORT $PROTOCOL
+priority $PRIOR \### $CLASS \### $EVENT\" list=$NAME_BLOCK_LIST
+else
+sshpass -p $MIKROTIK_PASS ssh $MIKROTIK_USER@$MIKROTIK_IP \
+/ip firewall address-list set timeout=$BLOCK_TIMEOUT
+numbers=$NUMBER_IN_ADDRESS_LIST
+fi                                                         fi
+echo 'End ...'                                                 fi
+fi                         fi                         done
+fi done    Код прокомментирован и ясен. Результат его работы на
+RouterOS выглядит примерно так:     Мы пропускали неинтересные для нас
+сработки «TLS invalid handshake message» и «TLS invalid
+record/traffic». Можно переделать скрипт и пропускать сообщения с
+приоритетом 3, так как это не угрозы безопасности оберегаемой сети, и
+они носят скорее уведомительный характер. Блокировать IP адреса,
+обнаруживаемые IDS, будем посредством Firewall:  /ip firewall raw add
+action=drop comment="Block from Suricata" src-address-
+list=Suricata_rules /ip firewall raw add action=drop comment="Block
+from Suricata" dst-address-list=Suricata_rules  Лучше это делать в RAW
+filter, так как пакеты будут отброшены в самом начале обработки их
+маршрутизатором и не потратят зря имеющиеся ресурсы. Это хорошо видно
+в схеме прохождения трафика внутри RouterOS, взятой у этих ребят:
+Попробуем повторить брутфорс службы SSH роутера:     Попробуем что-
+нибудь серьезнее, загрузим эксплоит для уязвимости службы Winbox
+(CVE-2018-14847):  git clone https://github.com/BasuCert/WinboxPoC
+python3 WinboxExploit.py 192.168.15.9     Как видно, все было
+детектировано и соответственно заблокировано на маршрутизаторе.
+Поэтому можно говорить, что из IDS наша реализация превратилась в IPS.
+Здесь стоит еще упомянуть коммерческий проект, в котором уже все это
+решено за нас, можно брать и пользоваться. Поставляется в виде готовой
+сборки ISO.  13. Заключение  Вот и подошёл к концу цикл наших статей,
+посвящённый широким возможностям операционной системы RouterOS, а
+также сопрягаемых с ней opensource решений. В комплексе организованная
+безопасность уровней L1, L2 и L3, реализация централизованного
+логирования, интегрированное IPS решение позволяют говорить, что наш
+MikroTik – это полноценный барьер для разноуровневых угроз, нацеленных
+на защищаемую сеть. То, что не умеет делать RouterOS, можно допилить
+самому готовыми бесплатными решениями.   И вот еще о чем важном мы не
+упомянули. Всегда помните, что в любой, даже в самой технически
+защищённой системе, остаётся слабое место – человек её обслуживающий.
+Здесь использован перифраз известной цитаты Кевина Митника из книги
+«Искусство обмана»: «Человеческий фактор по-настоящему самое слабое
+звено в безопасности». Поэтому гигиена, в том числе цифровая, никогда
+не теряет актуальности, особенно в период пандемии.   Весь цикл
+статей: Мой MikroTik — (часть 1. Настройка оборудования и вопросы
+безопасности L1 и L2 уровней)  Мой MikroTik —  (часть 2.Настройка
+протокола Dot1X и работа Firewall)  Мой MikroTik — (часть 3. Варианты
+реализации централизованного логирования)  Мой MikroTik — (часть 4.
+Развёртывание IDS и её интеграцию в инфраструктуру RouterOS)
